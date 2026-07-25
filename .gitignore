@@ -1,0 +1,21 @@
+.pio/
+__pycache__/
+.venv/
+nohup.out
+
+# training artifacts (datasets are redownloadable; runs are reproducible)
+training/.venv/
+training/runs/
+training/exports/
+training/excluded/
+training/dataset/
+training/*.pt
+training/train.log
+*.zip
+
+# machine-generated param snapshots (board state, regenerate anytime;
+# pixhawk_full_setup.param stays tracked: it is the hand-maintained config)
+param_dump*
+pixhawk_complete.params
+pixhawk_every_param.param
+pixhawk_all_params_dump.param

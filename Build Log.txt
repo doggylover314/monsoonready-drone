@@ -1,0 +1,40 @@
+MonsoonReady Drone: Build Log
+
+Parts Chosen:
+Frame: S550 hexacopter; six motors for high payload margin and tolerance to a motor failure.
+Motors: EMAX MT2213 Motors chosen originally, but lack of propeller avaialability caused change to DJI A2212 motors.
+Propellers: Originally proprietary 1045 emax propellers, but changed to standard DJI-style 1045 propellers.
+ESCs: 6x 45A BLHeli_32; rated far above the A2212's maximum draw so they never run hot.
+Flight Controller: Pixhawk 2.4.8 running ArduCopter 4.6.3; board with full ArduPilot support.
+GPS/Compass: NEO-M8N with external compass on a mast; the standard ArduPilot combo.
+RC: FlySky FS-i6X transmitter + FS-iA10B receiver over iBUS; 10-channel link.
+Telemetry: 433MHz SiK radio; 300m+ stock range covers all planned flying.
+Battery: 3S 8000mAh LiPo with XT60; large capacity for longer survey flights.
+Charger: HTRC B6 V2 balance charger.
+
+Crash #1: A prop nut backed off in flight, the vibration corrupted the altitude estimate and the drone shot to ~12m, then the prop departed and it tumbled. Fix: nut handedness verified on all motors, blue Loctite applied.
+Crash #2: Flown manually in AltHold, which holds height but not position; wind drifted it ~44m into a tree and one arm snapped. Loiter would have prevented it.
+Vibration Fix Attempt: Rubber motor dampeners removed; median vibration improved from ~30 to ~20.6, still above the safe limit of 15.
+Crash #3: The vibration of the motors created an inaccurate altitude estimate, causing the drone to keep travelling upwards because it thought it was falling. It climbed to 47m and was disarmed manually because wind was making it drift very far away. Surface Damage report: S550 center plate torn apart. Motors, GPS, Pixhawk, battery, RC receiver, and telemetry radio all undamaged on the surface. The wires on one ESC were yanked out.
+Drone Frame Change: S550 Replacement plates are unavailable, so frame is being changed to F550.
+
+Post Crash Bench Tests:
+Battery: PASS, no puffing, dents, overheating or voltage difference across cells.
+Motors: All 6 PASS, hand spin and powered spin works flawlessly, no grinding or roughness.
+ESCs: All PASS, resoldered one works well
+GPS: PASS, 10 satellites detected and HDOP<1.0 within 30 secs of power on.
+Pixhawk: PASS, all features and ports work as intended.
+Pixhawk Power Module: FAIL, likely shorted during the crash.
+Pixhawk Buzzer: FAIL
+Telemetry Radio: PASS
+RC Receiver: PASS
+
+AI Board: Arduino UNO Q 4GB; runs the water-detection model onboard.
+Camera: Logitech B525 USB webcam; already owned and UVC works on the UNO Q today.
+Obstacle/Height Detection: 7x VL53L0X (one per arm, one pointing up) translated to MAVLink by an ESP32 through a TCA9548A multiplexer, chosen to minimise cost; plus a downward Benewake TF-Luna (native Pixhawk support) for extra range, descent precision, and puddle size for larvicide dosing.
+Geofencing: manual geofence exclusion zones also used during testing, as a precaution on top of the sensors.
+Larvicide: granular Bti, which kills only mosquito/blackfly/midge larvae and just has to land in the puddle; demo flights use inert salt to avoid pesticide regulation.
+Dispenser: SG90 servo as a gate on a small tube; cheapest possible actuator, no tank, pump, or nozzle.
+Servo Power: XY-3606 buck converter as a separate 5V supply so a servo stall cannot brown out the UNO Q.
+OLED Status Display: the kit's 1.3 inch I2C OLED wired as a Pixhawk status display (prearm pass/fail, GPS satellites, EKF, mode, battery) so readiness is checkable at the field without a laptop.
+Parts Ordered: F550 frame kit, 3 spare arms, TF-Luna, SG90 servo, replacement power module, replacement buzzer, XY-3606 buck converter, second battery strap, spare 1045 props and nut caps, conformal coating, DF13 cable.

@@ -1,0 +1,123 @@
+# =============================================================================
+#  pixhawk_full_setup.param  --  MonsoonReady: FULL Pixhawk parameter set
+#  Supersedes esp32_obstacle_avoidance/ardupilot_proximity.param (which covers
+#  only the proximity subset). Load in QGC: Vehicle Setup > Parameters > Tools
+#  > Load from file, then reboot the Pixhawk.
+#
+#  Lines marked VERIFY: check the exact name/value for ArduCopter 4.6.3 in the
+#  onboard param list before writing; firmware variants rename some params.
+#  Format NAME,VALUE. '#' lines are comments.
+# =============================================================================
+
+# --- Frame (hexa X, F550) ---
+FRAME_CLASS,2             # 2 = Hexa
+FRAME_TYPE,1              # 1 = X
+
+# --- Arming & failsafes (defined explicitly; 4.7 renamed things) ---
+# 4.7.0 REPLACED ARMING_CHECK with ARMING_SKIPCHK (bitmask of checks to SKIP).
+# 0 = skip nothing = every prearm check runs. QGC's "Missing params:
+# 1:ARMING_CHECK" popup is QGC metadata lagging this rename; ignore it.
+ARMING_SKIPCHK,0
+FS_THR_ENABLE,1           # 1 = RTL on RC/throttle failsafe (user policy)
+# FS_THR_VALUE: leave at your configured value; must sit below the
+# receiver's no-signal throttle output (bench-verify with TX off, props off)
+RTL_ALT_M,15              # m return altitude (4.7 renamed + re-united); raise if trees
+RTL_ALT_FINAL_M,0         # 0 = land at the end of RTL
+DISARM_DELAY,10           # s auto-disarm after landing
+
+# --- Flight modes + switches (reconstructed after factory reset from the
+#     pre-reset QGC summary + handoff; ch5 arm, ch7 3-pos modes, ch8 kill) ---
+FLTMODE_CH,7              # mode switch on ch7 (3-pos -> hits modes 1/4/6)
+FLTMODE1,0                # Stabilize
+FLTMODE2,0                # Stabilize
+FLTMODE3,2                # AltHold
+FLTMODE4,2                # AltHold
+FLTMODE5,5                # Loiter
+FLTMODE6,5                # Loiter
+RC5_OPTION,153            # 153 = ArmDisarm (VERIFY in QGC dropdown)
+RC8_OPTION,31             # 31 = Motor Emergency Stop / kill (VERIFY)
+# RC6_OPTION,4            # 4 = RTL; UNCOMMENT once the spare 2-pos switch
+#                           channel is confirmed (was undocumented pre-reset)
+
+# --- Serial map (final, per July 2026 decision) ---
+# SERIAL1 (TELEM1) = SiK telemetry radio: leave at defaults (protocol 2, 57)
+SERIAL2_PROTOCOL,2        # TELEM2 = ESP32 obstacle module, MAVLink2
+SERIAL2_BAUD,115          # must equal ESP32 PIXHAWK_BAUD (115200)
+BRD_SER2_RTSCTS,0         # no flow-control pins wired on the ESP32 link. VERIFY name
+SERIAL4_PROTOCOL,2        # SERIAL4 = UNO Q, MAVLink2
+SERIAL4_BAUD,115
+SERIAL5_PROTOCOL,9        # SERIAL5 = TF-Luna, Rangefinder protocol. VERIFY 9=Rangefinder
+SERIAL5_BAUD,115          # TF-Luna default 115200
+
+# --- Downward rangefinder: TF-Luna on SERIAL5 (option B split cable) ---
+RNGFND1_TYPE,20           # 20 = Benewake TFmini/TF-Luna serial. VERIFY on rangefinder wiki
+RNGFND1_ORIENT,25         # 25 = down
+RNGFND1_MIN,0.2           # m. If firmware shows RNGFND1_MIN_CM instead, use 20
+RNGFND1_MAX,6             # m, conservative outdoor. If RNGFND1_MAX_CM, use 600
+RNGFND1_GNDCLR,0.13       # m from lens to ground when landed (4.7 name+meters). MEASURE on real airframe
+
+# --- Upward rangefinder: 7th VL53L0X via ESP32 DISTANCE_SENSOR ---
+RNGFND2_TYPE,10           # 10 = MAVLink
+RNGFND2_ORIENT,24         # 24 = up
+
+# --- Proximity ring: ESP32 OBSTACLE_DISTANCE ---
+PRX1_TYPE,2               # 2 = MAVLink
+PRX1_ORIENT,0
+PRX1_YAW_CORR,0
+
+# --- Avoidance (VL53L0X real-world range is short; margins sized to match) ---
+AVOID_ENABLE,7            # bit 2 (proximity) is the essential one
+AVOID_MARGIN,1            # m stand-off in GPS modes; sensor max is ~1.2-2 m
+AVOID_BEHAVE,0            # 0 = slide
+AVOID_DIST_MAX,1.5        # m, non-GPS modes; must be < reliable sensor range
+AVOID_ACCEL_MAX,3
+AVOID_BACKUP_SPD,0.75
+AVOID_BACKUP_DZ,0.1
+
+# --- Guided safety (UNO Q command link watchdog) ---
+GUID_TIMEOUT,3            # s without new commands -> stop and hover. VERIFY name
+
+# --- Harmonic notch (set REF after the LOADED hover; see procedure) ---
+INS_ACCEL_FILTER,10       # Hz accel LPF
+INS_HNTCH_ENABLE,1        # reboot to expose sub-params
+INS_HNTCH_MODE,1          # 1 = throttle-based (3 = ESC telemetry if BLHeli path adopted)
+INS_HNTCH_REF,0.30        # PLACEHOLDER: set to learned MOT_THST_HOVER from a LOADED hover log
+INS_HNTCH_FREQ,80         # PLACEHOLDER: set from FFT of hover log
+INS_HNTCH_BW,40           # PLACEHOLDER: ~half of FREQ
+INS_LOG_BAT_MASK,1        # batch-log IMU for FFT notch tuning; set 0 after tuning
+
+# --- Hover throttle relearn after rebuild/payload change ---
+MOT_HOVER_LEARN,2         # 2 = learn and save
+
+# --- Battery monitor (after installing NEW power module; calibrate vs multimeter) ---
+BATT_MONITOR,4            # 4 = analog voltage+current. Reboot, then calibrate
+BATT_LOW_VOLT,10.8        # 3.6 V/cell -> triggers low action
+BATT_CRT_VOLT,10.2        # 3.4 V/cell -> triggers critical action
+BATT_FS_LOW_ACT,2         # 2 = RTL (user-confirmed policy)
+BATT_FS_CRT_ACT,1         # 1 = Land
+# BATT_VOLT_MULT / BATT_AMP_PERVLT: calibrate in QGC Power setup against multimeter
+
+# --- RC failsafe: already configured to RTL (user-confirmed). Re-verify after
+#     rebuild with a bench TX-off test (props off): FS_THR_ENABLE, FS_THR_VALUE.
+
+# --- OLED status display (existing, verified working) ---
+NTF_DISPLAY_TYPE,2
+
+# --- Fence (user: to be configured later; flyaway backstop) ---
+# FENCE_ENABLE,1
+# FENCE_TYPE,7            # bitmask: alt + circle + polygon. VERIFY bit values
+# FENCE_ACTION,1          # 1 = RTL
+# FENCE_ALT_MAX,30        # m
+# FENCE_RADIUS,100        # m
+
+# --- RECOMMENDED notch upgrade: in-flight gyro FFT (INS_HNTCH_MODE 4).
+#     DEAD END (2026-07-25, hwdef-verified): 6-motor DShot/bdshot impossible on
+#     Pixhawk1-bdshot, AUX5-6 are NODMA ("Chan 13 to 14 PWM failed no DMA" boot
+#     msg); motors STAY on MAIN PWM. This build HAS HAL_GYROFFT_ENABLED, so the
+#     FFT notch gives dynamic RPM-quality tracking with zero wiring instead.
+#     Start with throttle mode above for the first hovers; then switch:
+# FFT_ENABLE,1            # reboot to expose FFT_ sub-params
+# FFT_MINHZ,50            # lower bound of tracked peak. VERIFY sensible for 1045 props
+# FFT_MAXHZ,200           # upper bound
+# INS_HNTCH_MODE,4        # 4 = in-flight FFT tracking
+# INS_HNTCH_REF,1
