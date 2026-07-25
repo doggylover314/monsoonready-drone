@@ -44,7 +44,7 @@ VIBRATION = THE unsolved blocker (was median 20.6, peaks 60+; gate <15). Rebuild
 ## ML / TRAINING
 Pipeline (training/): merge_datasets.py (single class "puddle"; single-class sets kept whole; multi-class filtered to puddle/water-named; dropped boxes -> negatives; run with .venv python) -> train.py (yolov8n 640 batch8, ckpt/epoch, Ctrl+C pause, auto-resume last.pt) -> export.py (ONNX for UNO Q onnxruntime).
 Dataset v1 = 11725 train / 3069 val from: mosquito v1 (5069, puddle class only, CC BY 4.0, CITE BibTeX from its Universe page), puddle_Detect 4.93k, hanyang puddle-detection 1.5k + puddle 1.5k, water 1k, yinjia-part2. mosquito v4 EXCLUDED (no puddle class = poison; in training/excluded/). Optional later: aedes-total 18.5k, Aedes_uni 5.19k, MBG-mosquito 4.8k, 水たまり検出ver1, Puddles-108.
-RUN1 (2026-07-25, in progress ~e160/200): P 0.79 R 0.72 mAP50 0.789 mAP50-95 0.474, plateaued.
+RUN1 (2026-07-25, ~e160/200): P 0.79 R 0.72 mAP50 0.789 mAP50-95 0.474, plateaued. V2-RETRAIN PLAN: yolo11n (drop-in successor, slightly better/faster than v8n; v12+ attention models too slow on A53 CPU), batch 16-24 (run1 used only ~1GB of 4GB VRAM), consider 416px export for ~2x UNO Q speedup; n-vs-s decided by ONNX benchmark on board (s runs but est <1fps; mission is stills-while-hovering so ~1s/frame acceptable).
 Camera: B525 720p UVC; strip housing, weigh; lock focus v4l2-ctl; route USB away from GPS mast; test sat count cam-on vs off.
 TF-Luna-over-water risk: 850nm IR vs still water = dropout/specular; dropout policy = abort UPWARD, never continue. Fallback (user-approved): hover+descend NEXT TO puddle.
 
