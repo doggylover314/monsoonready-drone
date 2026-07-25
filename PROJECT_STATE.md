@@ -1,4 +1,5 @@
 # MonsoonReady PROJECT_STATE (machine-oriented; terse > readable)
+# BOOTSTRAP for a fresh session: read this file COMPLETELY, it replaces all prior chat context. Repo carries the rest: tools/*.py docstrings (param workflows), esp32_obstacle_avoidance/README.md (wiring/test), training/*.py docstrings (ML pipeline), Build Log.txt (user's manual log incl bench-test PASS history + crash damage; NEVER edit it). Act as the same continuous assistant: don't re-ask settled questions, don't re-explain adopted decisions, pick up TODO + SESSION CONTINUITY below.
 # FORMAT: max-density lossless, zero human-readability requirement (user 2026-07-25); optimize purely for Fable-5 recall.
 # PURPOSE: single source of truth; TODO reflects only REMAINING work; append-only decision log at bottom; update on every new fact; commit+push after every change.
 # RULES(user,standing): EXPLAIN how things work while doing them, user wants to UNDERSTAND not just delegate (2026-07-25; affects Q&A readiness too); logs-first troubleshooting (pymavlink on .bin); NO em-dashes; no invented specs/prices/URLs/param values; India sourcing Robu.in/Amazon.in/FabToLab/FlyRobo/IndiaMART, avoid zbotic+hitechxyz; don't re-suggest rejected; Build Log.txt user-maintained, don't edit/propose unless asked; UNO Q commands BARE, no ssh prefix; RESPONSE_DEFAULTS(direct, no preamble/filler/summaries, plain prose/tight lists, Haiku-note for trivial, 15+msg offer fresh-chat summary once, corrections->note edit-last-message saves tokens)
@@ -74,6 +75,24 @@ FLIGHT GATES (strict order):
 DOCUMENTATION (start now, judged category):
 19. Write-up, crash post-mortems, dataset citations, demo video storyboard, compliance narrative, Q&A prep, training/bench evidence photos.
 DESCOPE LADDER if time runs out: (a) Loiter + onboard detect + drop = minimum judgeable; (b) +base station report; (c) +obstacle array PoC; (d) +guided auto descent.
+
+## SESSION CONTINUITY (update every session end; current: 2026-07-25 evening)
+LIVE: YOLO run1 training detached on laptop (setsid nohup .venv/bin/python train.py, log training/train.log, ckpts training/runs/puddle/weights/). Pause: kill the train.py process; FOOTGUN: pkill -f train.py inside a compound shell command matches the shell itself (exit 144, rest of command dies); use plain pgrep -f then kill PID, or run pkill alone. Resume: rerun train.py (auto-resumes last.pt). When done: nothing auto-fires; next = export.py -> scp ONNX to UNO Q -> benchmark.
+AWAITING USER: (a) spare RTL 2-pos switch channel number -> then uncomment RC6_OPTION,4 + push_params; (b) reconnect B525 to UNO Q for camera tests; (c) VectoBac G sourcing; (d) Simple Mode wanted or not (was per-mode checkbox pre-reset, not restored).
+PIXHAWK: on USB /dev/ttyACM0, config COMPLETE+verified, safe to disconnect. QGC may be open or closed; only matters for pymavlink tools (port exclusive).
+
+## MICRO-FACTS (small but load-bearing)
+Camera test cmds (UNO Q): lsusb | grep -i logitech; v4l2-ctl --list-devices; v4l2-ctl -d /dev/video0 --set-ctrl=focus_automatic_continuous=0 --set-ctrl=focus_absolute=0; capture: v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=test.jpg.
+UNO Q: Debian 13 (PEP668: pip only in ~/venv), sudo NEEDS password (never ask for it; give user the command), docker installed, /usr/lib/chromium 361M (do not remove, App Lab may need), ~ has ArduinoApps/, board hostname "drone".
+Laptop training/.venv also carries: pymavlink 2.4.49, pyserial, yaml (via ultralytics), ultralytics 8.4.105, torch 2.13.0+cu130.
+ESP32 build env: PlatformIO NOT globally installed on laptop; user has PlatformIO VSCode extension (their build path); Claude's route = python venv with platformio pip pkg (toolchains cached in ~/.platformio, survive). Build outside the repo or .pio is gitignored anyway.
+Loaded-hover rule: if learned MOT_THST_HOVER > ~0.5 at full payload, trim payload (thrust margin thin; topic is user-settled, raise only via measured data).
+Thrust math never measured on F550: treat loaded hover log as the authority.
+gh CLI authed as <github-account>. Git commits: end with Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>.
+QGC AppImage: /media/sleuther/Stuff/QGroundControl-x86_64.AppImage. SSH key: ~/.ssh/id_ed25519 (created 2026-07-25).
+mosquito dataset page has BibTeX for citation; license CC BY 4.0 requires attribution in docs.
+ESP32-as-USB-serial trick (for SERIAL5 sniff): ESP32 EN pin to GND holds chip in reset, its USB-UART bridge becomes passthrough; external TX -> board's TX0 pin -> PC.
+Old OneDrive project copy may still exist at /home/sleuther/OneDrive/Documents/Coding/ (folder was moved 2026-07-25; treat /media/sleuther/Stuff as only truth).
 
 ## DECISION LOG (append here)
 2026-07-19 servo cap skipped; salvage only if servo misbehaves.
