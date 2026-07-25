@@ -73,7 +73,7 @@ STAGE FLOW: dump1 (973 defaults) -> stage1 load -> dump_stage2 (1005 params, gat
 
 ## TRAINING RUN (2026-07-25)
 Datasets extracted by user to training/exports/: puddle_Detect.v2i (275M), puddle-detection.v32-640pure (115M), puddle.v2i (83M), water.v2i (100M), yinjia-part2 (37M) = all single-class 'puddle'. mosquito.v4i (258M) EXCLUDED -> training/excluded/: v4 has NO puddle class (bucket/pool/tire/water-tanks only); would train water scenes as negatives = poison. FIX: download/fork mosquito VERSION 2 (6 classes incl puddle) at 640px, then re-merge + resume/retrain.
-Merged: 7262 train / 2463 val, single class puddle. Training STARTED detached (setsid nohup, training/train.log, yolov8n 640px batch 8, RTX3050): pause = kill the train.py process (checkpoint per epoch), resume = rerun train.py. Monitor: runs/puddle/results.csv.
+Merged final: 11725 train / 3069 val single-class. Run1 metrics @epoch159/200 (2026-07-25): P 0.79 R 0.72 mAP50 0.789 mAP50-95 0.474, plateaued; yolov8n 640 batch8. After finish: export.py -> ONNX -> UNO Q benchmark. Retrain later with own nadir photos + drone stills (dataset v2).
 
 ## UNO Q ACCESS
 ssh arduino@<tailnet-ip> (user-provided 2026-07-25). Key auth NOT yet set up (password-only; user to run ssh-copy-id, never give Claude the password). Camera currently disconnected. Pending on-board setup: v4l-utils, onnxruntime, opencv-python-headless, inference benchmark script, camera enumeration+focus-lock test.
