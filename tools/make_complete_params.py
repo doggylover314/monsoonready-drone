@@ -24,8 +24,8 @@ def f32(x) -> float:
     return struct.unpack("f", struct.pack("f", float(x)))[0]
 
 ROOT = Path(__file__).resolve().parent.parent
-SETUP = ROOT / "pixhawk_full_setup.param"
-OUT = ROOT / "pixhawk_complete.params"
+SETUP = ROOT / "param_dumps" / "pixhawk_full_setup.param"
+OUT = ROOT / "param_dumps" / "pixhawk_complete.params"
 
 
 def load_overrides() -> dict[str, str]:
@@ -42,7 +42,7 @@ def main() -> None:
     if len(sys.argv) > 1:
         dump = Path(sys.argv[1])
     else:
-        cands = sorted(ROOT.glob("param_dump*"), key=lambda p: p.stat().st_mtime)
+        cands = sorted((ROOT / "param_dumps").glob("param_dump*"), key=lambda p: p.stat().st_mtime)
         if not cands:
             sys.exit("no param_dump* file in project root")
         dump = cands[-1]

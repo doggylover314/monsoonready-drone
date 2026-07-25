@@ -15,7 +15,5 @@ training/train.log
 
 # machine-generated param snapshots (board state, regenerate anytime;
 # pixhawk_full_setup.param stays tracked: it is the hand-maintained config)
-param_dump*
-pixhawk_complete.params
-pixhawk_every_param.param
-pixhawk_all_params_dump.param
+param_dumps/*
+!param_dumps/pixhawk_full_setup.param

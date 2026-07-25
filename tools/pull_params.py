@@ -22,9 +22,9 @@ from pathlib import Path
 from pymavlink import mavutil
 
 ROOT = Path(__file__).resolve().parent.parent
-SETUP = ROOT / "pixhawk_full_setup.param"
-DUMP = ROOT / "pixhawk_all_params_dump.param"
-FULL = ROOT / "pixhawk_every_param.param"
+SETUP = ROOT / "param_dumps" / "pixhawk_full_setup.param"
+DUMP = ROOT / "param_dumps" / "pixhawk_all_params_dump.param"
+FULL = ROOT / "param_dumps" / "pixhawk_every_param.param"
 
 PORT = sys.argv[1] if len(sys.argv) > 1 else "/dev/ttyACM0"
 
