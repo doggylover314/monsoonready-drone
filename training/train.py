@@ -7,7 +7,7 @@ Run:      .venv/bin/python train.py
 Monitor:  runs/puddle/results.csv (mAP per epoch), runs/puddle/*.jpg previews
 Export:   .venv/bin/python export.py   (after/any time during training)
 
-Sized for the RTX 3050 4GB: yolov8n at 640px, batch 8. If you hit CUDA
+Sized for the RTX 3050 4GB: yolo26n at 640px, batch 8. If you hit CUDA
 out-of-memory, drop BATCH to 4.
 """
 
