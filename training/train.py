@@ -7,8 +7,8 @@ Run:      .venv/bin/python train.py
 Monitor:  runs/puddle/results.csv (mAP per epoch), runs/puddle/*.jpg previews
 Export:   .venv/bin/python export.py   (after/any time during training)
 
-Sized for the RTX 3050 4GB: yolo26n at 640px, batch 8. If you hit CUDA
-out-of-memory, drop BATCH to 4.
+Sized for the RTX 3050 4GB: yolo26n at 640px, batch 16 (run1 at batch 8 used
+only ~1GB). If you hit CUDA out-of-memory, drop BATCH back to 8.
 """
 
 from pathlib import Path
@@ -19,8 +19,8 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "dataset" / "data.yaml"
 RUN = ROOT / "runs" / "puddle"
 
-EPOCHS = 200      # patience stops it earlier if converged
-BATCH = 8
+EPOCHS = 600      # effectively "until plateau": patience=50 stops it earlier
+BATCH = 16
 IMGSZ = 640
 
 last = RUN / "weights" / "last.pt"
