@@ -28,6 +28,7 @@ from detector import FakeDetector, offset_latlon
 from dropper import LogDropper
 from mavlink_io import MavIO
 from mission import Mission, MissionConfig
+from missionlog import MissionLog
 
 
 def connect_retry(conn_str, timeout=60):
@@ -76,6 +77,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--conn', default='tcp:127.0.0.1:5760')
     ap.add_argument('--drill', choices=['none', 'dropout'], default='none')
+    ap.add_argument('--record', metavar='DATA_DIR', default=None,
+                    help='write a base-station JSONL mission log here')
     args = ap.parse_args()
 
     print(f"[test] connecting {args.conn} ...")
@@ -99,8 +102,11 @@ def main():
 
     detector = FakeDetector(*puddle, radius_m=6.0, max_fires=1)
     dropper = LogDropper()
+    recorder = MissionLog(args.record) if args.record else None
+    if recorder:
+        print(f"[test] recording to {recorder.path}")
     mission = Mission(io, detector, dropper,
-                      MissionConfig(waypoints=wps))
+                      MissionConfig(waypoints=wps), recorder=recorder)
     if args.drill == 'dropout':
         mission.rng_suppress_below_m = 6.0
 
