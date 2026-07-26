@@ -212,7 +212,8 @@ async function loadEvents() {
 }
 
 async function reload() {
-  await loadMissions(); await loadEvents(); stats(); table(); render();
+  // render() before stats(): stats needs the projection render() fits.
+  await loadMissions(); await loadEvents(); render(); stats(); table();
 }
 
 /* ---------- derived data ---------- */
@@ -480,7 +481,7 @@ canvas.addEventListener('mouseleave', () => $('tip').style.display = 'none');
 /* ---------- wiring ---------- */
 $('flight').addEventListener('change', async ev => {
   state.selected = ev.target.value;
-  await loadEvents(); stats(); table(); render();
+  await loadEvents(); render(); stats(); table();
 });
 for (const id of ['ly-heat','ly-det','ly-drop','ly-abort','ly-track','ly-site'])
   $(id).addEventListener('change', render);
