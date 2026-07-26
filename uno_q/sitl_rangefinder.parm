@@ -1,0 +1,7 @@
+# SITL downward rangefinder mirroring the TF-Luna (0.2-8m, down-facing).
+# Pass to sim_vehicle.py with --add-param-file=<this file>.
+# RNGFND1_TYPE 100 = SIM (verified in 4.7.0 source, AP_RangeFinder.h).
+RNGFND1_TYPE 100
+RNGFND1_ORIENT 25
+RNGFND1_MIN 0.2
+RNGFND1_MAX 8.0
