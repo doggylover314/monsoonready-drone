@@ -30,7 +30,10 @@ if last.exists():
 else:
     if not DATA.exists():
         raise SystemExit("dataset/data.yaml missing: run merge_datasets.py first")
-    YOLO("yolov8n.pt").train(
+    # yolo26n over yolov8n (decided 2026-07-25): +3.6 COCO mAP, ~2x faster CPU
+    # ONNX (NMS-free export, no postprocessing on the UNO Q), small-target-
+    # aware assignment suits puddles at survey altitude.
+    YOLO("yolo26n.pt").train(
         data=str(DATA),
         epochs=EPOCHS,
         batch=BATCH,
