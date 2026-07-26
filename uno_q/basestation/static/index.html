@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MonsoonReady base station</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface:     #fcfcfb;
+    --ink:         #0b0b0b;
+    --ink-2:       #52514e;
+    --muted:       #898781;
+    --grid:        #e1e0d9;
+    --baseline:    #c3c2b7;
+    --border:      rgba(11,11,11,0.10);
+    --good:        #0ca30c;
+    --critical:    #d03b3b;
+    --det-dot:     #1c5cab;
+    --track:       #898781;
+    --site-dim:    0.55;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page:      #0d0d0d;
+      --surface:   #1a1a19;
+      --ink:       #ffffff;
+      --ink-2:     #c3c2b7;
+      --muted:     #898781;
+      --grid:      #2c2c2a;
+      --baseline:  #383835;
+      --border:    rgba(255,255,255,0.10);
+      --det-dot:   #86b6ef;
+      --site-dim:  0.40;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px;
+    padding: 14px 20px 0;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header .sub { color: var(--ink-2); font-size: 13px; }
+  .bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+    padding: 10px 20px;
+  }
+  .bar label { color: var(--ink-2); user-select: none; cursor: pointer; }
+  .bar input[type=checkbox] { accent-color: var(--det-dot); vertical-align: -2px; }
+  select, button {
+    font: inherit; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+  }
+  button { cursor: pointer; }
+  .tiles {
+    display: flex; flex-wrap: wrap; gap: 10px; padding: 0 20px 10px;
+  }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 16px; min-width: 108px;
+  }
+  .tile .v { font-size: 26px; font-weight: 650; }
+  .tile .k { color: var(--ink-2); font-size: 12px; }
+  .tile .v.good { color: var(--good); }
+  #wrap { position: relative; margin: 0 20px; }
+  #map {
+    width: 100%; height: 62vh; min-height: 340px; display: block;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  #tip {
+    position: absolute; display: none; pointer-events: none; z-index: 5;
+    background: var(--surface); color: var(--ink);
+    border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.18);
+    padding: 6px 9px; font-size: 12.5px; max-width: 260px;
+  }
+  #tip .t { color: var(--ink-2); }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
+    padding: 8px 20px 4px; color: var(--ink-2); font-size: 12.5px;
+  }
+  .legend .chip { display: inline-flex; align-items: center; gap: 6px; }
+  .legend svg { display: block; }
+  details { margin: 8px 20px 24px; }
+  summary { cursor: pointer; color: var(--ink-2); }
+  table {
+    border-collapse: collapse; margin-top: 8px; width: 100%;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden; font-size: 13px;
+  }
+  th, td {
+    text-align: left; padding: 5px 10px;
+    border-bottom: 1px solid var(--grid);
+    font-variant-numeric: tabular-nums;
+  }
+  th { color: var(--ink-2); font-weight: 600; }
+  #empty {
+    position: absolute; inset: 0; display: none; place-items: center;
+    color: var(--muted); font-size: 15px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>MonsoonReady base station</h1>
+  <span class="sub">standing-water candidates &middot; site history across flights</span>
+</header>
+
+<div class="bar">
+  <select id="flight"></select>
+  <label><input type="checkbox" id="ly-heat" checked> Heatmap</label>
+  <label><input type="checkbox" id="ly-det" checked> Detections</label>
+  <label><input type="checkbox" id="ly-drop" checked> Treated</label>
+  <label><input type="checkbox" id="ly-abort" checked> Aborts</label>
+  <label><input type="checkbox" id="ly-track" checked> Flight track</label>
+  <label id="ly-site-label" style="display:none">
+    <input type="checkbox" id="ly-site" checked> Site image</label>
+  <button id="refresh" title="Reload data">&#10227; Refresh</button>
+  <span class="sub" id="updated"></span>
+</div>
+
+<div class="tiles">
+  <div class="tile"><div class="v" id="s-flights">–</div><div class="k">Flights</div></div>
+  <div class="tile"><div class="v" id="s-det">–</div><div class="k">Detections</div></div>
+  <div class="tile"><div class="v good" id="s-drop">–</div><div class="k">Treated (drops)</div></div>
+  <div class="tile"><div class="v" id="s-abort">–</div><div class="k">Aborts</div></div>
+  <div class="tile"><div class="v" id="s-pers">–</div><div class="k">Persistent sites</div></div>
+</div>
+
+<div id="wrap">
+  <canvas id="map"></canvas>
+  <div id="tip"></div>
+  <div id="empty">No mission data yet</div>
+</div>
+
+<div class="legend">
+  <span class="chip"><svg width="46" height="10"><defs>
+    <linearGradient id="hg"><stop offset="0" stop-color="#cde2fb"/>
+    <stop offset=".5" stop-color="#3987e5"/><stop offset="1" stop-color="#0d366b"/>
+    </linearGradient></defs><rect width="46" height="10" rx="3" fill="url(#hg)"/></svg>
+    detection density</span>
+  <span class="chip"><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="var(--det-dot)"/></svg> detection</span>
+  <span class="chip"><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#0ca30c"/><path d="M4 7.4l2 2 4-4.5" stroke="#fff" stroke-width="1.8" fill="none"/></svg> treated (drop)</span>
+  <span class="chip"><svg width="14" height="14"><path d="M3 3l8 8M11 3l-8 8" stroke="#d03b3b" stroke-width="2.4"/></svg> abort (climbed away)</span>
+  <span class="chip"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="var(--track)" stroke-width="2"/></svg> flight track</span>
+  <span class="chip"><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="3 2.5"/></svg> persistent (&ge;2 flights)</span>
+</div>
+
+<details id="tableBox">
+  <summary>Event table</summary>
+  <table>
+    <thead><tr><th>Time</th><th>Flight</th><th>Event</th><th>Lat</th><th>Lon</th><th>Detail</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</details>
+
+<script>
+'use strict';
+/* Heat ramp: sequential blue, light->dark (validated reference palette). */
+const RAMP = ['#cde2fb','#9ec5f4','#6da7ec','#3987e5','#256abf','#1c5cab','#104281','#0d366b'];
+const PERSIST_RADIUS_M = 5, PERSIST_MIN_FLIGHTS = 2, BLOB_RADIUS_M = 8;
+
+const $ = id => document.getElementById(id);
+const canvas = $('map'), ctx = canvas.getContext('2d');
+const state = {
+  missions: [], events: [], selected: 'all',
+  siteMeta: null, siteImg: null, hits: [], lastMissionsJson: '',
+};
+
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmtT = t => new Date(t * 1000).toLocaleString([], {hour12: false});
+const fmtD = t => new Date(t * 1000).toLocaleDateString();
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + ' -> ' + r.status);
+  return r.json();
+}
+
+async function loadSite() {
+  try {
+    state.siteMeta = await getJSON('/api/site_meta');
+    state.siteImg = new Image();
+    state.siteImg.onload = render;
+    state.siteImg.src = '/api/site_image';
+    $('ly-site-label').style.display = '';
+  } catch { state.siteMeta = null; }
+}
+
+async function loadMissions() {
+  state.missions = await getJSON('/api/missions');
+  const sel = $('flight'), prev = sel.value || 'all';
+  sel.innerHTML = '';
+  const optAll = new Option(`All flights (${state.missions.length})`, 'all');
+  sel.add(optAll);
+  for (const m of state.missions)
+    sel.add(new Option(`${fmtD(m.t_start)}  ${m.id}  (${m.final})`, m.id));
+  sel.value = [...sel.options].some(o => o.value === prev) ? prev : 'all';
+  state.selected = sel.value;
+}
+
+async function loadEvents() {
+  state.events = await getJSON('/api/events/' + state.selected);
+  $('updated').textContent = 'updated ' + new Date().toLocaleTimeString([], {hour12: false});
+}
+
+async function reload() {
+  await loadMissions(); await loadEvents(); stats(); table(); render();
+}
+
+/* ---------- derived data ---------- */
+const of = kind => state.events.filter(e => e.e === kind);
+
+function clusters() {
+  // Greedy 2D clustering of detections; persistence = distinct flights >= 2.
+  const cs = [];
+  for (const d of of('detection')) {
+    const p = proj.m(d.lat, d.lon);
+    let best = null, bd = Infinity;
+    for (const c of cs) {
+      const dd = Math.hypot(c.x - p.x, c.y - p.y);
+      if (dd < bd) { bd = dd; best = c; }
+    }
+    if (best && bd <= PERSIST_RADIUS_M) {
+      best.n++; best.x += (p.x - best.x) / best.n; best.y += (p.y - best.y) / best.n;
+      best.flights.add(d.mission);
+    } else cs.push({x: p.x, y: p.y, n: 1, flights: new Set([d.mission])});
+  }
+  return cs.filter(c => c.flights.size >= PERSIST_MIN_FLIGHTS);
+}
+
+function stats() {
+  const scope = state.selected === 'all'
+    ? state.missions
+    : state.missions.filter(m => m.id === state.selected);
+  $('s-flights').textContent = scope.length;
+  $('s-det').textContent = of('detection').length;
+  $('s-drop').textContent = of('drop').length;
+  $('s-abort').textContent = of('abort').length;
+  $('s-pers').textContent = (proj.ok && state.selected === 'all') ? clusters().length : '–';
+}
+
+function table() {
+  const rows = $('rows'); rows.innerHTML = '';
+  const num = v => v == null ? '' : v.toFixed(7);
+  for (const e of state.events) {
+    if (e.e === 'fix') continue;
+    const detail = e.e === 'abort' ? e.reason
+      : e.e === 'drop' ? `rng ${e.rng?.toFixed(2)} m`
+      : e.e === 'detection' ? `conf ${e.conf?.toFixed(2)}`
+      : e.e === 'state' ? `${e.from} → ${e.to}${e.note ? ' (' + e.note + ')' : ''}`
+      : e.e === 'mission_end' ? `final ${e.final}, drops ${e.drops}`
+      : '';
+    const tr = document.createElement('tr');
+    for (const v of [fmtT(e.t), e.mission, e.e, num(e.lat), num(e.lon), detail]) {
+      const td = document.createElement('td');
+      td.textContent = v ?? ''; tr.appendChild(td);
+    }
+    rows.appendChild(tr);
+  }
+}
+
+/* ---------- projection (equirectangular, meters, north-up) ---------- */
+const proj = {
+  ok: false, lat0: 0, mLon: 1,
+  m(lat, lon) {  // geographic -> local meters (x east, y north)
+    return {x: (lon - this.lon0) * this.mLon, y: (lat - this.lat0) * 111320};
+  },
+  px(lat, lon) { // geographic -> canvas px
+    const p = this.m(lat, lon);
+    return {x: this.ox + p.x * this.s, y: this.oy - p.y * this.s};
+  },
+  fit(pts, w, h, pad) {
+    if (!pts.length) { this.ok = false; return; }
+    const lats = pts.map(p => p[0]), lons = pts.map(p => p[1]);
+    this.lat0 = (Math.min(...lats) + Math.max(...lats)) / 2;
+    this.lon0 = (Math.min(...lons) + Math.max(...lons)) / 2;
+    this.mLon = 111320 * Math.cos(this.lat0 * Math.PI / 180);
+    const ms = pts.map(p => this.m(p[0], p[1]));
+    const xs = ms.map(p => p.x), ys = ms.map(p => p.y);
+    const dx = Math.max(10, Math.max(...xs) - Math.min(...xs));
+    const dy = Math.max(10, Math.max(...ys) - Math.min(...ys));
+    this.s = Math.min((w - 2 * pad) / dx, (h - 2 * pad) / dy);
+    this.ox = w / 2 - (Math.min(...xs) + Math.max(...xs)) / 2 * this.s;
+    this.oy = h / 2 + (Math.min(...ys) + Math.max(...ys)) / 2 * this.s;
+    this.ok = true;
+  },
+};
+
+/* ---------- rendering ---------- */
+function layer(id) { return $(id).checked; }
+
+function render() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  state.hits = [];
+
+  const pts = [];
+  for (const e of state.events)
+    if (e.lat != null && ['fix','detection','drop','abort','latch'].includes(e.e))
+      pts.push([e.lat, e.lon]);
+  const sm = state.siteMeta;
+  if (sm && layer('ly-site') && state.siteImg?.complete)
+    pts.push([sm.lat_top, sm.lon_left], [sm.lat_bottom, sm.lon_right]);
+  proj.fit(pts, w, h, 44);
+
+  $('empty').style.display = proj.ok ? 'none' : 'grid';
+  if (!proj.ok) return;
+
+  if (sm && layer('ly-site') && state.siteImg?.complete) {
+    const a = proj.px(sm.lat_top, sm.lon_left), b = proj.px(sm.lat_bottom, sm.lon_right);
+    ctx.globalAlpha = parseFloat(css('--site-dim'));
+    ctx.drawImage(state.siteImg, a.x, a.y, b.x - a.x, b.y - a.y);
+    ctx.globalAlpha = 1;
+  }
+
+  if (layer('ly-heat')) heatmap(w, h);
+
+  if (layer('ly-track')) {
+    ctx.strokeStyle = css('--track'); ctx.lineWidth = 2;
+    ctx.lineJoin = ctx.lineCap = 'round'; ctx.globalAlpha = 0.75;
+    const byMission = {};
+    for (const e of of('fix')) (byMission[e.mission] ??= []).push(e);
+    for (const fixes of Object.values(byMission)) {
+      ctx.beginPath();
+      fixes.forEach((f, i) => {
+        const p = proj.px(f.lat, f.lon);
+        i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+      });
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  if (layer('ly-det')) {
+    ctx.fillStyle = css('--det-dot');
+    for (const d of of('detection')) {
+      const p = proj.px(d.lat, d.lon);
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill();
+      state.hits.push({...p, r: 8, html:
+        `<b>Detection</b> conf ${d.conf?.toFixed(2)}<br>` +
+        `<span class="t">${fmtT(d.t)} &middot; ${d.mission}</span>`});
+    }
+  }
+
+  if (layer('ly-drop')) for (const d of of('drop')) {
+    const p = proj.px(d.lat, d.lon);
+    ring(p, 9);
+    ctx.fillStyle = '#0ca30c';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.moveTo(p.x - 3.5, p.y + 0.5); ctx.lineTo(p.x - 1, p.y + 3);
+    ctx.lineTo(p.x + 4, p.y - 3); ctx.stroke();
+    state.hits.push({...p, r: 11, html:
+      `<b>Treated</b> drop at rng ${d.rng?.toFixed(2)} m<br>` +
+      `<span class="t">${fmtT(d.t)} &middot; ${d.mission}</span>`});
+  }
+
+  if (layer('ly-abort')) for (const a of of('abort')) {
+    const p = proj.px(a.lat, a.lon);
+    ctx.strokeStyle = css('--surface'); ctx.lineWidth = 6; xmark(p, 6);
+    ctx.strokeStyle = '#d03b3b'; ctx.lineWidth = 3; xmark(p, 6);
+    state.hits.push({...p, r: 11, html:
+      `<b>Abort</b> ${a.reason}<br>` +
+      `<span class="t">${fmtT(a.t)} &middot; ${a.mission}</span>`});
+  }
+
+  if (state.selected === 'all') for (const c of clusters()) {
+    const x = proj.ox + c.x * proj.s, y = proj.oy - c.y * proj.s;
+    const r = Math.max(12, PERSIST_RADIUS_M * proj.s * 1.6);
+    ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.6;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke();
+    ctx.setLineDash([]);
+    state.hits.push({x, y, r: r + 4, html:
+      `<b>Persistent site</b> seen in ${c.flights.size} flights ` +
+      `(${c.n} detections)<br><span class="t">stagnation candidate: ` +
+      `re-inspect / treat</span>`});
+  }
+
+  chrome(w, h);
+}
+
+function ring(p, r) {
+  ctx.strokeStyle = css('--surface'); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.stroke();
+}
+function xmark(p, s) {
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(p.x - s, p.y - s); ctx.lineTo(p.x + s, p.y + s);
+  ctx.moveTo(p.x + s, p.y - s); ctx.lineTo(p.x - s, p.y + s);
+  ctx.stroke();
+}
+
+function heatmap(w, h) {
+  const dets = of('detection');
+  if (!dets.length) return;
+  const off = document.createElement('canvas');
+  off.width = w; off.height = h;
+  const oc = off.getContext('2d');
+  const r = Math.max(18, BLOB_RADIUS_M * proj.s);
+  for (const d of dets) {
+    const p = proj.px(d.lat, d.lon);
+    const g = oc.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+    g.addColorStop(0, 'rgba(0,0,0,0.40)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    oc.fillStyle = g;
+    oc.fillRect(p.x - r, p.y - r, 2 * r, 2 * r);
+  }
+  const img = oc.getImageData(0, 0, w, h), px = img.data;
+  const stops = RAMP.map(hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
+  let amax = 0;
+  for (let i = 3; i < px.length; i += 4) amax = Math.max(amax, px[i]);
+  if (!amax) return;
+  for (let i = 0; i < px.length; i += 4) {
+    const a = px[i + 3];
+    if (!a) continue;
+    const t = Math.min(1, a / amax) * (stops.length - 1);
+    const k = Math.min(stops.length - 2, Math.floor(t)), f = t - k;
+    for (let c = 0; c < 3; c++)
+      px[i + c] = Math.round(stops[k][c] + (stops[k + 1][c] - stops[k][c]) * f);
+    px[i + 3] = Math.min(215, a * 2.2);
+  }
+  oc.putImageData(img, 0, 0);
+  ctx.drawImage(off, 0, 0, w, h);
+}
+
+function chrome(w, h) {
+  // Scale bar (nice 1/2/5 series filling ~60-140px), bottom-left.
+  let m = Math.pow(10, Math.floor(Math.log10(100 / proj.s)));
+  for (const k of [1, 2, 5, 10, 20, 50]) {
+    if (m * k * proj.s >= 60) { m *= k; break; }
+  }
+  const px = m * proj.s, x = 18, y = h - 20;
+  ctx.strokeStyle = css('--ink-2'); ctx.lineWidth = 1.5; ctx.beginPath();
+  ctx.moveTo(x, y - 4); ctx.lineTo(x, y); ctx.lineTo(x + px, y);
+  ctx.lineTo(x + px, y - 4); ctx.stroke();
+  ctx.fillStyle = css('--ink-2');
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText(m >= 1000 ? (m / 1000) + ' km' : m + ' m', x + 4, y - 6);
+  // North arrow, top-right.
+  const nx = w - 26, ny = 30;
+  ctx.beginPath(); ctx.moveTo(nx, ny - 12); ctx.lineTo(nx - 5, ny + 4);
+  ctx.lineTo(nx + 5, ny + 4); ctx.closePath();
+  ctx.fillStyle = css('--ink-2'); ctx.fill();
+  ctx.textAlign = 'center'; ctx.fillText('N', nx, ny + 16);
+  ctx.textAlign = 'left';
+}
+
+/* ---------- tooltip ---------- */
+canvas.addEventListener('mousemove', ev => {
+  const r = canvas.getBoundingClientRect();
+  const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+  let best = null, bd = Infinity;
+  for (const t of state.hits) {
+    const d = Math.hypot(t.x - mx, t.y - my);
+    if (d <= Math.max(t.r, 12) && d < bd) { bd = d; best = t; }
+  }
+  const tip = $('tip');
+  if (!best) { tip.style.display = 'none'; return; }
+  tip.innerHTML = best.html;
+  tip.style.display = 'block';
+  const tw = tip.offsetWidth;
+  tip.style.left = Math.min(mx + 14, r.width - tw - 6) + 'px';
+  tip.style.top = (my + 14) + 'px';
+});
+canvas.addEventListener('mouseleave', () => $('tip').style.display = 'none');
+
+/* ---------- wiring ---------- */
+$('flight').addEventListener('change', async ev => {
+  state.selected = ev.target.value;
+  await loadEvents(); stats(); table(); render();
+});
+for (const id of ['ly-heat','ly-det','ly-drop','ly-abort','ly-track','ly-site'])
+  $(id).addEventListener('change', render);
+$('refresh').addEventListener('click', reload);
+window.addEventListener('resize', render);
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+
+setInterval(async () => {   // pick up a new flight landing while we're open
+  try {
+    const j = JSON.stringify(await getJSON('/api/missions'));
+    if (j !== state.lastMissionsJson) { state.lastMissionsJson = j; await reload(); }
+  } catch {}
+}, 15000);
+
+loadSite().then(reload);
+</script>
+</body>
+</html>

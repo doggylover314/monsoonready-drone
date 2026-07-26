@@ -12,7 +12,9 @@ at 115200** as MAVLink **component 191**:
 
 The link layer and the state machine are cleanly separated, and the detector
 and dropper sit behind interfaces so the SITL stand-ins can be swapped for the
-ONNX model and the real servo without touching `mission.py`.
+ONNX model and the real servo without touching `mission.py`. After landing,
+the same board becomes the base station: the mission's JSONL event log is
+served as a heatmap/report dashboard (see `basestation/README.md`).
 
 ---
 
@@ -26,6 +28,8 @@ ONNX model and the real servo without touching `mission.py`.
 | `dropper.py` | `Dropper` interface + `LogDropper` (SITL) + `ServoDropper` (stub) |
 | `sitl_test.py` | Scripted scenarios: nominal mission and rangefinder-dropout drill |
 | `sitl_rangefinder.parm` | SITL parameters mirroring the TF-Luna (0.2 to 8 m, downward) |
+| `missionlog.py` | Per-mission JSONL event log; the schema lives here and only here. Passed to `Mission` as `recorder=`; without it the mission logs nothing (SITL tests unchanged). |
+| `basestation/` | Post-landing Flask heatmap/report dashboard (TODO 13), fed solely by the JSONL logs. Auto-launched via `MissionConfig.basestation_cmd`. Own README. |
 
 ---
 

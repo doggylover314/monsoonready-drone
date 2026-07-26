@@ -47,6 +47,14 @@ answer delivered confidently is worse than no answer. In every response:
 - ALL model training happens on the RTX 3050 laptop (never the UNO Q, never cloud).
 - Param writes to the Pixhawk: tools/push_params.py (pymavlink, per-write
   ack). Never trust QGC bulk load.
+- Base station (uno_q/basestation/): Flask on the UNO Q, port 8080; public
+  URL https://drone.reysen.net via cloudflared ON THE BOARD (token in
+  /etc/cloudflared; needs board internet at viewing time). Mission data =
+  per-flight JSONL from uno_q/missionlog.py under ~/monsoonready_data;
+  schema changes happen in missionlog.py ONLY. Dashboard is read-only.
+- Laptop SITL lives at /media/sleuther/Stuff/ardupilot-SITL (Copter-4.7.0
+  tag, .venv inside it); project-agnostic SITL files stay in that folder,
+  never in this repo.
 
 ## Multi-machine coordination (owner + friend, both with AIs)
 

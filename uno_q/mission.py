@@ -20,10 +20,18 @@ Non-negotiable behaviors (PROJECT_STATE):
     condition having fired => abort (altitude sources disagree).
 """
 
+import subprocess
 import time
 from dataclasses import dataclass, field
 
 from detector import offset_latlon, dist_m
+
+
+class _NoLog:
+    """Recorder null-object: mission code calls recorder methods
+    unconditionally; without a recorder they all no-op."""
+    def __getattr__(self, _name):
+        return lambda *a, **kw: None
 
 
 @dataclass
@@ -43,15 +51,19 @@ class MissionConfig:
     lateral_offset_n_m: float = 0.0
     lateral_offset_e_m: float = 0.0
     end_mode: str = 'RTL'
+    # argv to launch the base station after DONE/STANDDOWN (None = don't).
+    # The onboard runner sets this; SITL tests leave it off.
+    basestation_cmd: list = None
 
 
 class Mission:
-    def __init__(self, io, detector, dropper, cfg, log=print):
+    def __init__(self, io, detector, dropper, cfg, log=print, recorder=None):
         self.io = io
         self.det = detector
         self.dropper = dropper
         self.cfg = cfg
         self.log = log
+        self.rec = recorder if recorder is not None else _NoLog()
         self.state = 'IDLE'
         self.history = []          # (t, state, note)
         self.wp_i = 0
@@ -68,6 +80,7 @@ class Mission:
     def _set(self, state, note=''):
         self.log(f"[mission] {self.state} -> {state}"
                  + (f" ({note})" if note else ""))
+        self.rec.state(self.state, state, note)
         self.state = state
         self._t_state = time.monotonic()
         self.history.append((self._t_state, state, note))
@@ -99,6 +112,7 @@ class Mission:
     def run(self):
         cfg = self.cfg
         io = self.io
+        self.rec.mission_start(cfg)
         io.set_mode('GUIDED')
         io.arm()
         io.takeoff(cfg.survey_alt_m)
@@ -107,6 +121,7 @@ class Mission:
         while self.state not in ('DONE', 'STANDDOWN'):
             io.step()
             tel = io.tel
+            self.rec.fix(tel, self.state)  # throttled inside the recorder
 
             # Pilot override: someone flipped the mode from under us.
             if (self.state != 'IDLE' and tel.mode is not None
@@ -119,6 +134,11 @@ class Mission:
         if self.state == 'DONE':
             io.set_mode(cfg.end_mode)
             self.log(f"[mission] complete, {cfg.end_mode} set")
+        self.rec.mission_end(self.state, getattr(self.dropper, 'fired', None))
+        if cfg.basestation_cmd:
+            # Fire-and-forget: base station outlives the mission process.
+            subprocess.Popen(cfg.basestation_cmd, start_new_session=True)
+            self.log(f"[mission] base station launched: {cfg.basestation_cmd}")
         return self.state
 
     # ---------- state handlers ----------
@@ -141,9 +161,11 @@ class Mission:
         det = self.det.poll(self.io.tel)
         if det is not None:
             # TARGET LATCH: lock now, at survey altitude; ignore later detections.
+            self.rec.detection(det.lat, det.lon, det.confidence)
             self.target = offset_latlon(det.lat, det.lon,
                                         self.cfg.lateral_offset_n_m,
                                         self.cfg.lateral_offset_e_m)
+            self.rec.latch(*self.target)
             self.io.goto(*self.target, self.cfg.survey_alt_m)
             self._set('APPROACH',
                       f"latched {self.target[0]:.7f},{self.target[1]:.7f}")
@@ -176,6 +198,7 @@ class Mission:
         if fresh and tel.rng_m <= cfg.drop_alt_m:
             self.io.velocity_ned(0, 0, 0)
             self.dropper.trigger()
+            self.rec.drop(tel.lat, tel.lon, tel.rng_m)
             self._set('DROP', f"rng={tel.rng_m:.2f}m")
             return
         # Altitude sources disagree => never keep descending.
@@ -187,6 +210,8 @@ class Mission:
 
     def _abort(self, reason):
         self.abort_reason = reason
+        tel = self.io.tel
+        self.rec.abort(tel.lat, tel.lon, reason)
         self._set('ABORT_CLIMB', reason)
 
     def _st_drop(self):
