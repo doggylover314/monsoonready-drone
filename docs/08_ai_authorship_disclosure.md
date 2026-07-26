@@ -1,86 +1,73 @@
-# AI assistance disclosure
+# AI Assistance → Disclosure
 
-Stated up front, in full, because a disclosure that is volunteered is a
-strength and one that is extracted under questioning is a problem.
+Stated up front and in full. A disclosure that is volunteered is a strength; one
+extracted under questioning is a problem.
 
-## The short version, for the submission and the video credit
+---
+
+## 1. Statement for the submission and video credit
 
 > This project was built with substantial AI assistance. Claude was used to
 > write and review code, to research component and dataset choices, and to
-> draft documentation. The system architecture, every engineering decision,
-> all hardware assembly, and all testing and debugging are the work of the
-> two team members. Nothing in this submission was accepted without being
-> understood, and where the assistant was wrong we corrected it.
+> draft documentation. The system architecture, every engineering decision, all
+> hardware assembly, and all testing and debugging are the work of the two team
+> members. Nothing in this submission was accepted without being understood,
+> and where the assistant was wrong it was corrected.
 
-## What AI was actually used for
+---
 
-**Code.** Most of the Python and the ESP32 firmware in this repository was
-drafted with AI assistance: the parameter tools, the dataset merge script, the
-training and export scripts, the obstacle-module firmware, and the onboard
-mission state machine. All of it was specified by us, reviewed by us, and
-tested by us.
+## 2. Scope
 
-**Research.** Comparing candidate datasets and models, checking what a
-particular ArduPilot parameter does, and working out the constraints of the
-hardware. This is also where the assistant was most often wrong and had to be
-checked against primary sources: the firmware, the datasheets, or the board
-itself.
+| Area | AI assistance | Human work |
+|------|---------------|------------|
+| Python tooling (`tools/`, `training/`) | Drafted | Specified, reviewed, run, debugged |
+| ESP32 firmware | Drafted | Specified, reviewed; never flashed by the assistant |
+| UNO Q mission code (`uno_q/`) | Drafted | Architecture specified, SITL-tested, reviewed |
+| Component and dataset research | Candidate options, comparisons | Every final choice |
+| This documentation set | Drafted from the repository's own state file, build log and source | Reviewed and corrected |
+| **Concept** | None | Entirely the team's, including the insight that granular larvicide removes the need for a spray system |
+| **Architecture** | None | Hexacopter, serial allocation, onboard detection, target latching, abort-upward, ESP32 emitting standard MAVLink rather than a custom protocol |
+| **Physical build** | None | Assembly, soldering, wiring, mounting, calibration |
+| **Flying** | None | All flights, and all three crashes |
+| **Debugging** | None | The assistant does not have the aircraft |
+| **Engineering judgment** | None | Particularly the vibration gate, and the decision to respect it when inconvenient |
 
-**Documentation.** This documentation set was drafted with AI assistance from
-the project's own state file, build log and source code.
+---
 
-## What was not AI
+## 3. Where the assistant was wrong
 
-- The concept, including the decision that granular larvicide removes the need
-  for a spray system.
-- Every architectural decision: hexacopter, serial allocation, the choice to run
-  detection onboard, target latching, abort-upward-on-dropout, the ESP32
-  translating to standard MAVLink messages rather than a custom protocol.
-- All physical work: assembly, soldering, wiring, mounting, calibration.
-- All flying, and all three crashes.
-- All debugging. The assistant does not have the aircraft.
-- The engineering judgments that constrain the project, particularly the
-  vibration gate and the decision to respect it when it is inconvenient.
+Recorded because a disclosure listing only successes is not a disclosure.
 
-## Where the assistant was wrong
+| Error | Correction |
+|-------|-----------|
+| ArduPilot parameter names, repeatedly. They are renamed between firmware versions. | Several 4.7 parameters were only correct because they were checked against the board and the source. `ARMING_CHECK` → `ARMING_SKIPCHK`, `RTL_ALT` → `RTL_ALT_M`, `RNGFND1_GNDCLEAR` → `RNGFND1_GNDCLR` were all found this way. |
+| Assumed hardware capabilities this board lacks | The bidirectional-DShot RPM notch filter was planned, then found impossible on this flight controller because the required timer channels have no DMA. Design moved to an in-flight FFT-based notch. |
+| Proposed a rangefinder abort rule that would have aborted **every** descent | It did not account for the sensor being blind at survey altitude. Caught in review; rewritten to distinguish "never acquired" from "acquired then lost". |
 
-Kept because a disclosure listing only successes is not a disclosure.
+The pattern is consistent: the assistant is useful at the level of "write this,
+check that", and needs a human who knows the system to catch the cases where
+its model of the hardware is wrong.
 
-- It has repeatedly needed correcting on ArduPilot parameter names, which are
-  renamed between firmware versions. Several parameters in the 4.7 setup were
-  only right because they were checked against the board and the source.
-- It suggested approaches that assumed hardware capabilities this board does
-  not have. The bidirectional-DShot RPM notch filter is the example: it was
-  planned, then found impossible on this flight controller because the required
-  timer channels have no DMA, and the design moved to an in-flight FFT-based
-  notch instead.
-- It initially reasoned about a rangefinder abort rule that would have aborted
-  every single descent, because it did not account for the sensor being blind
-  at survey altitude. That was caught in review and the rule was rewritten to
-  distinguish "never acquired" from "acquired then lost".
+---
 
-The pattern in all three is the same: the assistant is useful at the level of
-"write this, check that", and needs a human who knows the system to catch the
-cases where its model of the hardware is wrong.
+## 4. Working method
 
-## Working method
-
-Two people on two machines, each with an AI assistant, sharing one git
+Two people, two machines, each with an AI assistant, sharing one git
 repository. Because neither assistant can see the other's session, the project
-keeps a single machine-readable state file, `PROJECT_STATE.md`, that carries
+keeps a single machine-readable state file, `PROJECT_STATE.md`, carrying
 current state, an append-only decision log with dates and authors, and a
-session-continuity section. Every change updates it, and every session begins
-by reading it.
+session-continuity section. Every change updates it; every session begins by
+reading it.
 
-That file is the interesting part of the process, honestly. Coordinating two
-humans and two AI assistants against a deadline turned out to need the same
-thing that coordinating a distributed team needs: one written source of truth
-that nobody is allowed to work around.
+Coordinating two humans and two AI assistants against a deadline turned out to
+need what any distributed team needs: one written source of truth that nobody
+is allowed to work around.
 
-## If a judge asks directly
+---
 
-Answer with the short version above, then offer specifics. Do not minimise the
-extent of the assistance, and do not let it be characterised as the AI having
-built the drone. The distinction that matters is this: the assistant wrote code
-we specified and could each explain; it did not decide what to build, and it
-could not have assembled, flown, crashed, diagnosed or fixed any of it.
+## 5. If asked directly
+
+The statement in §1, then specifics from §2 and §3. The distinction that
+matters: the assistant wrote code the team specified and can each explain; it
+did not decide what to build, and it could not have assembled, flown, crashed,
+diagnosed or repaired any of it.

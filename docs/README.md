@@ -1,47 +1,58 @@
-# MonsoonReady documentation set (TODO 19)
+# MonsoonReady → Documentation Set
 
-Documentation is one of the four judged categories for the Arduino Physical AI
-Challenge India (innovation / functionality / documentation / presentation),
-submission deadline 2026-08-15. This folder is the written half of the
-submission; the demo video is the other half.
+Written documentation for the **Arduino Physical AI Challenge India**
+(submission deadline **2026-08-15**; judged on innovation, functionality,
+documentation and presentation). Documentation is one of the four judged
+categories, so this folder is a deliverable, not a side effect.
 
-Written from PROJECT_STATE.md, `Build Log.txt`, and the code in this repo, on
-2026-07-26 (Raghav / Mac). Everything here is traceable to one of those
-sources. Anything not yet known is marked `FILL:` rather than guessed, because
-a confident wrong number in front of judges is worse than an open blank.
+Content is drawn from `PROJECT_STATE.md`, `Build Log.txt`, and the source in
+this repository. Nothing here is invented: a value that has not been measured
+yet is written **`TBD`** rather than estimated.
 
-| Doc | What it is | Status |
-|---|---|---|
-| [01_project_writeup.md](01_project_writeup.md) | The main submission narrative: problem, system, why each choice | Draft complete; needs final results + photos |
-| [02_crash_postmortems.md](02_crash_postmortems.md) | Three crashes, root cause, evidence, what changed | Complete from logged facts |
-| [03_dataset_citations.md](03_dataset_citations.md) | Licence and attribution for every training set | Structure complete; URLs/BibTeX need Reyansh |
-| [04_demo_video_storyboard.md](04_demo_video_storyboard.md) | Shot-by-shot plan for the demo video | Complete; shoot against it |
-| [05_compliance_narrative.md](05_compliance_narrative.md) | Regulatory position, stated honestly | Draft; needs Raghav's verification pass |
-| [06_judge_qa_prep.md](06_judge_qa_prep.md) | Every design decision, defensible in Q&A | Complete for decisions made so far |
-| [07_evidence_checklist.md](07_evidence_checklist.md) | Photos, screenshots and logs to capture, and what each one proves | Complete; capture is on you two |
-| [08_ai_authorship_disclosure.md](08_ai_authorship_disclosure.md) | How AI assistance was used, disclosed plainly | Complete |
+---
 
-## How to use this set
+## 1. Files
 
-The write-up is the spine. The other documents exist so that the write-up can
-stay readable while every claim in it still has something behind it: a judge
-who asks "how do you know the vibration was the cause?" gets pointed at the
-post-mortems, and one who asks "where did the training images come from?" gets
-pointed at the citations.
+| File | Contents |
+|------|----------|
+| `01_project_writeup.md` | The submission narrative: problem, system, hardware, model, mission logic, and what is not finished |
+| `02_crash_postmortems.md` | The three S550 crashes: cause, evidence, and the rules each one produced |
+| `03_dataset_citations.md` | Every training set with licence and attribution, plus the sets rejected and why |
+| `04_demo_video_storyboard.md` | Shot-by-shot plan for the demo video, with a descope variant |
+| `05_compliance_narrative.md` | Regulatory position, confidence-rated, with the gaps stated |
+| `06_judge_qa_prep.md` | Every design decision as a question and answer |
+| `07_evidence_checklist.md` | The artefact set: each photo, log and capture, and the claim it supports |
+| `08_ai_authorship_disclosure.md` | How AI assistance was used, including where it was wrong |
 
-## Open items that need a human
+---
 
-These are the blanks that cannot be filled from the repo. They are repeated in
-context inside the individual documents.
+## 2. How the set fits together
 
-1. **Dataset URLs and the mosquito-set BibTeX** (doc 03). Reyansh downloaded
-   the sets and has the Roboflow Universe pages open in his history. CC BY 4.0
-   requires attribution, so this is a licence obligation, not a nicety.
-2. **Final model numbers** (docs 01, 06). Run 1 numbers are in place as the
-   baseline; the v2 / yolo26n results replace them once that run finishes on
-   the RTX 3050.
-3. **Regulatory verification** (doc 05). Drone Rules category thresholds and
-   any aerial-application SOP must be checked against the current DGCA text
-   before submission. The draft says what we believe and flags what to verify.
-4. **All photographic evidence** (doc 07). Neither of us can produce these from
-   a keyboard.
+`01` is the spine. Everything else exists so that `01` can stay readable while
+every claim in it still has something behind it:
+
+```
+01_project_writeup            the claims
+ ├── "vibration is unsolved"      → 02  (how we learned it, and the gate)
+ ├── "trained on public data"     → 03  (licence + attribution, CC BY 4.0)
+ ├── "salt, not larvicide"        → 05  (why, and what deployment would need)
+ ├── "aborts upward on dropout"   → 06  (the reasoning, defensible live)
+ ├── "AI-assisted"                → 08  (scope of assistance)
+ └── every measured number        → 07  (the artefact that proves it)
+04 is the video built from the same claims, in the same order.
+```
+
+---
+
+## 3. Conventions
+
+- **`TBD`** marks a value that exists but has not been measured or recorded
+  yet, for example a benchmark figure or a dataset URL. It is never a guess.
+- **Bold verify notes** mark a claim believed correct but not confirmed
+  against a primary source. Regulatory statements in `05` carry explicit
+  confidence levels for this reason.
+- **Remaining work is tracked in `PROJECT_STATE.md` TODO 19**, not in these
+  documents. The documents describe the project; the state file tracks what is
+  left to do on it.
+- Firmware version referenced throughout is **ArduCopter 4.7.0**
+  (Pixhawk1-bdshot), flashed 2026-07-25.

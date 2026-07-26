@@ -1,97 +1,114 @@
-# Evidence checklist
+# Evidence Set → Artefacts and What They Prove
 
-Photographs, screenshots and logs to capture, and what each one proves. Neither
-of us can produce these from a keyboard, so this is a capture list for the two
-of you.
+The artefact set backing the documentation. Organising principle: **every claim
+in `01_project_writeup.md` has something behind it**, so that a reader who asks
+"how do you know?" is one file away from the answer.
 
-The organising principle: **every claim in the write-up should have an artefact
-behind it.** A judge reading "the model runs onboard at N frames per second"
-should be one click from the terminal output that says so. Work down this list
-and the documentation stops being assertions.
+Location: `docs/evidence/`, using the filenames below so cross-references
+resolve. Large image sets should be downsized before committing; originals can
+live outside the repository.
 
-Suggested home: `docs/evidence/` with the filenames below, so links from the
-other documents do not break. That folder is not in git yet, and large image
-sets should be checked against the repository's size before committing; if it
-gets heavy, keep the originals elsewhere and commit downsized copies.
+---
 
-## Training and model evidence
+## 1. Training and model
 
-| File | What to capture | Proves |
-|---|---|---|
-| `training_curve.png` | The results plot from the run directory, showing mAP against epoch | Training was real and converged |
+| Artefact | Contents | Supports |
+|----------|----------|----------|
+| `training_curve.png` | Results plot from the run directory: mAP against epoch | Training was real and converged |
 | `training_terminal.png` | Terminal during training: GPU, batch size, epoch progress | Trained locally on the RTX 3050, not in a cloud notebook |
-| `dataset_counts.txt` | Output of the merge script showing per-source counts and which classes were kept and dropped | Dataset construction was deliberate and is reproducible |
-| `spotcheck_grid.png` | A grid of validation predictions, **including the failures** | Honest evaluation. Include sheet water and glare cases; they are the evidence for the v2 rationale. |
-| `onnx_benchmark.txt` | Inference timing output on the UNO Q | The edge-AI claim, in numbers |
-| `unoq_detection.png` | Screen capture from the UNO Q: image, bounding box, confidence, inference time | The single most important artefact in the set |
+| `dataset_counts.txt` | `merge_datasets.py` output: per-source counts, classes kept and dropped | Dataset construction was deliberate and reproducible |
+| `spotcheck_grid.png` | Grid of validation predictions, **including failures** | Honest evaluation. Sheet-water and glare cases are the evidence for the v2 rationale. |
+| `onnx_benchmark.txt` | Inference timing on the UNO Q | The edge-AI claim, in numbers |
+| `unoq_detection.png` | UNO Q screen capture: image, box, confidence, inference time | The single most important artefact in the set |
 
-The existing `training/spotcheck/` and `training/spotcheck_aerial/` folders
-already hold prediction images from run 1. Those are the raw material for the
-spotcheck grid; do not delete them when v2 finishes, because the comparison
-between run 1 and v2 on the same images is itself good evidence.
+`training/spotcheck/` and `training/spotcheck_aerial/` already hold run-1
+prediction images. They are the raw material for `spotcheck_grid.png` and
+should survive the v2 retrain, since the run-1 versus v2 comparison on identical
+images is itself evidence.
 
-## Bench evidence
+---
 
-| File | What to capture | Proves |
-|---|---|---|
-| `hopper_flow_test.mp4` | Salt flowing through the tube and gate, several cycles | The dispenser works and does not bridge or clog |
+## 2. Bench
+
+| Artefact | Contents | Supports |
+|----------|----------|----------|
+| `hopper_flow_test.mp4` | Salt flowing through tube and gate, several cycles | The dispenser works and does not bridge or clog |
 | `hopper_dose.png` | A measured dose on a scale | Dosing is quantified, not approximate |
-| `tfluna_water_bench.png` | TF-Luna readings over a water basin, indoor and outdoor, nadir and angled | The over-water dropout question was tested, not assumed. This is TODO 6 and it decides descend-over versus descend-beside. |
-| `esp32_mavlink_inspector.png` | Ground station MAVLink inspector showing `OBSTACLE_DISTANCE` and `DISTANCE_SENSOR` arriving at about 10Hz from component 195 | The obstacle module actually talks to the flight controller |
-| `esp32_fake_banner.png` | Boot banner showing REAL versus FAKE sensor mode | The safety interlock on fake data exists |
-| `oled_status.jpg` | The OLED showing prearm status, satellites, mode, battery | Field readiness without a laptop |
-| `power_calibration.jpg` | Multimeter against the reported voltage and current | Power monitoring is calibrated, not assumed |
-| `vibration_log.png` | VibeZ plot from a hover log, against the gate of 15 | The gate is measured, whatever the result. **Capture this even if it fails the gate.** |
+| `tfluna_water_bench.png` | TF-Luna over a water basin: indoor and outdoor, nadir and angled | The over-water dropout question was tested rather than assumed. Decides descend-over versus descend-beside (TODO 6). |
+| `esp32_mavlink_inspector.png` | QGC MAVLink Inspector: `OBSTACLE_DISTANCE` + `DISTANCE_SENSOR` at ~10 Hz from component 195 | The obstacle module talks to the flight controller |
+| `esp32_fake_banner.png` | Boot banner showing REAL versus FAKE sensor mode | The fake-data safety interlock exists |
+| `oled_status.jpg` | OLED showing prearm status, satellites, mode, battery | Field readiness without a laptop |
+| `power_calibration.jpg` | Multimeter against reported voltage and current | Power monitoring is calibrated, not assumed |
+| `vibration_log.png` | VibeZ plot from a hover log against the gate of 15 | The gate is measured, **whatever the result** |
 
-That last row matters. A vibration plot that fails the gate, published
-alongside the statement that we did not fly automatic modes because of it, is
-better evidence of engineering judgment than any passing test.
+The last row is captured whether it passes or fails. A vibration plot that
+fails the gate, published beside the statement that automatic modes were
+therefore not flown, is stronger evidence of engineering judgment than a
+passing test.
 
-## Flight evidence
+---
 
-| File | What to capture | Proves |
-|---|---|---|
+## 3. Flight
+
+| Artefact | Contents | Supports |
+|----------|----------|----------|
 | `hover_test.mp4` | Unloaded hover, stable | The rebuild flies |
 | `gps_health.png` | Satellites and HDOP before arming | The crash-3 procedural lesson is applied |
 | `loiter_flight.mp4` | Position hold in wind | The crash-2 lesson is applied |
 | `full_loop.mp4` | Detect, descend, drop, climb, resume | The judged loop |
-| `flight_log.bin` | The ArduPilot log from the demo flight | Everything above, verifiable by anyone who knows ArduPilot |
+| `flight_log.bin` | ArduPilot log from the demo flight | All of the above, verifiable by anyone who knows ArduPilot |
 
-Keep the `.bin` log from every flight, not just the good ones. Logs-first
-troubleshooting is a standing rule on this project, and a judge who asks a hard
-question about a flight is answerable from the log.
+`.bin` logs are kept from **every** flight, not only successful ones.
+Logs-first troubleshooting is a standing project rule, and a hard question about
+a flight is answerable from its log.
 
-## Build evidence
+---
 
-| File | What to capture | Proves |
-|---|---|---|
-| `build_progress_*.jpg` | Frame assembly stages, wiring, service loops, foam mounting | The build is ours |
-| `payload_layout.jpg` | Camera, TF-Luna, hopper and UNO Q mounted, with weights | Payload budget is managed, not hoped for |
+## 4. Build
+
+| Artefact | Contents | Supports |
+|----------|----------|----------|
+| `build_progress_*.jpg` | Frame assembly stages, wiring, service loops, foam mounting | The build is the team's own work |
+| `payload_layout.jpg` | Camera, TF-Luna, hopper, UNO Q mounted, with weights | Payload budget is managed, not hoped for |
 | `weight_measurement.jpg` | All-up weight on a scale | Feeds the regulatory category question directly |
-| `sensor_ring.jpg` | The seven VL53L0X sensors mounted, showing field of view clear of legs and propellers | The mounting constraint was checked |
-| `conformal_coating.jpg` | Coating applied with the barometer and connectors masked | Monsoon readiness, which is the name of the project |
+| `sensor_ring.jpg` | Seven VL53L0X mounted, field of view clear of legs and props | The 25° FOV mounting constraint was checked |
+| `conformal_coating.jpg` | Coating applied, baro and connectors masked | Monsoon readiness, which is the name of the project |
 
-## Simulation evidence
+---
 
-| File | What to capture | Proves |
-|---|---|---|
-| `sitl_happy_path.txt` | Terminal output of the nominal scenario | The mission logic completes the loop |
-| `sitl_dropout_drill.txt` | Terminal output of the dropout drill | The abort-upward behaviour, tested |
+## 5. Simulation
 
-Both are producible today by running
-[uno_q/sitl_test.py](../uno_q/sitl_test.py); the runs of 2026-07-26 passed and
-the output is worth saving to files rather than left in a terminal.
+| Artefact | Contents | Supports |
+|----------|----------|----------|
+| `sitl_happy_path.txt` | Terminal output, nominal scenario | The mission logic completes the loop |
+| `sitl_dropout_drill.txt` | Terminal output, dropout drill | The abort-upward behaviour, tested |
 
-## Documentation evidence
+Both are reproducible today:
 
-| File | What to capture | Proves |
-|---|---|---|
-| `dataset_licences.png` | Screenshots of each Roboflow Universe page showing CC BY 4.0 and the citation block | Licence compliance, and it fills the gaps in doc 03 at the same time |
-| `bti_product.jpg` | The larvicide product packaging | Sourcing is real, per the project notes |
+```bash
+.venv/bin/python uno_q/sitl_test.py                  > docs/evidence/sitl_happy_path.txt
+.venv/bin/python uno_q/sitl_test.py --drill dropout  > docs/evidence/sitl_dropout_drill.txt
+```
 
-## Priority if time runs short
+---
 
-In order: `unoq_detection.png`, `full_loop.mp4`, `vibration_log.png`,
-`sitl_dropout_drill.txt`, `spotcheck_grid.png`. Those five carry the edge-AI
-claim, the functionality claim, and the engineering-honesty claim, which are
-the three things this project is actually being judged on.
+## 6. Documentation
+
+| Artefact | Contents | Supports |
+|----------|----------|----------|
+| `dataset_licences.png` | Roboflow Universe pages showing CC BY 4.0 and citation blocks | Licence compliance, and fills the TBD rows in `03_dataset_citations.md` |
+| `bti_product.jpg` | Larvicide product packaging | Sourcing is real |
+
+---
+
+## 7. Priority order
+
+If capture time runs short, in order:
+
+1. `unoq_detection.png` — the edge-AI claim
+2. `full_loop.mp4` — the functionality claim
+3. `vibration_log.png` — the engineering-honesty claim
+4. `sitl_dropout_drill.txt` — the safety-design claim
+5. `spotcheck_grid.png` — the honest-evaluation claim
+
+Those five carry the three things the project is actually judged on.

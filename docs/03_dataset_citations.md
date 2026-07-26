@@ -1,100 +1,106 @@
-# Training data: sources, licences, attribution
+# Training Data → Sources, Licences, Attribution
 
-Every public dataset used to train the water detector is listed here with its
-licence. The sets are CC BY 4.0 as recorded in `PROJECT_STATE.md`, which means
-attribution is a **licence obligation**, not a courtesy. This document is the
-attribution.
+Every public dataset used to train the water detector, with its licence. The
+public sets are **CC BY 4.0**, which makes attribution a **licence
+obligation**, not a courtesy. This document is that attribution.
 
-> **Blocking gap.** The exact Roboflow Universe URLs and the BibTeX for the
-> mosquito set are not recorded in this repo. Reyansh downloaded the sets and
-> has the pages in his browser history. Every row below marked `FILL:` needs
-> its canonical URL, author/workspace name, and version before submission.
-> Do not approximate these. A wrong citation is worse than a missing one, and
-> Roboflow Universe pages carry a "Cite this Project" block that produces the
-> exact BibTeX.
+`TBD` marks a URL or citation block not yet recorded in the repository. Each is
+recoverable from the dataset's Roboflow Universe page, which carries a
+**"Cite this Project"** block producing exact BibTeX. Approximating these is
+worse than leaving them blank.
 
-## Dataset v1 (11,725 train / 3,069 val)
+---
 
-Used for training run 1, the baseline reported in the write-up.
+## 1. Dataset v1 → 11,725 train / 3,069 val
 
-| Set (as named in our exports) | Approx. images | Classes used | Licence | Citation |
+Used for training run 1, the baseline reported in `01_project_writeup.md` §5.4.
+
+| Set (as named in `training/exports/`) | Images | Classes used | Licence | Citation |
 |---|---|---|---|---|
-| mosquito v1 | 5,069 incl. splits | `puddle` only | CC BY 4.0 | `FILL: URL + BibTeX from the Universe page's "Cite this Project" block` |
-| puddle_Detect | approx. 4,930 | single class | CC BY 4.0 | `FILL: URL` |
-| hanyang puddle-detection | approx. 1,500 | single class | CC BY 4.0 | `FILL: URL` |
-| hanyang puddle | approx. 1,500 | single class | CC BY 4.0 | `FILL: URL` |
-| water | approx. 1,000 | single class | CC BY 4.0 | `FILL: URL` |
-| yinjia part 2 | `FILL` | single class | CC BY 4.0 | `FILL: URL` |
+| mosquito v1 | 5,069 incl. splits | `puddle` only | CC BY 4.0 | TBD — URL + BibTeX |
+| puddle_Detect | ~4,930 | single class | CC BY 4.0 | TBD — URL |
+| hanyang puddle-detection | ~1,500 | single class | CC BY 4.0 | TBD — URL |
+| hanyang puddle | ~1,500 | single class | CC BY 4.0 | TBD — URL |
+| water | ~1,000 | single class | CC BY 4.0 | TBD — URL |
+| yinjia part 2 | TBD | single class | CC BY 4.0 | TBD — URL |
 
-## Dataset v2 additions (merged 2026-07-25; approx. 21,700 train / 4,500 val)
+---
 
-| Set | Approx. images | Classes used | Licence | Citation |
+## 2. Dataset v2 additions → ~21,700 train / ~4,500 val
+
+Merged 2026-07-25.
+
+| Set | Images | Classes used | Licence | Citation |
 |---|---|---|---|---|
-| Thesis, mosquito-breeding-grounds-2 | 3,470 | `Temporary Water Sites` only, of 7 | CC BY 4.0 | universe.roboflow.com/thesis-kjmym/mosquito-breeding-grounds-2 (verify the exact citation block) |
-| Fumigation habitats | approx. 1,060 | puddle / probable-stagnant-water classes | CC BY 4.0 | `FILL: URL` |
-| Fumigation habitats2 | approx. 1,290 | puddle / probable-stagnant-water classes | CC BY 4.0 | `FILL: URL` |
-| First-party nadir photographs | `FILL: count` | `puddle` | Ours | Original work, this project |
+| Thesis, mosquito-breeding-grounds-2 | 3,470 | `Temporary Water Sites` only, of 7 | CC BY 4.0 | `universe.roboflow.com/thesis-kjmym/mosquito-breeding-grounds-2` **(verify the exact citation block)** |
+| Fumigation habitats | ~1,060 | puddle / probable-stagnant-water | CC BY 4.0 | TBD — URL |
+| Fumigation habitats2 | ~1,290 | puddle / probable-stagnant-water | CC BY 4.0 | TBD — URL |
+| First-party nadir photographs | TBD | `puddle` | Original work | This project |
 
-The first-party images are the important addition. They are photographs taken
-looking straight down from height, which is the actual camera geometry of this
-mission and something no public dataset provides, plus deliberate negatives:
-shadows, tarpaulins, wet ground without pooling, rooftops, plastic sheeting.
-These target the specific failures found in run 1.
+The first-party images are the significant addition: photographs taken looking
+**straight down from height**, which is the actual camera geometry of this
+mission and something no public dataset provides. They include deliberate
+negatives (shadows, tarpaulins, wet ground without pooling, rooftops, plastic
+sheeting) targeting the run-1 failures in `01_project_writeup.md` §5.4.
 
-## Sets we evaluated and rejected
+---
 
-Recording rejections matters, because "why did you not use dataset X" is a fair
-judging question and because it stops us re-litigating decisions.
+## 3. Sets evaluated and rejected
 
 | Set | Verdict | Reason |
 |---|---|---|
-| mosquito v4 | **Excluded, actively harmful** | No puddle class at all. Merging it would have contributed only images whose water was unlabelled, training the model that water is background. Kept in `training/excluded/` rather than deleted, so the decision stays visible. |
-| mosquito-breeding-grounds v3, v4, v5 | Excluded | Container-only spin-offs with no water class. Same poisoning problem as above. |
-| 82myj | Skipped | 112 images. Too small to matter. |
-| Eds breeding-detection | Skipped | 556 images, container-heavy rather than water. |
-| Fumigation vol3, vol4, vol5 | Skipped | No puddle class. |
-| Insect close-up sets | Skipped | Photographs of mosquitoes. Wrong task entirely: we detect water, not insects. |
-| Various aedes / MBG sets | Skipped | Superseded by better-labelled sets covering the same ground. |
+| mosquito **v4** | **Excluded, actively harmful** | No puddle class at all. Merging it contributes images whose water is unlabelled, training the model that water is background. Kept in `training/excluded/` rather than deleted, so the decision stays visible. |
+| mosquito-breeding-grounds **v3/v4/v5** | Excluded | Container-only spin-offs, no water class. Same poisoning problem. |
+| 82myj | Skipped | 112 images; too small to matter |
+| Eds breeding-detection | Skipped | 556 images, container-heavy rather than water |
+| Fumigation vol3 / vol4 / vol5 | Skipped | No puddle class |
+| Insect close-up sets | Skipped | Photographs of mosquitoes. Wrong task: this model detects water, not insects. |
+| Various aedes / MBG sets | Skipped | Superseded by better-labelled sets over the same ground |
 
-## Two methodology points worth defending
+---
 
-**We never take multiple versions of the same underlying image pool.** Roboflow
-versions of one dataset are re-splits and re-augmentations of the same source
-photographs. Merging two versions puts the same image in train and val, which
-inflates validation scores while teaching nothing. Every set above comes from a
-distinct pool.
+## 4. Methodology
 
-**"Pool" and "water tank" classes are deliberately not kept.** They are
-genuine mosquito breeding sites, so keeping them would look defensible. They
-are not drop targets for this aircraft: a swimming pool is permanent, managed
-water, and a granule drop into one is both useless and unwelcome. Training the
-model to fire on them would create confident detections that the mission logic
-would then have to suppress, which is a worse design than not learning them.
-The filter that implements this is `KEEP_NAMES` in
-[training/merge_datasets.py](../training/merge_datasets.py).
+### 4.1 No two versions of one image pool
 
-## How the merge works
+Roboflow versions of a dataset are re-splits and re-augmentations of the **same
+source photographs**. Merging two versions puts the same image in train and
+val, inflating validation scores while teaching nothing. Every set in sections
+1 and 2 comes from a distinct pool.
 
-[training/merge_datasets.py](../training/merge_datasets.py) collapses every
-export into one single-class dataset:
+### 4.2 `pool` and `water tank` classes are deliberately dropped
 
-- A set with exactly one class is kept whole, whatever that class is named,
-  which covers sets whose only class is `water` or a non-English word for
-  puddle.
-- A multi-class set keeps only water-named classes; other boxes are dropped.
-- An image whose boxes were all dropped stays in the dataset with an empty
-  label file, becoming a **negative example**. This is free hard-negative data:
-  images that contain tyres, bottles and containers but no water teach the
-  model what standing water is not.
-- Roboflow's `test` split is folded into our validation split, on the grounds
-  that the real test set is the drone.
+They are genuine mosquito breeding sites, so keeping them looks defensible.
+They are **not drop targets** for this aircraft: a swimming pool is permanent,
+managed water, and a granule drop into one is both useless and unwelcome.
+Training the model to fire on them would create confident detections the
+mission logic would then have to suppress, which is worse than not learning
+them. Implemented as `KEEP_NAMES` in `training/merge_datasets.py`.
 
-## Attribution text for the submission and the video
+### 4.3 How the merge works
 
-Once the URLs are filled in, the following goes in the submission document and
-in the video credits:
+`training/merge_datasets.py` collapses every export into one single-class
+dataset:
+
+| Input | Handling |
+|-------|----------|
+| Set with exactly one class | Kept whole, whatever the class is named. Covers sets whose only class is `water` or a non-English word for puddle. |
+| Set with multiple classes | Only water-named classes kept; other boxes dropped |
+| Image whose boxes were all dropped | **Kept as a negative**, with an empty label file |
+| Roboflow `test` split | Folded into our validation split |
+
+The negatives are free hard-negative data: images containing tyres, bottles and
+containers but no water teach the model what standing water is not. The
+test-split decision rests on the real test set being the drone.
+
+---
+
+## 5. Attribution text
+
+For the submission document and video credits, once section 1 and 2 URLs are
+recorded:
 
 > The water-detection model was trained on publicly available datasets from
-> Roboflow Universe, each licensed CC BY 4.0, listed with full attribution in
-> the project documentation, together with original photographs taken by the
-> project team.
+> Roboflow Universe, each licensed CC BY 4.0 and listed with full attribution
+> in the project documentation, together with original photographs taken by
+> the project team.
