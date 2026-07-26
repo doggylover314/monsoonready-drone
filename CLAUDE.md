@@ -2,7 +2,7 @@
 
 FIRST ACTION every session: read PROJECT_STATE.md completely, and PRIVATE.md if present (gitignored machine/account details; on a new machine copy PRIVATE.sample.md and fill it in). It is the single
 source of truth (project state, decisions, TODO, session continuity) and
-replaces prior chat context. Update it and commit+push after every change.
+replaces prior chat context. Git discipline: run git pull --rebase BEFORE reading state or changing anything (others may have pushed), and commit+push after every change. Update PROJECT_STATE.md as part of every change.
 
 ## Response defaults (every reply, unless the user overrides)
 
