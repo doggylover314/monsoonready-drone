@@ -40,7 +40,7 @@ SPLIT_MAP = {"train": "train", "valid": "val", "test": "val"}
 # Multi-class exports: keep a class if its lowercased name is here or
 # contains "puddle". "water tanks"/"pool" deliberately do NOT match: they are
 # breeding sites but not drop targets for this mission.
-KEEP_NAMES = {"puddle", "water", "standing water", "stagnant water"}
+KEEP_NAMES = {"puddle", "water", "standing water", "stagnant water", "stagnant_water", "temporary water sites", "probable-stagnant-water-waist"}
 
 
 def keep_ids(export: Path) -> set[int] | None:
