@@ -1,6 +1,6 @@
 # CLAUDE.md — MonsoonReady project instructions
 
-FIRST ACTION every session: read PROJECT_STATE.md completely. It is the single
+FIRST ACTION every session: read PROJECT_STATE.md completely, and PRIVATE.md if present (gitignored machine/account details; on a new machine copy PRIVATE.sample.md and fill it in). It is the single
 source of truth (project state, decisions, TODO, session continuity) and
 replaces prior chat context. Update it and commit+push after every change.
 
@@ -43,7 +43,6 @@ answer delivered confidently is worse than no answer. In every response:
 - Sourcing: India (Robu.in, Amazon.in, FabToLab, FlyRobo, IndiaMART); avoid
   zbotic and hitechxyz. Do not re-suggest rejected options.
 - Build Log.txt is user-maintained: never edit it or propose entries unless asked.
-- UNO Q (ssh arduino@<tailnet-ip>): give bare commands, no ssh prefix.
+- UNO Q (ssh address in PRIVATE.md, gitignored; template PRIVATE.sample.md): give bare commands, no ssh prefix.
 - Param writes to the Pixhawk: tools/push_params.py (pymavlink, per-write
   ack). Never trust QGC bulk load.
-- Commits end with: Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>

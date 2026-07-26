@@ -17,3 +17,6 @@ training/train.log
 # pixhawk_full_setup.param stays tracked: it is the hand-maintained config)
 param_dumps/*
 !param_dumps/pixhawk_full_setup.param
+
+# private machine/account details
+PRIVATE.md
