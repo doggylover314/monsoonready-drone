@@ -63,7 +63,7 @@ NOW (bench, no flight):
 9. Phone nadir photos from height + negatives (shadows/tarps/wet ground/rooftops/plastic) -> dataset v2.
 SOFTWARE (parallel, laptop):
 10. SITL install; rehearse survey mission + guided.
-11. UNO Q mission code: pymavlink guided cmds, descent-abort (DISTANCE_SENSOR, dropout=abort up), servo drop state machine, MAV_CMD_SET_MESSAGE_INTERVAL for DISTANCE_SENSOR+GLOBAL_POSITION_INT on SERIAL4, compid 191. Test against SITL.
+11. UNO Q mission code: pymavlink guided cmds, descent-abort (DISTANCE_SENSOR, dropout=abort up), servo drop state machine, TARGET LATCHING (lock at survey altitude; no re-detection during descent, see RUN1 spotcheck), MAV_CMD_SET_MESSAGE_INTERVAL for DISTANCE_SENSOR+GLOBAL_POSITION_INT on SERIAL4, compid 191. Test against SITL.
 12. STM32 Bridge byte-shovel sketch + latency measurement.
 13. Base-station heatmap/report mode. 14. Predictive-model stub for judges.
 ASSEMBLY (in progress) then CALIBRATIONS:
