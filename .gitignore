@@ -20,3 +20,6 @@ param_dumps/*
 
 # private machine/account details
 PRIVATE.md
+
+# per-machine assistant/tooling config (launch.json etc.)
+.claude/
