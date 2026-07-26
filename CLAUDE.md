@@ -47,3 +47,20 @@ answer delivered confidently is worse than no answer. In every response:
 - ALL model training happens on the RTX 3050 laptop (never the UNO Q, never cloud).
 - Param writes to the Pixhawk: tools/push_params.py (pymavlink, per-write
   ack). Never trust QGC bulk load.
+
+## Multi-machine coordination (owner + friend, both with AIs)
+
+- git pull --rebase immediately before EVERY commit as well as at session start;
+  two people push to main and stale pushes cause conflicts.
+- Never rewrite pushed history (no force push, no amend of pushed commits).
+- Decision log entries: append-only, dated, and tagged with who made them,
+  e.g. "2026-07-26 (friend): ...". Never edit or delete existing entries.
+- Before starting work, read SESSION CONTINUITY -> LIVE and AWAITING USER;
+  do not duplicate or interfere with work listed there. Add your own line
+  (machine + task) when starting something long, remove it when done.
+- Hardware ownership: the Pixhawk (USB), the RTX 3050, and all training runs
+  live on the owner's laptop. Friend's machine: no training, no param pushes;
+  UNO Q access over tailnet is shared, coordinate via SESSION CONTINUITY
+  before flashing or changing anything on the board.
+- PRIVATE.md is per-machine and never committed; each machine fills its own
+  from PRIVATE.sample.md.
