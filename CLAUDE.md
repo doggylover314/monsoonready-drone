@@ -44,5 +44,6 @@ answer delivered confidently is worse than no answer. In every response:
   zbotic and hitechxyz. Do not re-suggest rejected options.
 - Build Log.txt is user-maintained: never edit it or propose entries unless asked.
 - UNO Q (ssh address in PRIVATE.md, gitignored; template PRIVATE.sample.md): give bare commands, no ssh prefix.
+- ALL model training happens on the RTX 3050 laptop (never the UNO Q, never cloud).
 - Param writes to the Pixhawk: tools/push_params.py (pymavlink, per-write
   ack). Never trust QGC bulk load.
