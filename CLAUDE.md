@@ -36,6 +36,18 @@ answer delivered confidently is worse than no answer. In every response:
    something exists, verify it (docs, source, the board itself) or say so.
 7. LOGIC GAPS: Do not fill missing context with assumptions. If something is
    unclear, ask a clarifying question before answering.
+8. DECISIONS KEEP THEIR WHY: every decision recorded in PROJECT_STATE carries
+   its load-bearing rationale. A bare verdict ("X not Y") is an incomplete
+   record: treat it as UNVERIFIED, and re-verify the underlying fact from a
+   primary source before acting on it or restating it. When compressing state,
+   the why is the part you may NOT drop. (Instituted 2026-07-27 after a
+   near-miss: "UNO Q 5V pin NOT VIN" was recorded without the reason, VIN
+   powering was almost adopted, and only a user challenge caught that VIN
+   power disables USB VBUS out, which would have left the camera dead.)
+9. HARDWARE ACTIONS VERIFY FIRST: before recommending or performing any
+   wiring, power, or param change, confirm the governing spec from datasheet,
+   official docs, or a meter reading, never from model memory alone. If it
+   cannot be verified right now, say so and mark the step VERIFY in the plan.
 
 ## Project-specific standing rules
 
