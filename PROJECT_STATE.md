@@ -19,7 +19,7 @@ Switches: ch5 arm (RC5_OPTION 153), ch8 kill (RC8_OPTION 31), ch7 3pos Stab/AltH
 Parts: ALL arrived. Frame assembly in progress.
 
 ## POWER MAP
-Power module (new) -> Pixhawk (calibrate V/I vs multimeter on install; UBEC bench V readings w/o sense pins = floating artifacts). UBEC 5V/5A -> UNO Q 5V pin (NOT VIN; GPIO 3.3V; USB-C free for camera) + OLED. XY-3606 (set 5.00V with meter BEFORE connecting) -> SG90 servo + ESP32 (ESP32 3V3 reg feeds mux + 7x VL53L0X). Servo signal = UNO Q GPIO 3.3V (marginal-but-usually-fine; salvage 470-1000uF cap ONLY if servo misbehaves). Common grounds. XT60 ~60A continuous (full-punch bursts may touch it; known).
+Power module (new) -> Pixhawk (calibrate V/I vs multimeter on install; UBEC bench V readings w/o sense pins = floating artifacts). UBEC 5V/5A -> UNO Q 5V pin (NOT VIN, verified 2026-07-27: VIN 7-24V exists BUT board disables USB VBUS out when VIN-powered (protective Schottky design, Arduino staff: unsupported scenario) = B525 on USB-C gets no power; 5V-pin feed keeps USB host power alive; also isolates from motor-bus sag/noise. GPIO 3.3V; USB-C free for camera) + OLED. XY-3606 (set 5.00V with meter BEFORE connecting) -> SG90 servo + ESP32 (ESP32 3V3 reg feeds mux + 7x VL53L0X). Servo signal = UNO Q GPIO 3.3V (marginal-but-usually-fine; salvage 470-1000uF cap ONLY if servo misbehaves). Common grounds. XT60 ~60A continuous (full-punch bursts may touch it; known).
 
 ## SERIAL MAP (final)
 SERIAL1=SiK. SERIAL2(TELEM2)=ESP32 MAVLink2 115200. SERIAL3=GPS. SERIAL4=UNO Q MAVLink2 115200. SERIAL5=TF-Luna serial rangefinder 115200.
