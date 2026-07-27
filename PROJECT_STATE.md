@@ -94,6 +94,7 @@ AWAITING USER: (a) spare RTL 2-pos switch channel number -> then uncomment RC6_O
 PIXHAWK: on USB /dev/ttyACM0, config COMPLETE+verified, safe to disconnect. QGC may be open or closed; only matters for pymavlink tools (port exclusive).
 
 ## MICRO-FACTS (small but load-bearing)
+UNO Q status LEDs (docs-verified 2026-07-28, user-manual): 4 RGB LEDs, 2 MPU-driven; status LED segments in /sys/class/leds = red:panic (the actual trouble light), green:wlan, blue:bt; solid blue=BT up, cyan-ish flashing=wlan activity on top of blue = NORMAL. Inspect: for f in /sys/class/leds/*/brightness; do echo "$f = $(cat $f)"; done. LEDs say nothing about supply quality; power acceptance = loaded meter at 5V pin.
 Camera test cmds (UNO Q): lsusb | grep -i logitech; v4l2-ctl --list-devices; v4l2-ctl -d /dev/video0 --set-ctrl=focus_automatic_continuous=0 --set-ctrl=focus_absolute=0; capture: v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=test.jpg.
 UNO Q: Debian 13 (PEP668: pip only in ~/venv), sudo NEEDS password (never ask for it; give user the command), docker installed, /usr/lib/chromium 361M (do not remove, App Lab may need), ~ has ArduinoApps/, board hostname "drone".
 Laptop training/.venv also carries: pymavlink 2.4.49, pyserial, yaml (via ultralytics), ultralytics 8.4.105, torch 2.13.0+cu130.
