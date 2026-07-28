@@ -7,12 +7,16 @@ Run:      .venv/bin/python train.py
 Monitor:  runs/puddle/results.csv (mAP per epoch), runs/puddle/*.jpg previews
 Export:   .venv/bin/python export.py   (after/any time during training)
 
-Sized for the RTX 3050 4GB laptop: yolo26n at 640px, batch 8, workers 4.
-Batch 16 fit the GPU fine but the dataloader workers' shared-memory buffers
-plus desktop apps exhausted system RAM overnight (kernel OOM-killed the run
-twice, 2026-07-27/28); batch 8 + 4 workers keeps the host RAM footprint small.
+Sized for the RTX 3050 4GB laptop: yolo26n at 640px, batch 8, workers 8.
+Batch 16 fit the GPU fine but its dataloader shared-memory footprint plus
+~10GB of other apps exhausted system RAM (kernel OOM-killed the run twice,
+2026-07-27/28). Close heavy apps (Java!) before unattended runs.
+
+Launch detached with APPEND redirection so restarts keep the log history:
+    setsid nohup .venv/bin/python train.py >> train.log 2>&1 &
 """
 
+from datetime import datetime
 from pathlib import Path
 
 from ultralytics import YOLO
@@ -23,8 +27,11 @@ RUN = ROOT / "runs" / "puddle"
 
 EPOCHS = 600      # effectively "until plateau": patience=50 stops it earlier
 BATCH = 8         # 16 fits the GPU but OOMs system RAM (see docstring)
-WORKERS = 4
+WORKERS = 8       # RAM budget allows 8 IF other big apps are closed first
 IMGSZ = 640
+
+print(f"\n{'=' * 30} train.py run @ {datetime.now():%Y-%m-%d %H:%M:%S} {'=' * 30}",
+      flush=True)
 
 last = RUN / "weights" / "last.pt"
 if last.exists():
