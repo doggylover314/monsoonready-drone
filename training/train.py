@@ -7,8 +7,10 @@ Run:      .venv/bin/python train.py
 Monitor:  runs/puddle/results.csv (mAP per epoch), runs/puddle/*.jpg previews
 Export:   .venv/bin/python export.py   (after/any time during training)
 
-Sized for the RTX 3050 4GB: yolo26n at 640px, batch 16 (run1 at batch 8 used
-only ~1GB). If you hit CUDA out-of-memory, drop BATCH back to 8.
+Sized for the RTX 3050 4GB laptop: yolo26n at 640px, batch 8, workers 4.
+Batch 16 fit the GPU fine but the dataloader workers' shared-memory buffers
+plus desktop apps exhausted system RAM overnight (kernel OOM-killed the run
+twice, 2026-07-27/28); batch 8 + 4 workers keeps the host RAM footprint small.
 """
 
 from pathlib import Path
@@ -20,13 +22,17 @@ DATA = ROOT / "dataset" / "data.yaml"
 RUN = ROOT / "runs" / "puddle"
 
 EPOCHS = 600      # effectively "until plateau": patience=50 stops it earlier
-BATCH = 16
+BATCH = 8         # 16 fits the GPU but OOMs system RAM (see docstring)
+WORKERS = 4
 IMGSZ = 640
 
 last = RUN / "weights" / "last.pt"
 if last.exists():
     print(f"Resuming from {last}")
-    YOLO(last).train(resume=True)
+    # batch/workers are in ultralytics' resume-overridable set ("allow arg
+    # updates to reduce memory"); the checkpoint carries batch=16 which OOMs
+    # host RAM, so they must be overridden here, not just in the fresh path.
+    YOLO(last).train(resume=True, batch=BATCH, workers=WORKERS)
 else:
     if not DATA.exists():
         raise SystemExit("dataset/data.yaml missing: run merge_datasets.py first")
@@ -37,6 +43,7 @@ else:
         data=str(DATA),
         epochs=EPOCHS,
         batch=BATCH,
+        workers=WORKERS,
         imgsz=IMGSZ,
         patience=50,
         project=str(RUN.parent),
