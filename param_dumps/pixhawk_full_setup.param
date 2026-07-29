@@ -44,12 +44,12 @@ RC8_OPTION,31             # 31 = Motor Emergency Stop / kill (VERIFY)
 SERIAL2_PROTOCOL,2        # TELEM2 = ESP32 obstacle module, MAVLink2
 SERIAL2_BAUD,115          # must equal ESP32 PIXHAWK_BAUD (115200)
 BRD_SER2_RTSCTS,0         # no flow-control pins wired on the ESP32 link. VERIFY name
-SERIAL4_PROTOCOL,2        # SERIAL4 = UNO Q, MAVLink2
-SERIAL4_BAUD,115
-SERIAL5_PROTOCOL,9        # SERIAL5 = TF-Luna, Rangefinder protocol. VERIFY 9=Rangefinder
-SERIAL5_BAUD,115          # TF-Luna default 115200
+SERIAL4_PROTOCOL,9        # SERIAL4 = TF-Luna, Rangefinder protocol (ports swapped at build 2026-07-27: user wired Luna to #4 lines). VERIFY 9=Rangefinder
+SERIAL4_BAUD,115          # TF-Luna default 115200
+SERIAL5_PROTOCOL,2        # SERIAL5 = UNO Q, MAVLink2 (swap upside: SERIAL5 boot noise now hits junk-tolerant pymavlink, not the Luna)
+SERIAL5_BAUD,115
 
-# --- Downward rangefinder: TF-Luna on SERIAL5 (option B split cable) ---
+# --- Downward rangefinder: TF-Luna on SERIAL4 (option B split cable, swapped 2026-07-27) ---
 RNGFND1_TYPE,20           # 20 = Benewake TFmini/TF-Luna serial. VERIFY on rangefinder wiki
 RNGFND1_ORIENT,25         # 25 = down
 RNGFND1_MIN,0.2           # m. If firmware shows RNGFND1_MIN_CM instead, use 20
