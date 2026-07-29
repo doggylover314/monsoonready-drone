@@ -62,7 +62,7 @@ TF-Luna-over-water risk: 850nm IR vs still water = dropout/specular; dropout pol
 ## TODO (live; ordered by dependency)
 NOW (bench, no flight):
 1. Training run1 finishes -> export.py -> scp ONNX to UNO Q -> benchmark fps + spot-check predictions on val images.
-2. Camera on UNO Q (cam currently disconnected): lsusb/v4l2 enumeration, focus lock, capture, full image->ONNX loop. Verify enumeration while board powered via 5V pin (not USB-C PSU).
+2. Camera on UNO Q: DONE 2026-07-29 (enumeration via ETZIN splitter on UBEC dumb 5V; 720p MJPG capture verified real JPEG; focus lock works as split transactions: focus_automatic_continuous=0 then focus_absolute=0). REMAINING: board venv rebuild + scp best.onnx (commands issued to user) -> fps benchmark + spot-check (assistant writes script, user runs) -> full image->ONNX loop. ONNX EXPORTED 2026-07-29 laptop: training/runs/puddle/weights/best.onnx 9.4MB, output (1,300,6) NMS-free end-to-end.
 3. Hopper build + salt flow test (user slot 2026-07-26); watch bridging/clumping (Bti granules differ; monsoon humidity).
 4. ESP32: flash fake-mode + GPIO4 jumper, verify serial lines; FAKE_VARY_CHANNEL sweep incl ch6.
 5. Boot-noise test RESCOPED to SERIAL4 (Luna's port after 2026-07-27 swap): ESP32 EN->GND as USB-serial; Pixhawk TX4->ESP32 TX0; watch 57600+115200 across power cycles. If noisy -> TF-Luna to I2C fallback (addr 0x10, pin5 low, Benewake I2C type, verify wiki). ALSO: push swapped SERIAL4/5_PROTOCOL params (setup file already edited) when Pixhawk next on USB.
