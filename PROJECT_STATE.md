@@ -102,7 +102,7 @@ Laptop training/.venv also carries: pymavlink 2.4.49, pyserial, yaml (via ultral
 ESP32 build env: PlatformIO NOT globally installed on laptop; user has PlatformIO VSCode extension (their build path); Claude's route = python venv with platformio pip pkg (toolchains cached in ~/.platformio, survive). Build outside the repo or .pio is gitignored anyway.
 Loaded-hover rule: if learned MOT_THST_HOVER > ~0.5 at full payload, trim payload (thrust margin thin; topic is user-settled, raise only via measured data).
 Thrust math never measured on F550: treat loaded hover log as the authority.
-gh CLI authed (account in PRIVATE.md). Git commits: NO Co-Authored-By trailer (user rule 2026-07-25).
+gh CLI authed (account in PRIVATE.md). Git commits: NO Co-Authored-By trailer (user rule 2026-07-25). Commit authorship (2026-07-29): repo-local user.email = the GitHub noreply address (exact string + user's real email in PRIVATE.md ONLY; noreply chosen because repo will go PUBLIC for judges = harvest-proof, identical attribution; pre-2026-07-29 commits author sleuther@localhost, left as-is, history never rewritten). RULE: no real personal emails in any committed file.
 QGC path + SSH key path: PRIVATE.md.
 mosquito dataset page has BibTeX for citation; license CC BY 4.0 requires attribution in docs.
 ESP32-as-USB-serial trick (for SERIAL5 sniff): ESP32 EN pin to GND holds chip in reset, its USB-UART bridge becomes passthrough; external TX -> board's TX0 pin -> PC.
