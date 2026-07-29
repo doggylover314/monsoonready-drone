@@ -68,6 +68,7 @@
   .tile .v { font-size: 26px; font-weight: 650; }
   .tile .k { color: var(--ink-2); font-size: 12px; }
   .tile .v.good { color: var(--good); }
+  .tile .v.bad { color: var(--critical); }
   #wrap { position: relative; margin: 0 20px; }
   #map {
     width: 100%; height: 62vh; min-height: 340px; display: block;
@@ -130,7 +131,7 @@
   <div class="tile"><div class="v" id="s-flights">–</div><div class="k">Flights</div></div>
   <div class="tile"><div class="v" id="s-det">–</div><div class="k">Detections</div></div>
   <div class="tile"><div class="v good" id="s-drop">–</div><div class="k">Treated (drops)</div></div>
-  <div class="tile"><div class="v" id="s-abort">–</div><div class="k">Aborts</div></div>
+  <div class="tile"><div class="v bad" id="s-abort">–</div><div class="k">Aborts</div></div>
   <div class="tile"><div class="v" id="s-pers">–</div><div class="k">Persistent sites</div></div>
 </div>
 
@@ -151,6 +152,7 @@
   <span class="chip"><svg width="14" height="14"><path d="M3 3l8 8M11 3l-8 8" stroke="#d03b3b" stroke-width="2.4"/></svg> abort (climbed away)</span>
   <span class="chip"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="var(--track)" stroke-width="2"/></svg> flight track</span>
   <span class="chip"><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="3 2.5"/></svg> persistent (&ge;2 flights)</span>
+  <span class="chip" style="margin-left:auto">scroll = zoom &middot; drag = pan &middot; double-click = reset</span>
 </div>
 
 <details id="tableBox">
@@ -295,6 +297,18 @@ const proj = {
   },
 };
 
+/* ---------- view transform (zoom/pan on top of the base fit) ----------
+   Applied by scaling the fitted projection: px' = px*k + t. Folding k,t
+   into proj.s/ox/oy after fit() keeps every consumer of proj (markers,
+   heatmap blob radius, cluster rings, scale bar) consistent for free. */
+const view = { k: 1, tx: 0, ty: 0 };
+
+function applyView() {
+  proj.s *= view.k;
+  proj.ox = proj.ox * view.k + view.tx;
+  proj.oy = proj.oy * view.k + view.ty;
+}
+
 /* ---------- rendering ---------- */
 function layer(id) { return $(id).checked; }
 
@@ -317,6 +331,7 @@ function render() {
 
   $('empty').style.display = proj.ok ? 'none' : 'grid';
   if (!proj.ok) return;
+  applyView();
 
   if (sm && layer('ly-site') && state.siteImg?.complete) {
     const a = proj.px(sm.lat_top, sm.lon_left), b = proj.px(sm.lat_bottom, sm.lon_right);
@@ -459,8 +474,49 @@ function chrome(w, h) {
   ctx.textAlign = 'left';
 }
 
+/* ---------- zoom / pan ---------- */
+let dragging = null;
+
+canvas.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+  const k2 = Math.min(64, Math.max(1, view.k * (ev.deltaY < 0 ? 1.25 : 0.8)));
+  const g = k2 / view.k;
+  // keep the world point under the cursor fixed while scaling
+  view.tx = mx * (1 - g) + view.tx * g;
+  view.ty = my * (1 - g) + view.ty * g;
+  view.k = k2;
+  if (view.k === 1) { view.tx = view.ty = 0; }   // fully out = snap home
+  canvas.style.cursor = view.k > 1 ? 'grab' : '';
+  render();
+}, { passive: false });
+
+canvas.addEventListener('mousedown', ev => {
+  if (view.k === 1) return;                      // nothing to pan at base zoom
+  dragging = { x: ev.clientX, y: ev.clientY };
+  canvas.style.cursor = 'grabbing';
+  $('tip').style.display = 'none';
+});
+window.addEventListener('mousemove', ev => {
+  if (!dragging) return;
+  view.tx += ev.clientX - dragging.x;
+  view.ty += ev.clientY - dragging.y;
+  dragging = { x: ev.clientX, y: ev.clientY };
+  render();
+});
+window.addEventListener('mouseup', () => {
+  if (dragging) { dragging = null; canvas.style.cursor = 'grab'; }
+});
+canvas.addEventListener('dblclick', () => {
+  view.k = 1; view.tx = view.ty = 0;
+  canvas.style.cursor = '';
+  render();
+});
+
 /* ---------- tooltip ---------- */
 canvas.addEventListener('mousemove', ev => {
+  if (dragging) return;
   const r = canvas.getBoundingClientRect();
   const mx = ev.clientX - r.left, my = ev.clientY - r.top;
   let best = null, bd = Infinity;

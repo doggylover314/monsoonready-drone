@@ -1,15 +1,21 @@
-"""Generate two plausible fake mission JSONL logs for dashboard development.
+"""Generate fake mission JSONL logs for dashboard development.
 
 Writes through uno_q/missionlog.MissionLog with an injected clock, so the
-schema stays defined in exactly one place. Produces:
+schema stays defined in exactly one place. Default = two curated flights:
 
   flight A (yesterday): full 25 m survey square, 3 detections ->
       2 treated (drops), 1 rangefinder-dropout abort
   flight B (today): shorter pass, re-detects one flight-A site ~3 m away
       (becomes a "persistent site" on the accumulated view) + 1 new site
 
+--flights N switches to RANDOM mode: N serpentine surveys, one per day,
+drawing detection sites from a shared pool so some recur across flights
+(persistence rings) and some are new; ~1 in 4 descents aborts. --seed makes
+a run reproducible.
+
 Usage (laptop or board; stdlib only):
     python gen_fake_mission.py [--data-dir ~/monsoonready_data]
+    python gen_fake_mission.py --flights 12 --seed 7   # big random dataset
 
 Then serve it:
     python app.py --data-dir ~/monsoonready_data
@@ -18,6 +24,7 @@ Then serve it:
 import argparse
 import math
 import os
+import random
 import sys
 import time
 from types import SimpleNamespace
@@ -131,13 +138,59 @@ def flight(data_dir, t0, plan):
     return log.path
 
 
+def random_plan(rng, pool):
+    """One serpentine survey with events drawn from / added to the shared
+    site pool (positions in metres N/E of home)."""
+    rows = rng.randrange(3, 7)
+    spacing = rng.uniform(8, 14)
+    width = rng.uniform(30, 70)
+    area_n, area_e = rows * spacing, width
+
+    events = []
+    for site in rng.sample(pool, min(len(pool), rng.randrange(0, 3))):
+        jit = (site[0] + rng.uniform(-3, 3), site[1] + rng.uniform(-3, 3))
+        events.append(jit)                       # revisit: persistent ring
+    for _ in range(rng.randrange(1, 4)):
+        site = (rng.uniform(2, area_n), rng.uniform(2, area_e))
+        pool.append(site)
+        events.append(site)
+    rng.shuffle(events)
+
+    plan = []
+    for i in range(rows):
+        n = i * spacing
+        e = width if i % 2 == 0 else 0.0
+        plan.append(('wp', (n, e)))
+    plan.append(('wp', (0.0, 0.0)))
+    for site in events:                          # detour events between legs
+        kind = 'treat' if rng.random() < 0.75 else 'abort'
+        conf = round(rng.uniform(0.55, 0.95) if kind == 'treat'
+                     else rng.uniform(0.4, 0.8), 2)
+        plan.insert(rng.randrange(1, len(plan)), (kind, (site, conf)))
+    return plan
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--data-dir', default='~/monsoonready_data')
+    ap.add_argument('--flights', type=int, default=None,
+                    help='random mode: generate N random flights, one per day')
+    ap.add_argument('--seed', type=int, default=None,
+                    help='random-mode reproducibility')
     args = ap.parse_args()
 
     day = 86400
     now = time.time()
+
+    if args.flights:
+        rng = random.Random(args.seed)
+        pool = []
+        paths = []
+        for i in range(args.flights):
+            t0 = now - (args.flights - i) * day + rng.uniform(-4, 4) * 3600
+            paths.append(flight(args.data_dir, t0, random_plan(rng, pool)))
+        print('wrote:', *paths, sep='\n  ')
+        return
     a = flight(args.data_dir, now - day - 3 * 3600, [
         ('wp', (25, 0)),
         ('treat', ((25, 12), 0.87)),
