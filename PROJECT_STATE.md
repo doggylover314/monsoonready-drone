@@ -106,6 +106,7 @@ gh CLI authed (account in PRIVATE.md). Git commits: NO Co-Authored-By trailer (u
 QGC path + SSH key path: PRIVATE.md.
 mosquito dataset page has BibTeX for citation; license CC BY 4.0 requires attribution in docs.
 ESP32-as-USB-serial trick (for SERIAL5 sniff): ESP32 EN pin to GND holds chip in reset, its USB-UART bridge becomes passthrough; external TX -> board's TX0 pin -> PC.
+3V3 sensor-rail budget VERIFIED 2026-07-27 from datasheets: TCA9548A Icc 20uA typ/35uA max (TI DS, 3.6V 400kHz); VL53L0X ~19mA typ ranging/~40mA peak/uA standby (ST DS); mux sequences so ~1 sensor ranges at a time; even impossible all-7-peak = 280mA. ESP32 dev-board 3V3 pin = onboard 5V->3.3V reg shared w/ ESP32 (WiFi unused): design fine on paper; VERIFY remaining = which regulator the actual board carries -> meter in series on 3V3 feed during 7-sensor bench test.
 Old OneDrive project copy may still exist at /home/sleuther/OneDrive/Documents/Coding/ (folder was moved 2026-07-25; treat /media/sleuther/Stuff as only truth).
 
 ## DECISION LOG (append here)
