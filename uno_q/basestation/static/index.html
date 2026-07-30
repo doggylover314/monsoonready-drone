@@ -6,35 +6,21 @@
 <title>MonsoonReady base station</title>
 <style>
   :root {
-    color-scheme: light;
-    --page:        #f9f9f7;
-    --surface:     #fcfcfb;
-    --ink:         #0b0b0b;
-    --ink-2:       #52514e;
-    --muted:       #898781;
-    --grid:        #e1e0d9;
-    --baseline:    #c3c2b7;
-    --border:      rgba(11,11,11,0.10);
-    --good:        #0ca30c;
-    --critical:    #d03b3b;
-    --det-dot:     #1c5cab;
-    --track:       #898781;
-    --site-dim:    0.55;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      color-scheme: dark;
-      --page:      #0d0d0d;
-      --surface:   #1a1a19;
-      --ink:       #ffffff;
-      --ink-2:     #c3c2b7;
-      --muted:     #898781;
-      --grid:      #2c2c2a;
-      --baseline:  #383835;
-      --border:    rgba(255,255,255,0.10);
-      --det-dot:   #86b6ef;
-      --site-dim:  0.40;
-    }
+    /* dark-only (light theme removed 2026-07-30, user request) */
+    color-scheme: dark;
+    --page:      #0d0d0d;
+    --surface:   #1a1a19;
+    --ink:       #ffffff;
+    --ink-2:     #c3c2b7;
+    --muted:     #898781;
+    --grid:      #2c2c2a;
+    --baseline:  #383835;
+    --border:    rgba(255,255,255,0.10);
+    --good:      #0ca30c;
+    --critical:  #d03b3b;
+    --det-dot:   #86b6ef;
+    --track:     #898781;
+    --site-dim:  0.40;
   }
   * { box-sizing: border-box; }
   body {
@@ -358,17 +344,6 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  if (layer('ly-det')) {
-    ctx.fillStyle = css('--det-dot');
-    for (const d of of('detection')) {
-      const p = proj.px(d.lat, d.lon);
-      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill();
-      state.hits.push({...p, r: 8, html:
-        `<b>Detection</b> conf ${d.conf?.toFixed(2)}<br>` +
-        `<span class="t">${fmtT(d.t)} &middot; ${d.mission}</span>`});
-    }
-  }
-
   if (layer('ly-drop')) for (const d of of('drop')) {
     const p = proj.px(d.lat, d.lon);
     ring(p, 9);
@@ -389,6 +364,21 @@ function render() {
     state.hits.push({...p, r: 11, html:
       `<b>Abort</b> ${a.reason}<br>` +
       `<span class="t">${fmtT(a.t)} &middot; ${a.mission}</span>`});
+  }
+
+  /* detections LAST so the dot stays visible on top of the bigger drop /
+     abort markers at the same spot (they'd fully occlude it otherwise) */
+  if (layer('ly-det')) {
+    ctx.lineWidth = 1.5;
+    for (const d of of('detection')) {
+      const p = proj.px(d.lat, d.lon);
+      ctx.fillStyle = css('--det-dot');
+      ctx.strokeStyle = css('--surface');
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill(); ctx.stroke();
+      state.hits.push({...p, r: 8, html:
+        `<b>Detection</b> conf ${d.conf?.toFixed(2)}<br>` +
+        `<span class="t">${fmtT(d.t)} &middot; ${d.mission}</span>`});
+    }
   }
 
   if (state.selected === 'all') for (const c of clusters()) {
@@ -543,7 +533,6 @@ for (const id of ['ly-heat','ly-det','ly-drop','ly-abort','ly-track','ly-site'])
   $(id).addEventListener('change', render);
 $('refresh').addEventListener('click', reload);
 window.addEventListener('resize', render);
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
 
 setInterval(async () => {   // pick up a new flight landing while we're open
   try {
