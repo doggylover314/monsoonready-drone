@@ -38,10 +38,13 @@ class Telemetry:
 
 
 class MavIO:
-    def __init__(self, conn_str, source_system=1, source_component=191):
+    def __init__(self, conn_str, source_system=1, source_component=191,
+                 baud=115200):
+        # baud is ignored by tcp:/udp: connection strings and applies to the
+        # serial device on the aircraft (SERIAL4/5 at 115200).
         self.conn = mavutil.mavlink_connection(
             conn_str, source_system=source_system,
-            source_component=source_component)
+            source_component=source_component, baud=baud)
         self.tel = Telemetry()
         self._mode_names = {}   # custom_mode -> name, filled after heartbeat
         self._last_setpoint_t = 0.0
@@ -151,6 +154,19 @@ class MavIO:
 
     def takeoff(self, alt_m):
         self.command_ack(mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, p7=alt_m)
+
+    def set_servo(self, channel, pwm_us):
+        """MAV_CMD_DO_SET_SERVO: drive a Pixhawk output directly.
+
+        channel is the SERVO output number (1-based, matching SERVOn_*
+        params), pwm_us the pulse width in microseconds. The output's
+        SERVOn_FUNCTION must be 0 (Disabled) for ArduPilot to hand manual
+        control of it to this command.
+        """
+        if not 800 <= pwm_us <= 2200:
+            raise ValueError(f"pwm_us out of servo range: {pwm_us}")
+        return self.command_ack(mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
+                                p1=channel, p2=pwm_us)
 
     def goto(self, lat, lon, rel_alt_m):
         """Guided position target (global frame, alt relative to home)."""

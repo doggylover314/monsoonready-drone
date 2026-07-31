@@ -6,6 +6,8 @@ real ONNX camera detector later must not change mission.py.
 
 import math
 
+from camera_geom import camera_to_ned, letterbox_to_frame
+
 
 class Detection:
     def __init__(self, lat, lon, confidence=1.0):
@@ -64,7 +66,8 @@ class OnnxDetector(DetectionSource):
     SIZE = 640
 
     def __init__(self, model_path, camera=1, conf=0.5, interval_s=1.0,
-                 skip_radius_m=8.0, frame_source=None, log=print):
+                 skip_radius_m=8.0, frame_source=None, log=print,
+                 geom=None, mount_yaw_deg=0.0):
         import numpy as np
         import onnxruntime as ort
         self._np = np
@@ -72,6 +75,9 @@ class OnnxDetector(DetectionSource):
         self.interval_s = interval_s
         self.skip_radius_m = skip_radius_m
         self.log = log
+        # geom: CameraGeometry, or None to keep the nadir assumption.
+        self.geom = geom
+        self.mount_yaw_deg = mount_yaw_deg
         self._last_t = 0.0
         self._fired = []          # (lat, lon) of every past fire
         self._warned = False
@@ -139,15 +145,42 @@ class OnnxDetector(DetectionSource):
         x = boxed[:, :, ::-1].transpose(2, 0, 1)[None].astype(np.float32) / 255
 
         out = self.sess.run(None, {self._in: x})[0][0]
-        best = max((float(r[4]) for r in out), default=0.0)
+        best, best_row = 0.0, None
+        for r in out:
+            c = float(r[4])
+            if c > best:
+                best, best_row = c, r
         if best < self.conf:
             return None
+
+        lat, lon, how = self._locate(tel, best_row, w, h)
+        # Dedup on the SITE, not on where the drone happened to be: the same
+        # puddle seen from two positions must resolve to one target.
         for flat, flon in self._fired:
-            if dist_m(tel.lat, tel.lon, flat, flon) <= self.skip_radius_m:
-                return None               # already treated this area
-        self._fired.append((tel.lat, tel.lon))
-        self.log(f"[detector] puddle conf {best:.2f} at nadir")
-        return Detection(tel.lat, tel.lon, best)
+            if dist_m(lat, lon, flat, flon) <= self.skip_radius_m:
+                return None               # already treated this site
+        self._fired.append((lat, lon))
+        self.log(f"[detector] puddle conf {best:.2f} {how}")
+        return Detection(lat, lon, best)
+
+    def _locate(self, tel, row, frame_w, frame_h):
+        """Detection box centre -> (lat, lon, description).
+
+        Falls back to the nadir assumption whenever the geometry is not
+        configured or the telemetry it needs is missing, so a lost heading
+        degrades the target to 'below us' instead of throwing mid-mission.
+        """
+        if (self.geom is None or tel.rel_alt_m is None or tel.rel_alt_m <= 0
+                or tel.heading_deg is None):
+            return tel.lat, tel.lon, 'at nadir'
+        cx = (float(row[0]) + float(row[2])) / 2
+        cy = (float(row[1]) + float(row[3])) / 2
+        px, py = letterbox_to_frame(cx, cy, frame_w, frame_h, self.SIZE)
+        right_m, down_m = self.geom.ground_offset(px, py, tel.rel_alt_m)
+        n, e = camera_to_ned(right_m, down_m, tel.heading_deg,
+                             self.mount_yaw_deg)
+        lat, lon = offset_latlon(tel.lat, tel.lon, n, e)
+        return lat, lon, f"offset {n:+.1f}m N {e:+.1f}m E"
 
 
 def dist_m(lat1, lon1, lat2, lon2):
