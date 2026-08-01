@@ -118,7 +118,7 @@
   <div class="tile"><div class="v" id="s-det">–</div><div class="k">Detections</div></div>
   <div class="tile"><div class="v good" id="s-drop">–</div><div class="k">Treated (drops)</div></div>
   <div class="tile"><div class="v bad" id="s-abort">–</div><div class="k">Aborts</div></div>
-  <div class="tile"><div class="v" id="s-pers">–</div><div class="k">Persistent sites</div></div>
+  <div class="tile"><div class="v" id="s-pers">–</div><div class="k">Recurring sites</div></div>
 </div>
 
 <div id="wrap">
@@ -137,7 +137,7 @@
   <span class="chip"><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#0ca30c"/><path d="M4 7.4l2 2 4-4.5" stroke="#fff" stroke-width="1.8" fill="none"/></svg> treated (drop)</span>
   <span class="chip"><svg width="14" height="14"><path d="M3 3l8 8M11 3l-8 8" stroke="#d03b3b" stroke-width="2.4"/></svg> abort (climbed away)</span>
   <span class="chip"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="var(--track)" stroke-width="2"/></svg> flight track</span>
-  <span class="chip"><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="3 2.5"/></svg> persistent (&ge;2 flights)</span>
+  <span class="chip"><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="3 2.5"/></svg> recurring (&ge;2 flights)</span>
   <span class="chip" style="margin-left:auto">scroll = zoom &middot; drag = pan &middot; double-click = reset</span>
 </div>
 
@@ -153,7 +153,10 @@
 'use strict';
 /* Heat ramp: sequential blue, light->dark (validated reference palette). */
 const RAMP = ['#cde2fb','#9ec5f4','#6da7ec','#3987e5','#256abf','#1c5cab','#104281','#0d366b'];
-const PERSIST_RADIUS_M = 5, PERSIST_MIN_FLIGHTS = 2, BLOB_RADIUS_M = 8;
+/* Vocabulary and thresholds are uno_q/predict.py's; keep them in step.
+   RECURRING = seen on >=2 flights. PERSISTENT is stricter (>=3 flights
+   spanning >=7 days) and is predict.py's call to make, not the map's. */
+const PERSIST_RADIUS_M = 5, RECURRING_MIN_FLIGHTS = 2, BLOB_RADIUS_M = 8;
 
 const $ = id => document.getElementById(id);
 const canvas = $('map'), ctx = canvas.getContext('2d');
@@ -208,7 +211,7 @@ async function reload() {
 const of = kind => state.events.filter(e => e.e === kind);
 
 function clusters() {
-  // Greedy 2D clustering of detections; persistence = distinct flights >= 2.
+  // Greedy 2D clustering of detections; recurring = distinct flights >= 2.
   const cs = [];
   for (const d of of('detection')) {
     const p = proj.m(d.lat, d.lon);
@@ -222,7 +225,7 @@ function clusters() {
       best.flights.add(d.mission);
     } else cs.push({x: p.x, y: p.y, n: 1, flights: new Set([d.mission])});
   }
-  return cs.filter(c => c.flights.size >= PERSIST_MIN_FLIGHTS);
+  return cs.filter(c => c.flights.size >= RECURRING_MIN_FLIGHTS);
 }
 
 function stats() {
@@ -231,7 +234,7 @@ function stats() {
     : state.missions.filter(m => m.id === state.selected);
   $('s-flights').textContent = scope.length;
   $('s-det').textContent = of('detection').length;
-  $('s-drop').textContent = of('drop').length;
+  $('s-drop').textContent = of('drop').filter(d => d.ok !== false).length;
   $('s-abort').textContent = of('abort').length;
   $('s-pers').textContent = (proj.ok && state.selected === 'all') ? clusters().length : '–';
 }
@@ -344,17 +347,29 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
+  /* ok === false means the gate was commanded but never actuated, so the
+     site is NOT treated. Drawn hollow and red rather than hidden: a failed
+     drop is evidence, and it is exactly the thing a judge should be able to
+     see on the map. (Logs written before 2026-08-01 have no ok field; absent
+     means it worked, which is what the runner assumed at the time.) */
   if (layer('ly-drop')) for (const d of of('drop')) {
-    const p = proj.px(d.lat, d.lon);
+    const p = proj.px(d.lat, d.lon), ok = d.ok !== false;
     ring(p, 9);
-    ctx.fillStyle = '#0ca30c';
-    ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, 7); ctx.fill();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath();
-    ctx.moveTo(p.x - 3.5, p.y + 0.5); ctx.lineTo(p.x - 1, p.y + 3);
-    ctx.lineTo(p.x + 4, p.y - 3); ctx.stroke();
+    if (ok) {
+      ctx.fillStyle = '#0ca30c';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(p.x - 3.5, p.y + 0.5); ctx.lineTo(p.x - 1, p.y + 3);
+      ctx.lineTo(p.x + 4, p.y - 3); ctx.stroke();
+    } else {
+      ctx.strokeStyle = '#d03b3b'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, 7); ctx.stroke();
+      ctx.lineWidth = 2; xmark(p, 3.5);
+    }
     state.hits.push({...p, r: 11, html:
-      `<b>Treated</b> drop at rng ${d.rng?.toFixed(2)} m<br>` +
-      `<span class="t">${fmtT(d.t)} &middot; ${d.mission}</span>`});
+      (ok ? `<b>Treated</b> drop at rng ${d.rng?.toFixed(2)} m`
+          : `<b>Drop FAILED</b> gate did not actuate, site untreated`) +
+      `<br><span class="t">${fmtT(d.t)} &middot; ${d.mission}</span>`});
   }
 
   if (layer('ly-abort')) for (const a of of('abort')) {
@@ -389,7 +404,7 @@ function render() {
     ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke();
     ctx.setLineDash([]);
     state.hits.push({x, y, r: r + 4, html:
-      `<b>Persistent site</b> seen in ${c.flights.size} flights ` +
+      `<b>Recurring site</b> seen in ${c.flights.size} flights ` +
       `(${c.n} detections)<br><span class="t">stagnation candidate: ` +
       `re-inspect / treat</span>`});
   }

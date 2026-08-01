@@ -35,4 +35,4 @@ Machine and account details live in `PRIVATE.md` (gitignored; template
 - TF-Luna rangefinder on SERIAL5 gates every descent; loss of return aborts
   the descent upward.
 - ESP32 + 7x VL53L0X proximity ring on TELEM2.
-- SG90 servo gate hopper for granules.
+- MG90 (metal gear) servo gate hopper for granules.

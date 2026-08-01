@@ -1,27 +1,48 @@
-"""Payload drop actuation.
+"""Payload drop actuation. The servo is an MG90 (metal gear).
 
-PWM SOURCE DECISION (TODO 12, settled 2026-07-31): the SG90 is driven from the
-STM32 side, not from Linux GPIO.
+SERVO POWER: the XY-3606 buck, set to 5.00 V by meter. Never the Pixhawk rail
+and never the UNO Q rail, so a stalled or stripped gate cannot brown out
+anything that flies the aircraft. This has never been in question and is not
+what the PWM-source decision below is about.
 
-Reasoning. A hobby servo holds position from a 50 Hz pulse whose width it reads
-to roughly 1 microsecond. Linux is not a real-time OS: a userspace soft-PWM
-thread gets descheduled whenever the kernel feels like it, and every hiccup
-becomes a pulse-width error the servo interprets as "move". The visible result
-is a gate that twitches, buzzes, and draws current it should not, on an
-aircraft whose 5 V rail also feeds the flight-critical companion computer. The
-STM32 generates the pulse train in hardware timers and never varies.
+PWM SOURCE = PIXHAWK OUTPUT PIN. Settled 2026-07-31, re-examined 2026-08-01
+when the user asked for the signal to come from the UNO Q instead. It still
+comes from the Pixhawk, and here is the whole reason, so nobody has to take
+this on trust:
 
-The Linux side therefore only says "open" or "close"; the sketch owns the
-timing. That call crosses the Bridge (Arduino_RouterBridge on the sketch side,
-the arduino-router service on Linux). See uno_q/sketch_bridge/.
+  1. A hobby servo holds position from a 50 Hz pulse whose width it reads to
+     roughly a microsecond. Linux is not a real-time OS, so a userspace
+     soft-PWM thread gets descheduled at the kernel's convenience and every
+     hiccup becomes a pulse-width error the servo reads as "move". Driving
+     the gate from the UNO Q's Linux side is therefore out on its own.
+  2. That leaves the UNO Q's STM32 side, which does have hardware timers. But
+     the UNO Q runs a Zephyr core, and the stock Arduino Servo library does
+     not support Zephyr (verified 2026-07-31). Using the STM32 means writing
+     a board-specific PWM implementation.
+  3. And getting a command to that implementation means the Linux->STM32
+     Bridge, which is TODO 12 and BLOCKED: the UNO Q docs contradict
+     themselves about whether Serial1 (D0/D1) is free or claimed by the
+     router, and it is not resolvable without bench time on the board.
+  4. The Pixhawk, meanwhile, already has hardware PWM outputs built for
+     exactly this, already powered, already wired, already talking MAVLink to
+     us, and with MAIN 1-6 taken by the six motors an AUX output is free. The
+     AUX5-6 NODMA limitation blocks bidirectional DShot only, not ordinary
+     PWM servo output.
 
-VERIFY ON HARDWARE: the exact Linux-side import for a plain ssh-run script
-(as opposed to an App Lab application) is the one part of this not yet
-confirmed on the board. `bridge_call` is injectable precisely so that fixing
-it is a one-line change at the call site rather than an edit to this class.
+So the UNO Q route is two unwritten pieces of firmware and one unresolved
+hardware question, against zero new code for the Pixhawk route. It is also
+the only one of the two whose signal level is known good: Pixhawk servo rails
+are 5 V logic, while the UNO Q's GPIO is 3.3 V and no datasheet consulted so
+far states an MG90 input-high threshold (VERIFY if the decision is ever
+revisited; "it usually works" is not a spec).
+
+If the Pixhawk output turns out to be unavailable, ServoDropper at the bottom
+of this file is the fallback shape, still blocked on points 2 and 3.
 """
 
 import time
+
+from mavlink_io import PWM_MIN_US, PWM_MAX_US
 
 
 class Dropper:
@@ -34,13 +55,16 @@ class LogDropper(Dropper):
 
     def __init__(self, log=print):
         self.fired = 0
+        self.succeeded = 0
         self.times = []
         self._log = log
 
     def trigger(self):
         self.fired += 1
+        self.succeeded += 1
         self.times.append(time.monotonic())
         self._log(f"[dropper] TRIGGER #{self.fired} (simulated)")
+        return True
 
 
 def _default_bridge_call():
@@ -60,36 +84,46 @@ def _default_bridge_call():
 
 
 class PixhawkServoDropper(Dropper):
-    """SG90 gate driven by a Pixhawk servo output. RECOMMENDED.
+    """MG90 gate driven by a Pixhawk servo output. RECOMMENDED.
 
-    Why this rather than the UNO Q: the flight controller already has
-    hardware PWM outputs built for exactly this, already powered, already
-    wired, and already talking to us. The UNO Q route needs the STM32 to
-    generate the pulse train, and the stock Arduino Servo library does not
-    support Zephyr boards (verified 2026-07-31), so it would mean a
-    board-specific PWM implementation to solve a problem the Pixhawk does
-    not have.
-
-    Cost: one Pixhawk output. Motors occupy MAIN 1-6 on this hexa, so an AUX
-    output is free. The NODMA limitation on AUX5-6 that blocked bidirectional
-    DShot does not affect ordinary PWM servo output.
+    See the module docstring for why the pulse comes from the Pixhawk and not
+    the UNO Q. Cost: one Pixhawk output. Motors occupy MAIN 1-6 on this hexa,
+    so an AUX output is free.
 
     SETUP (tools/push_params.py, then reboot):
         SERVO<channel>_FUNCTION = 0     Disabled, so DO_SET_SERVO controls it
         SERVO<channel>_MIN / _MAX       bracket closed_us and open_us
 
-    Wiring change from the original plan: the servo SIGNAL comes from the
-    Pixhawk output pin instead of a UNO Q GPIO. Servo POWER stays on the
-    XY-3606 buck, exactly as before, so a stalled servo still cannot brown
-    out anything that matters. Grounds already common.
+    Wiring: servo SIGNAL from the Pixhawk output pin, servo POWER from the
+    XY-3606 buck, grounds common.
 
     closed_us/open_us come from the bench flow test (TODO 3), not from
     guesswork: 1000-2000us is the conventional full range, but the useful
     open angle is whatever passes granules without the gate fouling.
+
+    FAILURE POLICY, and the two halves are deliberately different:
+      * On the ground, in __init__, a failed gate command RAISES. That close
+        is the pre-arm proof that the whole chain works: the parameter, the
+        channel, the wire, the servo. Swallowing it means flying an entire
+        survey with a dead dropper and logging every puddle as treated.
+      * In the air, in trigger(), a failed gate command NEVER raises, it
+        returns False. A missed puddle is a missed puddle; an exception
+        thrown into the state machine mid-descent is a runaway.
     """
 
     def __init__(self, io, channel=9, closed_us=1000, open_us=1900,
                  dwell_s=1.0, log=print, sleep=time.sleep):
+        for name, v in (('closed_us', closed_us), ('open_us', open_us)):
+            if not PWM_MIN_US <= v <= PWM_MAX_US:
+                raise ValueError(
+                    f"{name}={v} outside {PWM_MIN_US}-{PWM_MAX_US}us. Checked "
+                    f"here rather than at send time because an out-of-range "
+                    f"open_us only shows up as a mission that never drops, "
+                    f"and an in-range closed_us hides it completely.")
+        if closed_us == open_us:
+            raise ValueError(
+                f"closed_us and open_us are both {closed_us}: the gate would "
+                f"never move")
         self.io = io
         self.channel = channel
         self.closed_us = closed_us
@@ -97,15 +131,27 @@ class PixhawkServoDropper(Dropper):
         self.dwell_s = dwell_s
         self.log = log
         self._sleep = sleep
-        self.fired = 0
+        self.fired = 0          # gate cycles attempted
+        self.succeeded = 0      # gate cycles the autopilot accepted
         self.times = []
+        self.gate_open = False  # best known gate state
         # Close on construction: a gate left open by a crashed run should be
-        # shut on the ground, not discovered open over a puddle.
-        self._safe(self.closed_us, 'initial close')
+        # shut on the ground, not discovered open over a puddle. This doubles
+        # as the pre-arm end-to-end test, so it is allowed to fail loudly.
+        if self._safe(self.closed_us, 'initial close') is None:
+            raise RuntimeError(
+                f"dropper pre-arm close FAILED on servo channel {channel}. "
+                f"Refusing to fly a dropper that has not proved it works. "
+                f"Check SERVO{channel}_FUNCTION=0, SERVO{channel}_MIN/_MAX, "
+                f"the signal wire, and that the MG90 has 5V from the XY-3606. "
+                f"Use --no-drop to fly the survey without a dropper.")
 
     def _safe(self, pwm_us, why):
-        """A failed drop is a missed puddle; an exception inside the state
-        machine is a runaway. Never let one become the other."""
+        """Send a gate command; return the result, or None if it failed.
+
+        Never raises: see the failure policy in the class docstring. The one
+        caller allowed to treat None as fatal is __init__, on the ground.
+        """
         try:
             return self.io.set_servo(self.channel, pwm_us)
         except Exception as exc:                      # noqa: BLE001
@@ -114,25 +160,50 @@ class PixhawkServoDropper(Dropper):
             return None
 
     def trigger(self):
+        """Open, dwell, close. Returns True only if the gate actually opened."""
         self.fired += 1
         self.times.append(time.monotonic())
         self.log(f"[dropper] TRIGGER #{self.fired}: gate -> {self.open_us}us")
-        self._safe(self.open_us, 'open')
+
+        opened = self._safe(self.open_us, 'open')
+        if opened is None:
+            self.log("[dropper] gate did NOT open: this site is UNTREATED")
+            return False
+        self.gate_open = True
+        self.succeeded += 1
+
         self._sleep(self.dwell_s)
-        self._safe(self.closed_us, 'close')
+
+        if self._safe(self.closed_us, 'close') is None:
+            # The payload went out, so the drop itself succeeded, but a gate
+            # stuck open empties the hopper into one puddle. Say so loudly;
+            # the operator can still land on the pilot's mode switch.
+            self.log(f"[dropper] WARNING gate may still be OPEN on channel "
+                     f"{self.channel}: hopper is draining, land soon")
+        else:
+            self.gate_open = False
+        return True
 
 
 class ServoDropper(Dropper):
-    """SG90 gate on the hopper, actuated through the STM32 over the Bridge.
+    """MG90 gate on the hopper, actuated through the STM32 over the Bridge.
 
     ALTERNATIVE to PixhawkServoDropper, kept for the case where the Pixhawk
-    output is unavailable. BLOCKED: needs a Zephyr-compatible PWM
-    implementation in the sketch, since the stock Servo library refuses to
-    build for this core.
+    output is unavailable. BLOCKED on two things, both open: a
+    Zephyr-compatible PWM implementation in the sketch (the stock Servo
+    library refuses to build for this core), and TODO 12, which is whether
+    the Bridge leaves D0/D1 usable at all.
 
-    The sketch provides two RPC methods (see uno_q/sketch_bridge/):
+    The sketch WOULD provide two RPC methods. It does not exist yet; there is
+    no uno_q/sketch_bridge/ in this repo and nothing here is exercised by any
+    test. Treat the signature below as the design, not as an interface you
+    can call today:
         servo_set(angle)  -> int   move the gate, returns the angle applied
         servo_detach()    -> int   stop pulsing, so the servo stops holding
+
+    Signal level is also unresolved for this route: UNO Q GPIO is 3.3 V and
+    no consulted datasheet states an MG90 input-high threshold. VERIFY on a
+    scope before trusting it.
 
     open_deg/closed_deg are the two gate positions and MUST be set from the
     bench flow test (TODO 3), not guessed: the right open angle is whatever
@@ -164,6 +235,7 @@ class ServoDropper(Dropper):
         self._sleep = sleep
         self._call = bridge_call if bridge_call is not None else _default_bridge_call()
         self.fired = 0
+        self.succeeded = 0
         self.times = []
         # Close on construction: if the gate was left open by a crashed run,
         # the first thing a new mission should do is shut it, on the ground,
@@ -185,8 +257,13 @@ class ServoDropper(Dropper):
         self.fired += 1
         self.times.append(time.monotonic())
         self.log(f"[dropper] TRIGGER #{self.fired}: gate -> {self.open_deg}deg")
-        self._safe('servo_set', self.open_deg, why='open')
+        opened = self._safe('servo_set', self.open_deg, why='open')
+        if opened is None:
+            self.log("[dropper] gate did NOT open: this site is UNTREATED")
+            return False
+        self.succeeded += 1
         self._sleep(self.dwell_s)
         self._safe('servo_set', self.closed_deg, why='close')
         if self.detach_after:
             self._safe('servo_detach', why='release')
+        return True

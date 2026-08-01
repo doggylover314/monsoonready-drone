@@ -40,12 +40,20 @@ import json
 import math
 import os
 import time
-from collections import defaultdict
 
 from detector import dist_m
 
-CLUSTER_RADIUS_M = 5.0     # same radius the dashboard uses for persistence
+CLUSTER_RADIUS_M = 5.0     # same radius the dashboard uses for clustering
 HALF_LIFE_DAYS = 14.0
+
+# Vocabulary shared with the dashboard, which draws a ring at RECURRING and
+# up. The two used to both say "persistent" while meaning different things
+# (dashboard: 2 flights; here: 3 flights over 7 days), so a judge could read
+# "persistent" off the map and "recurring" off this table for the same site.
+# This file holds the stricter definition and the dashboard follows it.
+RECURRING_MIN_FLIGHTS = 2
+PERSISTENT_MIN_FLIGHTS = 3
+PERSISTENT_MIN_SPAN_DAYS = 7.0
 
 
 class Site:
@@ -57,7 +65,8 @@ class Site:
         self._n = 1
         self.flights = set()
         self.detections = 0
-        self.drops = 0
+        self.drops = 0          # gate cycles that actually actuated
+        self.failed_drops = 0   # attempted but the gate never opened
         self.aborts = 0
         self.last_t = 0.0
         self.first_t = float('inf')
@@ -69,6 +78,14 @@ class Site:
         self.lat += (lat - self.lat) / self._n
         self.lon += (lon - self.lon) / self._n
         self.flights.add(mission_id)
+        self.stamp(t)
+
+    def stamp(self, t):
+        """Fold one event time in. t=None (missing or null in the log) is
+        ignored rather than treated as epoch zero, which used to turn one
+        undated event into a 20000-day span."""
+        if t is None:
+            return
         self.last_t = max(self.last_t, t)
         self.first_t = min(self.first_t, t)
 
@@ -79,8 +96,12 @@ class Site:
         return (self.last_t - self.first_t) / 86400.0
 
     def score(self, now, half_life_days=HALF_LIFE_DAYS):
+        if half_life_days <= 0:
+            raise ValueError(f"half_life_days must be > 0, got {half_life_days}")
         age_days = max(0.0, (now - self.last_t) / 86400.0)
         recency = math.pow(0.5, age_days / half_life_days)
+        # Only a drop that actually actuated counts as treatment. A gate that
+        # failed leaves the site untreated, so it must keep full priority.
         gap = 0.5 if self.drops > 0 else 1.0
         return len(self.flights) * recency * gap
 
@@ -88,11 +109,17 @@ class Site:
         """Plain-language label. Deliberately conservative wording: nothing
         here is allowed to assert that larvae are present."""
         n = len(self.flights)
-        if n >= 3 and self.span_days >= 7:
+        if n >= PERSISTENT_MIN_FLIGHTS and self.span_days >= PERSISTENT_MIN_SPAN_DAYS:
             return 'persistent (likely breeding site)'
-        if n >= 2:
+        if n >= RECURRING_MIN_FLIGHTS:
             return 'recurring (confirm next pass)'
         return 'single sighting (unconfirmed)'
+
+
+def _num(v):
+    """True if v is a usable number. Explicitly rejects bool, which is an int
+    in Python and would otherwise sail through as a coordinate."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
 def read_missions(data_dir):
@@ -124,9 +151,10 @@ def build_sites(data_dir, radius_m=CLUSTER_RADIUS_M):
             kind = ev.get('e')
             if kind not in ('detection', 'drop', 'abort'):
                 continue
-            lat, lon, t = ev.get('lat'), ev.get('lon'), ev.get('t', 0.0)
-            if lat is None or lon is None:
+            lat, lon = ev.get('lat'), ev.get('lon')
+            if not _num(lat) or not _num(lon):
                 continue
+            t = ev.get('t') if _num(ev.get('t')) else None
             hit = None
             for s in sites:
                 if dist_m(lat, lon, s.lat, s.lon) <= radius_m:
@@ -135,14 +163,19 @@ def build_sites(data_dir, radius_m=CLUSTER_RADIUS_M):
             if hit is None:
                 hit = Site(lat, lon)
                 hit.flights.add(mission_id)
-                hit.first_t = hit.last_t = t
+                hit.stamp(t)
                 sites.append(hit)
             else:
                 hit.absorb(lat, lon, mission_id, t)
             if kind == 'detection':
                 hit.detections += 1
             elif kind == 'drop':
-                hit.drops += 1
+                # ok is absent in logs written before 2026-08-01, when every
+                # recorded drop was assumed to have worked; absent means true.
+                if ev.get('ok', True):
+                    hit.drops += 1
+                else:
+                    hit.failed_drops += 1
             else:
                 hit.aborts += 1
     return sites
@@ -163,6 +196,10 @@ def main():
     ap.add_argument('--half-life-days', type=float, default=HALF_LIFE_DAYS)
     ap.add_argument('--json', action='store_true')
     args = ap.parse_args()
+    if args.half_life_days <= 0:
+        ap.error("--half-life-days must be > 0")
+    if args.radius_m <= 0:
+        ap.error("--radius-m must be > 0")
 
     now = time.time()
     sites = rank(args.data_dir, now, args.radius_m, args.half_life_days)
@@ -172,7 +209,8 @@ def main():
             'lat': round(s.lat, 7), 'lon': round(s.lon, 7),
             'score': round(s.score(now, args.half_life_days), 3),
             'flights': len(s.flights), 'detections': s.detections,
-            'drops': s.drops, 'aborts': s.aborts,
+            'drops': s.drops, 'failed_drops': s.failed_drops,
+            'aborts': s.aborts,
             'span_days': round(s.span_days, 1),
             'verdict': s.verdict(),
         } for s in sites], indent=2))

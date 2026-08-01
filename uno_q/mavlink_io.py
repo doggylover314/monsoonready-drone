@@ -15,6 +15,12 @@ from pymavlink import mavutil
 # ArduPilot rejects guided setpoints older than a few seconds; resend at 5Hz.
 SETPOINT_RESEND_S = 0.2
 
+# Pulse widths outside this are refused. Wider than any sane gate position,
+# narrow enough to catch a typo before it reaches a servo. Shared with
+# dropper.py so the construction-time check and the send-time check agree.
+PWM_MIN_US = 800
+PWM_MAX_US = 2200
+
 # POSITION_TARGET_TYPEMASK: use position only / velocity only.
 MASK_POSITION_ONLY = 0x0DF8  # ignore vel+accel+yaw+yaw_rate
 MASK_VELOCITY_ONLY = 0x0DC7  # ignore pos+accel+yaw+yaw_rate
@@ -28,6 +34,12 @@ class Telemetry:
         self.lon = None            # deg
         self.rel_alt_m = None      # above home
         self.heading_deg = None
+        # Ground-frame velocity, NED, m/s. vd is positive DOWNWARD, so a
+        # descent reads positive. mission.py uses it to confirm the aircraft
+        # has actually stopped before the gate opens.
+        self.vn_mps = None
+        self.ve_mps = None
+        self.vd_mps = None
         self.pos_t = 0.0
         self.rng_m = None          # downward rangefinder, meters
         self.rng_valid = False
@@ -89,6 +101,9 @@ class MavIO:
             tel.lon = msg.lon / 1e7
             tel.rel_alt_m = msg.relative_alt / 1000.0
             tel.heading_deg = msg.hdg / 100.0 if msg.hdg != 65535 else None
+            tel.vn_mps = msg.vx / 100.0     # GLOBAL_POSITION_INT is cm/s
+            tel.ve_mps = msg.vy / 100.0
+            tel.vd_mps = msg.vz / 100.0
             tel.pos_t = now
         elif t == 'DISTANCE_SENSOR':
             # Only the downward-facing sensor (TF-Luna / SITL equivalent).
@@ -162,8 +177,13 @@ class MavIO:
         params), pwm_us the pulse width in microseconds. The output's
         SERVOn_FUNCTION must be 0 (Disabled) for ArduPilot to hand manual
         control of it to this command.
+
+        VERIFY ON THE BENCH: whether ArduPilot NACKs DO_SET_SERVO when
+        SERVOn_FUNCTION is not 0 is not confirmed from a primary source. Do
+        not rely on the ACK alone to prove the parameter is right; watch the
+        gate move.
         """
-        if not 800 <= pwm_us <= 2200:
+        if not PWM_MIN_US <= pwm_us <= PWM_MAX_US:
             raise ValueError(f"pwm_us out of servo range: {pwm_us}")
         return self.command_ack(mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
                                 p1=channel, p2=pwm_us)
@@ -177,10 +197,21 @@ class MavIO:
             int(lat * 1e7), int(lon * 1e7), rel_alt_m,
             0, 0, 0, 0, 0, 0, 0, 0)
 
-    def velocity_ned(self, vn, ve, vd):
-        """Guided velocity target; must be resent continuously (rate-limited)."""
+    def velocity_ned(self, vn, ve, vd, force=False):
+        """Guided velocity target; must be resent continuously (rate-limited).
+
+        force=True bypasses the rate limiter. That exists for one specific
+        case and it is a safety case: a CHANGE of setpoint must never be the
+        message the limiter happens to swallow. Resending "keep descending"
+        early is wasted bandwidth; dropping "stop descending" means the
+        autopilot keeps acting on the previous command, and the caller
+        carries on believing it has stopped (review finding 2026-08-01: the
+        gate opened ~0.65-1 m below the intended release height because the
+        zero-velocity setpoint before the drop was silently rate-limited
+        away).
+        """
         now = time.monotonic()
-        if now - self._last_setpoint_t < SETPOINT_RESEND_S:
+        if not force and now - self._last_setpoint_t < SETPOINT_RESEND_S:
             return
         self._last_setpoint_t = now
         self.conn.mav.set_position_target_local_ned_send(

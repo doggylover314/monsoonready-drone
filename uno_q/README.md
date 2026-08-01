@@ -24,8 +24,14 @@ served as a heatmap/report dashboard (see `basestation/README.md`).
 |------|---------|
 | `mavlink_io.py` | Link layer: connection, message intervals, telemetry pump, guided commands. No mission logic. |
 | `mission.py` | The state machine. **All** tunables live in `MissionConfig` at the top. |
-| `detector.py` | `DetectionSource` interface + `FakeDetector` (SITL) + `OnnxDetector` (stub) + lat/lon helpers |
-| `dropper.py` | `Dropper` interface + `LogDropper` (SITL) + `ServoDropper` (stub) |
+| `detector.py` | `DetectionSource` interface + `FakeDetector` (SITL) + `OnnxDetector` (camera + yolo26n ONNX, with camera-geometry offsets) + lat/lon helpers |
+| `dropper.py` | `Dropper` interface + `LogDropper` (SITL) + `PixhawkServoDropper` (MG90 on a Pixhawk output, the flight one) + `ServoDropper` (STM32-over-Bridge alternative, blocked) |
+| `camera_geom.py` | Nadir pinhole projection: detection pixel to ground offset to North/East. HFOV must be measured, not assumed. |
+| `test_camera_geom.py` | 24 geometry identity checks; runs anywhere, no hardware |
+| `run_mission.py` | The onboard runner: wires the real detector, dropper and log together, handles signals, and commands RTL on any failure |
+| `predict.py` | Recurrence scoring across past missions; read-only over the same JSONL |
+| `benchmark_onnx.py` | Single-image inference timing on the board |
+| `spotcheck_onnx.py` | Batch folder run producing results/annotated/grid for laptop-vs-board parity |
 | `sitl_test.py` | Scripted scenarios: nominal mission and rangefinder-dropout drill |
 | `sitl_rangefinder.parm` | SITL parameters mirroring the TF-Luna (0.2 to 8 m, downward) |
 | `missionlog.py` | Per-mission JSONL event log; the schema lives here and only here. Passed to `Mission` as `recorder=`; without it the mission logs nothing (SITL tests unchanged). |
@@ -229,11 +235,27 @@ reason.
 
 ## 8. On the aircraft
 
-Unchanged code; only the connection string differs, becoming the serial device
-the STM32 byte-shovel exposes (TODO 12). Three items remain open:
+`run_mission.py` is the onboard entry point. It wires the same `Mission` that
+SITL proves to the real detector, dropper and log:
+
+```
+setsid nohup ~/venv/bin/python ~/uno_q/run_mission.py \
+    --conn <serial device> --model ~/uno_q/best.onnx \
+    --waypoints waypoints.txt --hfov-deg <measured> \
+    > ~/mission.log 2>&1 &
+```
+
+`setsid` is not optional. Detached, the runner survives the ssh session that
+started it; attached, closing that session delivers SIGHUP to an aircraft that
+may be mid-descent.
+
+Three items remain open:
 
 | Item | Blocked on |
 |------|-----------|
-| `OnnxDetector` | Camera bench (TODO 2) and the v2 ONNX export from the training laptop |
-| Pixel → ground offset | Camera intrinsics + survey altitude. `FakeDetector` currently reports a target at the aircraft's own position. |
-| `ServoDropper` | PWM source decision (TODO 12): Linux userspace soft-PWM is jittery; the STM32 side via Bridge is the cleaner path |
+| `--conn` device | TODO 12. The UNO Q docs contradict themselves about whether D0/D1 (`Serial1`) is free or claimed by the router, so no Linux tty for the Pixhawk is confirmed yet. There is deliberately no default. |
+| Measured HFOV | `camera_geom.calibrate_fov()` with a tape measure, camera in its final housing. Until then `DEFAULT_HFOV_DEG` is a placeholder and offset error is proportional to FOV error. |
+| Servo parameters | `SERVO<n>_FUNCTION=0` plus `SERVO<n>_MIN`/`_MAX` must be pushed before `DO_SET_SERVO` does anything, and the channel is not chosen yet (TODO 8). |
+
+The PWM source question is settled: the pulse comes from a Pixhawk output,
+not the UNO Q. `dropper.py`'s module docstring carries the full reasoning.

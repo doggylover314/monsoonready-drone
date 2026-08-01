@@ -5,8 +5,12 @@ real ONNX camera detector later must not change mission.py.
 """
 
 import math
+import time
 
 from camera_geom import camera_to_ned, letterbox_to_frame
+
+# A rangefinder reading older than this is not trusted as an AGL source.
+RNG_FRESH_S = 1.0
 
 
 class Detection:
@@ -49,8 +53,10 @@ class OnnxDetector(DetectionSource):
     Preprocessing (letterbox 640, RGB, /255) is byte-identical to
     spotcheck_onnx.py, which proved laptop/board parity on 2026-07-29.
 
-    Detection position = the drone's own lat/lon (nadir assumption);
-    pixel->ground offset from camera intrinsics is a later refinement.
+    Detection position comes from camera_geom when a CameraGeometry is
+    supplied (box centre -> ground offset -> NED -> lat/lon), and degrades to
+    the drone's own lat/lon (nadir) whenever the geometry or the telemetry it
+    needs is missing. It never raises mid-mission for want of a heading.
 
     Behaviour shaped by the mission loop being single-threaded:
       - poll() runs capture+inference at most every interval_s (board
@@ -70,6 +76,12 @@ class OnnxDetector(DetectionSource):
                  geom=None, mount_yaw_deg=0.0):
         import numpy as np
         import onnxruntime as ort
+        # conf <= 0 would accept the end-to-end export's zero-confidence
+        # padding rows as detections (the (1,300,6) output is always 300 rows
+        # long, most of them empty), so the aircraft would fly to whatever
+        # pixel happened to sort first. Refuse it here.
+        if not 0 < conf <= 1:
+            raise ValueError(f"conf must be in (0, 1], got {conf}")
         self._np = np
         self.conf = conf
         self.interval_s = interval_s
@@ -81,6 +93,7 @@ class OnnxDetector(DetectionSource):
         self._last_t = 0.0
         self._fired = []          # (lat, lon) of every past fire
         self._warned = False
+        self._size_warned = False
         self.sess = ort.InferenceSession(
             model_path, providers=['CPUExecutionProvider'])
         self._in = self.sess.get_inputs()[0].name
@@ -115,8 +128,30 @@ class OnnxDetector(DetectionSource):
         ok, frame = self.cap.read()
         return frame if ok else None
 
+    def preflight(self):
+        """Bench check, called before arming. True if the camera works.
+
+        Exists because the alternative is discovering a dead camera by
+        flying an entire survey and landing with zero detections, which
+        looks identical to "there were no puddles".
+        """
+        frame = self._grab()
+        if frame is None:
+            self.log("[detector] PREFLIGHT FAIL: no frame from the camera")
+            return False
+        h, w = frame.shape[:2]
+        self.log(f"[detector] preflight ok: {w}x{h} frame")
+        if self.geom is not None and (w, h) != (self.geom.width,
+                                                self.geom.height):
+            self.log(f"[detector] PREFLIGHT FAIL: camera negotiated {w}x{h} "
+                     f"but the geometry was built for {self.geom.width}x"
+                     f"{self.geom.height}. Fix --frame-w/--frame-h (and "
+                     f"remeasure the FOV at that resolution) rather than "
+                     f"flying with offsets scaled by the wrong factor.")
+            return False
+        return True
+
     def poll(self, tel):
-        import time
         if tel.lat is None:
             return None
         now = time.monotonic()
@@ -134,6 +169,19 @@ class OnnxDetector(DetectionSource):
 
         np = self._np
         h, w = frame.shape[:2]
+        # The geometry is only valid at the resolution it was built for. If
+        # MJPG negotiation quietly fell back to something else mid-flight,
+        # every offset would be scaled wrong with no visible symptom, so drop
+        # to the nadir assumption instead: a known bounded error beats an
+        # invisible systematic one.
+        if self.geom is not None and (w, h) != (self.geom.width,
+                                                self.geom.height):
+            if not self._size_warned:
+                self.log(f"[detector] frame is {w}x{h}, geometry expects "
+                         f"{self.geom.width}x{self.geom.height}: falling back "
+                         f"to nadir for the rest of the flight")
+                self._size_warned = True
+            self.geom = None
         s = min(self.SIZE / h, self.SIZE / w)
         nh, nw = round(h * s), round(w * s)
         top, left = (self.SIZE - nh) // 2, (self.SIZE - nw) // 2
@@ -145,23 +193,44 @@ class OnnxDetector(DetectionSource):
         x = boxed[:, :, ::-1].transpose(2, 0, 1)[None].astype(np.float32) / 255
 
         out = self.sess.run(None, {self._in: x})[0][0]
-        best, best_row = 0.0, None
-        for r in out:
-            c = float(r[4])
-            if c > best:
-                best, best_row = c, r
-        if best < self.conf:
-            return None
+        # EVERY row above threshold, best first, not just the argmax. A single
+        # frame routinely holds a puddle we already treated and one we have
+        # not; taking only the strongest row means the treated one suppresses
+        # its neighbour on every frame until it leaves the footprint.
+        rows = sorted((r for r in out if float(r[4]) >= self.conf),
+                      key=lambda r: -float(r[4]))
+        for row in rows:
+            conf = float(row[4])
+            lat, lon, how = self._locate(tel, row, w, h)
+            # Dedup on the SITE, not on where the drone happened to be: the
+            # same puddle seen from two positions must resolve to one target.
+            if any(dist_m(lat, lon, flat, flon) <= self.skip_radius_m
+                   for flat, flon in self._fired):
+                continue                  # already treated this site
+            self._fired.append((lat, lon))
+            self.log(f"[detector] puddle conf {conf:.2f} {how}"
+                     + (f" ({len(rows)} candidates this frame)"
+                        if len(rows) > 1 else ""))
+            return Detection(lat, lon, conf)
+        return None
 
-        lat, lon, how = self._locate(tel, best_row, w, h)
-        # Dedup on the SITE, not on where the drone happened to be: the same
-        # puddle seen from two positions must resolve to one target.
-        for flat, flon in self._fired:
-            if dist_m(lat, lon, flat, flon) <= self.skip_radius_m:
-                return None               # already treated this site
-        self._fired.append((lat, lon))
-        self.log(f"[detector] puddle conf {best:.2f} {how}")
-        return Detection(lat, lon, best)
+    @staticmethod
+    def _height_agl(tel):
+        """Height above the ground the camera is looking at, and its source.
+
+        ground_offset()'s contract is AGL, not altitude above home, and the
+        two are only the same over ground level with the launch point. Prefer
+        the downward rangefinder whenever it has a fresh valid return, since
+        that IS the AGL by definition; fall back to the EKF's above-home
+        figure otherwise (which is what survey altitude will normally use,
+        the TF-Luna being blind above ~8 m).
+        """
+        if (tel.rng_valid and tel.rng_m is not None
+                and time.monotonic() - tel.rng_t < RNG_FRESH_S):
+            return tel.rng_m, 'rng'
+        if tel.rel_alt_m is not None and tel.rel_alt_m > 0:
+            return tel.rel_alt_m, 'ekf'
+        return None, 'none'
 
     def _locate(self, tel, row, frame_w, frame_h):
         """Detection box centre -> (lat, lon, description).
@@ -170,17 +239,18 @@ class OnnxDetector(DetectionSource):
         configured or the telemetry it needs is missing, so a lost heading
         degrades the target to 'below us' instead of throwing mid-mission.
         """
-        if (self.geom is None or tel.rel_alt_m is None or tel.rel_alt_m <= 0
+        height_m, source = self._height_agl(tel)
+        if (self.geom is None or height_m is None
                 or tel.heading_deg is None):
             return tel.lat, tel.lon, 'at nadir'
         cx = (float(row[0]) + float(row[2])) / 2
         cy = (float(row[1]) + float(row[3])) / 2
         px, py = letterbox_to_frame(cx, cy, frame_w, frame_h, self.SIZE)
-        right_m, down_m = self.geom.ground_offset(px, py, tel.rel_alt_m)
+        right_m, down_m = self.geom.ground_offset(px, py, height_m)
         n, e = camera_to_ned(right_m, down_m, tel.heading_deg,
                              self.mount_yaw_deg)
         lat, lon = offset_latlon(tel.lat, tel.lon, n, e)
-        return lat, lon, f"offset {n:+.1f}m N {e:+.1f}m E"
+        return lat, lon, f"offset {n:+.1f}m N {e:+.1f}m E @{height_m:.1f}m {source}"
 
 
 def dist_m(lat1, lon1, lat2, lon2):

@@ -23,3 +23,8 @@ PRIVATE.md
 
 # per-machine assistant/tooling config (launch.json etc.)
 .claude/
+
+# OS cruft. The repo goes public for judges; macOS folder-metadata blobs are
+# noise at best and leak local folder state at worst.
+.DS_Store
+Thumbs.db

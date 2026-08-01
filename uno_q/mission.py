@@ -4,6 +4,8 @@ States:
   IDLE -> TAKEOFF -> SURVEY -> APPROACH -> DESCEND -> DROP -> CLIMB -> SURVEY
   ... -> DONE (RTL). ABORT_CLIMB re-joins SURVEY. Any external mode change
   away from GUIDED => STANDDOWN (pilot has the aircraft; never fight them).
+  A should_stop() request from the runner => STOPPED, which still commands
+  end_mode: nobody has taken the aircraft, we are just leaving.
 
 Non-negotiable behaviors (PROJECT_STATE):
   * TARGET LATCHING: first detection at survey altitude locks the target
@@ -15,16 +17,26 @@ Non-negotiable behaviors (PROJECT_STATE):
     the first part of a 15m descent is legitimately blind, losing the ground
     return once we are low is not). Never descend blind past that point
     (TF-Luna 850nm specular risk over still water).
-  * No drop without a fresh, valid rangefinder reading at drop_alt_m.
+  * No drop without a fresh, valid rangefinder reading at drop_alt_m, and no
+    drop until the descent has actually ARRESTED (vd within settle_vd_mps).
+    Commanding a stop is not the same as having stopped, and the gate dwell
+    blocks the loop while whatever the autopilot last accepted continues.
   * EKF floor: rel_alt below (drop_alt_m - floor_margin_m) without the drop
     condition having fired => abort (altitude sources disagree).
 """
 
+import socket
 import subprocess
 import time
 from dataclasses import dataclass, field
 
 from detector import offset_latlon, dist_m
+
+
+def _port_in_use(port, host='127.0.0.1'):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.25)
+        return s.connect_ex((host, port)) == 0
 
 
 class _NoLog:
@@ -46,24 +58,43 @@ class MissionConfig:
     rng_timeout_s: float = 1.0
     rng_expect_m: float = 6.0      # EKF alt by which rangefinder must have acquired
     floor_margin_m: float = 1.0
-    drop_dwell_s: float = 2.0
+    drop_dwell_s: float = 2.0      # hold position AFTER the gate closes again
+    # The gate must not open while the aircraft is still sinking, or the
+    # granules leave from below the intended release height. DROP commands a
+    # stop and waits for the autopilot to actually achieve it, bounded by
+    # settle_max_s so a missing or noisy velocity feed can never hang a
+    # descent (drop anyway at that point: we are stopped-commanded and
+    # holding, which is the same place the old code dropped from).
+    settle_vd_mps: float = 0.15
+    settle_max_s: float = 3.0
     # descend-beside knobs; stay 0 until TF-Luna-over-water bench (TODO 6)
     lateral_offset_n_m: float = 0.0
     lateral_offset_e_m: float = 0.0
     end_mode: str = 'RTL'
-    # argv to launch the base station after DONE/STANDDOWN (None = don't).
+    # argv to launch the base station after the mission ends (None = don't).
     # The onboard runner sets this; SITL tests leave it off.
     basestation_cmd: list = None
+    basestation_port: int = 8080   # checked first, so we never double-launch
 
 
 class Mission:
-    def __init__(self, io, detector, dropper, cfg, log=print, recorder=None):
+    # Terminal states. STOPPED = the runner asked us to wind up (signal, ssh
+    # drop, operator Ctrl+C); unlike STANDDOWN the pilot has NOT taken the
+    # aircraft, so end_mode still gets commanded. Kept distinct from DONE so
+    # the log and the dashboard never show an interrupted flight as a
+    # completed survey.
+    TERMINAL = ('DONE', 'STANDDOWN', 'STOPPED')
+
+    def __init__(self, io, detector, dropper, cfg, log=print, recorder=None,
+                 should_stop=None):
         self.io = io
         self.det = detector
         self.dropper = dropper
         self.cfg = cfg
         self.log = log
         self.rec = recorder if recorder is not None else _NoLog()
+        # Returns a truthy reason string to wind the mission up, or None.
+        self.should_stop = should_stop
         self.state = 'IDLE'
         self.history = []          # (t, state, note)
         self.wp_i = 0
@@ -71,6 +102,8 @@ class Mission:
         self.abort_reason = None
         self._t_state = 0.0        # time of last state entry
         self._rng_acquired = False # ground return seen during current descent
+        self._t_dropped = None     # monotonic time the gate finished cycling
+        self._drop_ok = True       # did the last gate actuation report success
         # Test hook (dropout drill): below this rel_alt, pretend the
         # rangefinder went silent. None = disabled.
         self.rng_suppress_below_m = None
@@ -118,7 +151,7 @@ class Mission:
         io.takeoff(cfg.survey_alt_m)
         self._set('TAKEOFF')
 
-        while self.state not in ('DONE', 'STANDDOWN'):
+        while self.state not in self.TERMINAL:
             io.step()
             tel = io.tel
             self.rec.fix(tel, self.state)  # throttled inside the recorder
@@ -129,17 +162,49 @@ class Mission:
                 self._set('STANDDOWN', f"mode={tel.mode}, pilot has aircraft")
                 break
 
+            # Runner asked us to wind up (signal / lost console). Checked
+            # AFTER the pilot test and BEFORE the state handler so we never
+            # start a new descent on the way out.
+            if self.should_stop is not None:
+                why = self.should_stop()
+                if why:
+                    self._set('STOPPED', str(why))
+                    break
+
             getattr(self, '_st_' + self.state.lower())()
 
-        if self.state == 'DONE':
+        if self.state in ('DONE', 'STOPPED'):
             io.set_mode(cfg.end_mode)
-            self.log(f"[mission] complete, {cfg.end_mode} set")
-        self.rec.mission_end(self.state, getattr(self.dropper, 'fired', None))
-        if cfg.basestation_cmd:
-            # Fire-and-forget: base station outlives the mission process.
-            subprocess.Popen(cfg.basestation_cmd, start_new_session=True)
-            self.log(f"[mission] base station launched: {cfg.basestation_cmd}")
+            self.log(f"[mission] {self.state.lower()}, {cfg.end_mode} set")
+        # Count SUCCESSFUL gate cycles, not attempts: "drops: 3" on a judged
+        # dashboard has to mean three puddles got Bti.
+        self.rec.mission_end(
+            self.state,
+            getattr(self.dropper, 'succeeded',
+                    getattr(self.dropper, 'fired', None)))
+        self._launch_basestation()
         return self.state
+
+    def _launch_basestation(self):
+        """Fire-and-forget: the base station outlives the mission process.
+
+        Skipped if something already answers on its port, because a second
+        instance just dies on EADDRINUSE and the traceback lands in whatever
+        log the judge is least likely to be looking at.
+        """
+        cmd = self.cfg.basestation_cmd
+        if not cmd:
+            return
+        if _port_in_use(self.cfg.basestation_port):
+            self.log(f"[mission] base station already up on port "
+                     f"{self.cfg.basestation_port}, not launching a second")
+            return
+        try:
+            subprocess.Popen(cmd, start_new_session=True)
+        except OSError as exc:
+            self.log(f"[mission] base station launch FAILED: {exc}")
+            return
+        self.log(f"[mission] base station launched: {cmd}")
 
     # ---------- state handlers ----------
 
@@ -195,29 +260,88 @@ class Mission:
                 and tel.rel_alt_m < cfg.rng_expect_m):
             self._abort('no rangefinder acquisition by expected altitude')
             return
-        if fresh and tel.rng_m <= cfg.drop_alt_m:
-            self.io.velocity_ned(0, 0, 0)
-            self.dropper.trigger()
-            self.rec.drop(tel.lat, tel.lon, tel.rng_m)
-            self._set('DROP', f"rng={tel.rng_m:.2f}m")
-            return
-        # Altitude sources disagree => never keep descending.
-        if (tel.rel_alt_m is not None
-                and tel.rel_alt_m < cfg.drop_alt_m - cfg.floor_margin_m):
+        if self._below_floor():
+            # Altitude sources disagree => never keep descending.
             self._abort('EKF floor hit without rangefinder drop condition')
             return
+        if fresh and tel.rng_m <= cfg.drop_alt_m:
+            # Commanded stop goes out FORCED: this is a setpoint change, and
+            # the rate limiter must not be allowed to eat it (see
+            # mavlink_io.velocity_ned). The gate itself opens in _st_drop,
+            # once the aircraft has actually stopped.
+            self.io.velocity_ned(0, 0, 0, force=True)
+            self._t_dropped = None
+            self._set('DROP', f"rng={tel.rng_m:.2f}m, stopping before release")
+            return
         self.io.velocity_ned(0, 0, +cfg.descent_mps)
+
+    def _below_floor(self):
+        tel, cfg = self.io.tel, self.cfg
+        return (tel.rel_alt_m is not None
+                and tel.rel_alt_m < cfg.drop_alt_m - cfg.floor_margin_m)
+
+    def _stopped(self):
+        """True once the descent has actually arrested, or we have waited
+        long enough that continuing to wait is the bigger risk."""
+        if self._elapsed() >= self.cfg.settle_max_s:
+            self.log(f"[mission] settle timed out after "
+                     f"{self.cfg.settle_max_s:.1f}s, releasing anyway")
+            return True
+        vd = self.io.tel.vd_mps
+        if vd is None:
+            # No velocity feed: fall back to giving the autopilot a fixed
+            # window to act on the stop command.
+            return self._elapsed() >= self.cfg.settle_max_s / 2
+        return abs(vd) <= self.cfg.settle_vd_mps
 
     def _abort(self, reason):
         self.abort_reason = reason
         tel = self.io.tel
+        # Reverse the descent on THIS tick, forced past the rate limiter. An
+        # abort that waits up to 0.2 s for its setpoint slot is still
+        # descending during the part of the flight the abort exists for.
+        self.io.velocity_ned(0, 0, -self.cfg.climb_mps, force=True)
         self.rec.abort(tel.lat, tel.lon, reason)
         self._set('ABORT_CLIMB', reason)
 
     def _st_drop(self):
+        """Hold, stop, release, hold again.
+
+        Split in two because dropper.trigger() BLOCKS for the gate dwell: for
+        that whole second the state machine is not running, so whatever
+        setpoint the autopilot last accepted is what the aircraft is doing.
+        It had better be "stop".
+        """
+        # Rate-limited on purpose: the forced send that MATTERS already went
+        # out on the DESCEND->DROP transition. Forcing every tick here would
+        # push setpoints at the pump rate (~50 Hz) down a 115200 serial link
+        # shared with telemetry.
         self.io.velocity_ned(0, 0, 0)
-        if self._elapsed() >= self.cfg.drop_dwell_s:
-            self._set('CLIMB', 'treated')
+        tel = self.io.tel
+
+        if self._t_dropped is None:
+            if self._below_floor():
+                # Sank through the floor while settling: no release, climb.
+                self._abort('EKF floor hit while settling for release')
+                return
+            if not self._stopped():
+                return
+            ok = self.dropper.trigger()
+            self._t_dropped = time.monotonic()
+            self._drop_ok = ok is not False
+            # Record where the gate ACTUALLY opened, and whether it did. A
+            # dropper that failed must not leave a "treated" mark on the map
+            # (it would also halve predict.py's revisit score for a site that
+            # never got any Bti).
+            self.rec.drop(tel.lat, tel.lon,
+                          tel.rng_m if tel.rng_valid else None,
+                          ok=(ok is not False))
+            if ok is False:
+                self.log("[mission] DROP FAILED: gate did not actuate")
+            return
+
+        if time.monotonic() - self._t_dropped >= self.cfg.drop_dwell_s:
+            self._set('CLIMB', 'treated' if self._drop_ok else 'drop failed')
 
     def _st_climb(self):
         self._climb_then_resume()
@@ -238,6 +362,9 @@ class Mission:
         pass
 
     def _st_standdown(self):
+        pass
+
+    def _st_stopped(self):
         pass
 
     def _st_idle(self):

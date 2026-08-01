@@ -51,6 +51,20 @@ answer delivered confidently is worse than no answer. In every response:
 
 ## Project-specific standing rules
 
+- STATE-FIRST, EVERY MESSAGE (user, 2026-08-01): before finishing any reply,
+  write every logical bug, unfixable/deferred issue, decision, and
+  load-bearing fact discovered in that reply into PROJECT_STATE.md (or into
+  this file if it is a rule about how to behave rather than a project fact).
+  Never batch it for a later message and never leave it only in chat. The
+  user's words: "These files are your guiding forces, always obey them,
+  unless I contradict them explicitly." An explicit user contradiction wins;
+  nothing else does.
+- NO COMMANDS ON THE USER'S MACHINES (user, 2026-08-01): the assistant runs
+  nothing on the laptop or the UNO Q without explicit per-instance
+  permission. ALL git commands are pre-authorised. Every command the user
+  needs to run goes in ONE batched block at the END of the reply. A command
+  that starts a server (SITL, Flask) needs its own terminal; never chain one
+  with `&&` behind something that blocks.
 - Troubleshooting: analyze ArduPilot .bin logs (pymavlink) FIRST.
 - Sourcing: India (Robu.in, Amazon.in, FabToLab, FlyRobo, IndiaMART); avoid
   zbotic and hitechxyz. Do not re-suggest rejected options.

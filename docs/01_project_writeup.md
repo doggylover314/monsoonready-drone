@@ -72,7 +72,7 @@ narrow honest version survives questioning and the broad version does not.
 | Camera | **Logitech B525**, 720p UVC | Already owned, and UVC works on the UNO Q today, which outweighed any spec gain from a new part |
 | Height / descent | **Benewake TF-Luna**, serial, downward | Native ArduPilot support; true height above the water surface, and puddle size for dosing |
 | Obstacle ring | 7× **VL53L0X** on a **TCA9548A** mux, read by an **ESP32** | Cheapest proximity ring the flight controller understands natively |
-| Dispenser | **SG90** servo gate on a tube | No tank, no pump, no nozzle |
+| Dispenser | **MG90** servo gate on a tube | Metal gears, no tank, no pump, no nozzle |
 | Status display | 1.3in I²C **OLED** (SH1106) | Prearm pass/fail, satellites, EKF, mode, battery: field-readable with no laptop |
 | Telemetry | **433MHz SiK** | Ground monitoring during tests |
 | RC | **FlySky FS-i6X / FS-iA10B**, iBUS | 10 channels; dedicated arm and kill switches |

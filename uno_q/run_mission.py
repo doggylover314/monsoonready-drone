@@ -12,19 +12,49 @@ Wires the real parts together, where sitl_test.py wires the fake ones:
 Everything else, above all mission.py, is identical. That is the point: the
 state machine that was proven in simulation is the one that flies.
 
-    ~/venv/bin/python ~/uno_q/run_mission.py \
-        --conn /dev/ttyHS0 --model ~/uno_q/best.onnx \
-        --waypoints waypoints.txt --hfov-deg 58.2
+    setsid nohup ~/venv/bin/python ~/uno_q/run_mission.py \
+        --conn /dev/ttyUSB0 --model ~/uno_q/best.onnx \
+        --waypoints waypoints.txt --hfov-deg 58.2 \
+        > ~/mission.log 2>&1 &
+
+LAUNCH IT DETACHED, exactly like that. `setsid` puts the runner in its own
+session so closing the ssh connection does not deliver SIGHUP to an aircraft
+in the middle of a descent. This is the primary defence; the signal handling
+below is the backstop for when it was forgotten.
+
+--conn: no Linux tty for the Pixhawk exists on the board yet (PROJECT_STATE
+TODO 12: whether D0/D1 is usable is unresolved and must be tested on the
+board). There is deliberately no default, so this fails at the argument
+parser rather than by silently opening the wrong device.
 
 Waypoint file: one "lat,lon" per line, blank lines and #comments ignored.
 
 DRY RUN FIRST. --no-drop swaps in the logging dropper so the whole loop can
 be flown with nothing to clean up afterwards, and --dry-run additionally
 refuses to arm, so the detector and the log can be exercised on the bench.
+
+CONTAINMENT. Everything from arming onward is wrapped, because the failure
+this protects against is specific and bad: the old runner called
+Mission.run() bare, so any exception, or a SIGHUP from a dropped ssh
+session, killed the loop wherever it stood. Mid-DESCEND that leaves a copter
+a few metres over water with the autopilot still holding the last velocity
+setpoint it was given and nothing left alive to send another. Now:
+
+  * SIGINT / SIGTERM / SIGHUP ask the state machine to wind up at the next
+    tick, which commands RTL through the normal path;
+  * any exception out of run() triggers a best-effort RTL and is logged;
+  * the mission log is closed either way, so the flight is never missing its
+    mission_end record.
+
+What this still cannot cover: SIGKILL, a panic, or the UNO Q losing power.
+Nothing in userspace can. In those cases the aircraft holds position in
+GUIDED and the backstops are the pilot's mode switch and the battery
+failsafe, which is the same place the design has always put final authority.
 """
 
 import argparse
 import os
+import signal
 import sys
 import time
 
@@ -38,7 +68,11 @@ from missionlog import MissionLog
 
 def read_waypoints(path):
     wps = []
-    with open(os.path.expanduser(path)) as f:
+    try:
+        f = open(os.path.expanduser(path))
+    except OSError as exc:
+        sys.exit(f"waypoint file unreadable: {exc}")
+    with f:
         for n, line in enumerate(f, 1):
             line = line.split('#', 1)[0].strip()
             if not line:
@@ -55,8 +89,10 @@ def read_waypoints(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--conn', default='/dev/ttyHS0',
-                    help='serial device or SITL tcp: string')
+    ap.add_argument('--conn', required=True,
+                    help='serial device (e.g. /dev/ttyUSB0) or SITL tcp: '
+                         'string. No default on purpose: the board has no '
+                         'confirmed Pixhawk tty yet, see PROJECT_STATE TODO 12')
     ap.add_argument('--baud', type=int, default=115200)
     ap.add_argument('--model', default='~/uno_q/best.onnx')
     ap.add_argument('--waypoints', required=True)
@@ -104,14 +140,42 @@ def main():
 
     detector = OnnxDetector(model, camera=args.camera, conf=args.conf,
                             geom=geom, mount_yaw_deg=args.mount_yaw_deg)
+    if not detector.preflight():
+        sys.exit("[run] camera preflight failed, refusing to fly a blind survey")
 
-    if args.no_drop or args.dry_run:
+    if args.dry_run:
+        # Deliberately BEFORE the MissionLog is created. Building it first
+        # left a phantom "in progress" flight on the judged dashboard after
+        # every bench dry-run.
+        print("[run] DRY RUN: not arming. Polling the detector for 30s.")
+        deadline = time.monotonic() + 30
+        seen = 0
+        while time.monotonic() < deadline:
+            io.step()
+            det = detector.poll(io.tel)
+            if det:
+                seen += 1
+                print(f"[run] detection {det.lat:.7f},{det.lon:.7f} "
+                      f"conf {det.confidence:.2f}")
+        if io.tel.lat is None:
+            print("[run] NOTE: no GPS fix arrived, so the detector was never "
+                  "polled (it needs a position to attach a detection to). "
+                  "Indoors this is expected and the dry run proved nothing "
+                  "beyond the link and the camera.")
+        else:
+            print(f"[run] dry run complete, {seen} detection(s)")
+        return
+
+    if args.no_drop:
         dropper = LogDropper()
         print("[run] DROPS DISABLED (logging dropper)")
     else:
+        # Raises if the gate does not answer: that is the pre-arm test.
         dropper = PixhawkServoDropper(
             io, channel=args.servo_channel,
             closed_us=args.servo_closed_us, open_us=args.servo_open_us)
+        print(f"[run] dropper armed on servo channel {args.servo_channel} "
+              f"({args.servo_closed_us}us closed / {args.servo_open_us}us open)")
 
     recorder = MissionLog(args.data_dir)
     print(f"[run] logging to {recorder.path}")
@@ -125,21 +189,60 @@ def main():
     cfg = MissionConfig(waypoints=wps, survey_alt_m=args.survey_alt,
                         drop_alt_m=args.drop_alt, basestation_cmd=bs_cmd)
 
-    if args.dry_run:
-        print("[run] DRY RUN: not arming. Polling the detector for 30s.")
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            io.step()
-            det = detector.poll(io.tel)
-            if det:
-                print(f"[run] detection {det.lat:.7f},{det.lon:.7f} "
-                      f"conf {det.confidence:.2f}")
-        return
+    stop = {'why': None}
+
+    def _wind_up(signum, _frame):
+        # Signal handlers must do almost nothing: set a flag and return. The
+        # state machine notices on its next tick and exits through the normal
+        # path, which is what commands RTL and closes the log.
+        if stop['why'] is None:
+            stop['why'] = f"{signal.Signals(signum).name} received"
+            print(f"\n[run] {stop['why']}: winding up, {cfg.end_mode} at the "
+                  f"next tick")
+
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, _wind_up)
 
     print(f"[run] {len(wps)} waypoints, survey {args.survey_alt}m, "
           f"drop at {args.drop_alt}m rangefinder")
-    final = Mission(io, detector, dropper, cfg, recorder=recorder).run()
-    print(f"[run] finished in state {final}, drops={dropper.fired}")
+    mission = Mission(io, detector, dropper, cfg, recorder=recorder,
+                      should_stop=lambda: stop['why'])
+    try:
+        final = mission.run()
+        print(f"[run] finished in state {final}, "
+              f"drops={getattr(dropper, 'succeeded', dropper.fired)}")
+    except BaseException as exc:                       # noqa: BLE001
+        # Anything at all, including KeyboardInterrupt that landed between
+        # ticks. The aircraft is airborne; get it home before re-raising.
+        print(f"[run] MISSION RAISED in state {mission.state}: "
+              f"{type(exc).__name__}: {exc}")
+        _emergency_rtl(io, cfg.end_mode)
+        try:
+            recorder.mission_end(f'CRASHED:{mission.state}',
+                                 getattr(dropper, 'succeeded', None))
+        except Exception:                              # noqa: BLE001
+            pass
+        raise
+    finally:
+        try:
+            recorder.close()
+        except Exception:                              # noqa: BLE001
+            pass
+
+
+def _emergency_rtl(io, mode, attempts=3):
+    """Best effort, and it really is best effort: if the runner is dying
+    because the link died, this cannot work and says so rather than hanging."""
+    for i in range(1, attempts + 1):
+        try:
+            io.set_mode(mode)
+            print(f"[run] emergency {mode} commanded (attempt {i})")
+            return True
+        except Exception as exc:                       # noqa: BLE001
+            print(f"[run] emergency {mode} attempt {i} failed: {exc}")
+    print(f"[run] COULD NOT COMMAND {mode}. Aircraft is holding in GUIDED. "
+          f"PILOT: take it on the mode switch.")
+    return False
 
 
 if __name__ == '__main__':

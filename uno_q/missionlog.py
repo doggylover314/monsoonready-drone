@@ -12,7 +12,12 @@ Event schema (field "e" discriminates):
   state          t, from, to, note      state machine transition
   detection      t, lat, lon, conf      raw detector fire (pre-offset)
   latch          t, lat, lon            latched target (after lateral offset)
-  drop           t, lat, lon, rng      payload released
+  drop           t, lat, lon, rng, ok  payload release attempted; ok=false
+                                       means the gate did not actuate, so
+                                       the site is NOT treated (readers that
+                                       count treatments must check it; absent
+                                       ok means true, for logs written before
+                                       2026-08-01)
   abort          t, lat, lon, reason   descent aborted upward
   mission_end    t, final, drops
 
@@ -71,8 +76,8 @@ class MissionLog:
     def latch(self, lat, lon):
         self._w('latch', lat=lat, lon=lon)
 
-    def drop(self, lat, lon, rng):
-        self._w('drop', lat=lat, lon=lon, rng=rng)
+    def drop(self, lat, lon, rng, ok=True):
+        self._w('drop', lat=lat, lon=lon, rng=rng, ok=bool(ok))
 
     def abort(self, lat, lon, reason):
         self._w('abort', lat=lat, lon=lon, reason=reason)

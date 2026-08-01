@@ -88,8 +88,13 @@ def camera_to_ned(right_m, down_m, heading_deg, mount_yaw_deg=0.0):
     """Rotate a camera-frame offset into (north_m, east_m).
 
     heading_deg: aircraft heading, degrees clockwise from north (MAVLink hdg).
-    mount_yaw_deg: camera rotation within the airframe, clockwise, 0 when the
-        top of the image points out the nose of the aircraft.
+    mount_yaw_deg: camera rotation within the airframe. 0 when the top of the
+        image points out the nose. Positive is clockwise AS SEEN IN THE IMAGE,
+        which for a belly-mounted downward camera means clockwise looking UP
+        at the aircraft from the ground, not looking down at it from above.
+        Stated explicitly because the sign is otherwise a coin flip: rotate
+        the camera 90 degrees, fly the mission, and if targets land to the
+        left of the puddle instead of the right, negate this.
 
     With the camera looking down and its top edge toward the nose, image
     "up" (negative down_m) is aircraft forward, and image "right" is aircraft
