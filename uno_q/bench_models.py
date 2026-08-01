@@ -123,10 +123,17 @@ def main():
 
     import numpy as np
     import cv2
-    import onnxruntime as ort
-
-    # Silence the /sys/class/drm GPU-probe warning (no GPU on this board to
-    # find; the probe failing is the expected outcome, not a problem).
+    # ort 1.28 prints its /sys/class/drm GPU-probe warning AT IMPORT (before
+    # any severity call can exist), so the suppression is an fd-level stderr
+    # park around the import itself.
+    saved, devnull = os.dup(2), os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, 2)
+    try:
+        import onnxruntime as ort
+    finally:
+        os.dup2(saved, 2)
+        os.close(saved)
+        os.close(devnull)
     ort.set_default_logger_severity(3)
     print(f"onnxruntime {ort.__version__}, cpu count {os.cpu_count()}, "
           f"threads {args.threads or 'default'}")

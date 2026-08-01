@@ -14,6 +14,32 @@ from camera_geom import camera_to_ned, letterbox_to_frame
 RNG_FRESH_S = 1.0
 
 
+def quiet_import_onnxruntime():
+    """Import onnxruntime with stderr parked on /dev/null for the duration.
+
+    ort 1.28 probes /sys/class/drm for GPUs AT IMPORT TIME and warns loudly
+    when the probe fails, which on this GPU-less board is the expected
+    outcome every single run. set_default_logger_severity() cannot suppress
+    it: the function does not exist until the import that emits the warning
+    has already completed. The redirect is at the fd level because the
+    warning comes from C++ code that writes fd 2 directly, not sys.stderr.
+    A real import failure still surfaces: the exception propagates after
+    stderr is restored.
+    """
+    import os as _os
+    saved = _os.dup(2)
+    devnull = _os.open(_os.devnull, _os.O_WRONLY)
+    _os.dup2(devnull, 2)
+    try:
+        import onnxruntime as ort
+    finally:
+        _os.dup2(saved, 2)
+        _os.close(saved)
+        _os.close(devnull)
+    ort.set_default_logger_severity(3)   # errors only from here on, too
+    return ort
+
+
 class Detection:
     def __init__(self, lat, lon, confidence=1.0):
         self.lat = lat
@@ -182,11 +208,8 @@ class OnnxDetector(_RowResolver):
                  skip_radius_m=8.0, frame_source=None, log=print,
                  geom=None, mount_yaw_deg=0.0):
         import numpy as np
-        import onnxruntime as ort
+        ort = quiet_import_onnxruntime()
         self._init_resolver(conf, skip_radius_m, geom, mount_yaw_deg, log)
-        # Silence the harmless /sys/class/drm GPU-probe warning the UNO Q
-        # image triggers at session creation (no GPU to find); 3 = errors only.
-        ort.set_default_logger_severity(3)
         self._np = np
         self.interval_s = interval_s
         self._last_t = 0.0
