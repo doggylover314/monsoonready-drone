@@ -75,17 +75,21 @@ def bench(model_path, frames, np, cv2, ort, warmup, threads):
                                 providers=['CPUExecutionProvider'])
     inp = sess.get_inputs()[0]
     out_shape = sess.get_outputs()[0].shape
+    # Letterbox to the model's OWN input size, read from the ONNX, so a
+    # 1280-input export is benchmarked as itself instead of erroring on a
+    # 640 tensor. Dynamic-dim exports fall back to the mission's 640.
+    size = inp.shape[2] if isinstance(inp.shape[2], int) else SIZE
 
     # Warm up on a real frame: the first run pays for lazy kernel selection
     # and memory arena growth, and counting it would flatter every model that
     # happens to be measured with a short run.
     for _ in range(warmup):
-        sess.run(None, {inp.name: letterbox(frames[0], np, cv2)})
+        sess.run(None, {inp.name: letterbox(frames[0], np, cv2, size)})
 
     pre_ms, inf_ms = [], []
     for f in frames:
         t0 = time.perf_counter()
-        x = letterbox(f, np, cv2)
+        x = letterbox(f, np, cv2, size)
         t1 = time.perf_counter()
         sess.run(None, {inp.name: x})
         t2 = time.perf_counter()
