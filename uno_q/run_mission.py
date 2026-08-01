@@ -4,7 +4,9 @@ Wires the real parts together, where sitl_test.py wires the fake ones:
 
     sitl_test.py                 run_mission.py
     ------------                 --------------
-    FakeDetector (planted)       OnnxDetector (camera + yolo26n ONNX)
+    FakeDetector (planted)       FileDetector reading detect_worker.py's
+                                 output (camera + ONNX in their own process;
+                                 --inline-detector restores in-loop inference)
     LogDropper (prints)          PixhawkServoDropper (moves the gate)
     tcp:127.0.0.1:5760           /dev/ttyXXX at 115200 (SERIAL4/5)
     no base station              basestation_cmd set, launched on DONE
@@ -53,13 +55,16 @@ failsafe, which is the same place the design has always put final authority.
 """
 
 import argparse
+import atexit
 import os
 import signal
+import subprocess
 import sys
 import time
 
 from camera_geom import CameraGeometry
-from detector import OnnxDetector
+from detect_worker import DEFAULT_OUT as DET_FILE_DEFAULT
+from detector import FileDetector, OnnxDetector
 from dropper import LogDropper, PixhawkServoDropper
 from mavlink_io import MavIO
 from mission import Mission, MissionConfig
@@ -110,6 +115,11 @@ def main():
     ap.add_argument('--servo-channel', type=int, default=9)
     ap.add_argument('--servo-closed-us', type=int, default=1000)
     ap.add_argument('--servo-open-us', type=int, default=1900)
+    ap.add_argument('--det-file', default=DET_FILE_DEFAULT,
+                    help='where detect_worker.py publishes results')
+    ap.add_argument('--inline-detector', action='store_true',
+                    help='old behaviour: inference inside the mission loop, '
+                         'blocking it for the model latency each poll')
     ap.add_argument('--no-drop', action='store_true',
                     help='log drops instead of moving the servo')
     ap.add_argument('--dry-run', action='store_true',
@@ -138,8 +148,18 @@ def main():
         print("[run] no --hfov-deg: detections assumed directly below "
               "the aircraft (nadir)")
 
-    detector = OnnxDetector(model, camera=args.camera, conf=args.conf,
-                            geom=geom, mount_yaw_deg=args.mount_yaw_deg)
+    # Detection default (2026-08-01): inference in its own PROCESS
+    # (detect_worker.py), results read from a file. Measured reason: in-line
+    # inference blocks this single-threaded loop 511ms/frame with yolo26n and
+    # 1518ms with yolo26s, during which no MAVLink is pumped and a pilot
+    # flipping the mode switch goes unnoticed.
+    if args.inline_detector:
+        detector = OnnxDetector(model, camera=args.camera, conf=args.conf,
+                                geom=geom, mount_yaw_deg=args.mount_yaw_deg)
+    else:
+        _spawn_or_reuse_worker(args, model)
+        detector = FileDetector(args.det_file, conf=args.conf,
+                                geom=geom, mount_yaw_deg=args.mount_yaw_deg)
     if not detector.preflight():
         sys.exit("[run] camera preflight failed, refusing to fly a blind survey")
 
@@ -228,6 +248,53 @@ def main():
             recorder.close()
         except Exception:                              # noqa: BLE001
             pass
+
+
+def _spawn_or_reuse_worker(args, model):
+    """Start detect_worker.py unless one is already publishing.
+
+    'Already publishing' = the output file is fresher than FileDetector's
+    staleness window, which is the same test FileDetector applies in flight:
+    whoever wrote that recently owns the camera. This covers both a
+    hand-started worker and one left behind by a SIGKILLed runner, and it is
+    what makes double-spawning (two processes fighting over one V4L2 device)
+    impossible from this entry point.
+
+    A worker WE spawn is stopped again at interpreter exit (atexit covers
+    every path out of main, including sys.exit and the wind-up-on-signal
+    path). A reused worker is left running: we did not start it.
+    """
+    det_file = os.path.expanduser(args.det_file)
+    try:
+        fresh = (time.time() - os.stat(det_file).st_mtime
+                 <= FileDetector.STALE_S)
+    except OSError:
+        fresh = False
+    if fresh:
+        print(f"[run] detect worker already publishing {det_file}, reusing it")
+        return None
+    worker_py = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'detect_worker.py')
+    log_path = os.path.expanduser('~/detect_worker.log')
+    with open(log_path, 'a') as logf:
+        proc = subprocess.Popen(
+            [sys.executable, worker_py, '--model', model,
+             '--camera', str(args.camera), '--conf', str(args.conf),
+             '--out', det_file],
+            stdout=logf, stderr=subprocess.STDOUT, start_new_session=True)
+    print(f"[run] detect worker spawned (pid {proc.pid}, log {log_path})")
+    atexit.register(_stop_worker, proc)
+    return proc
+
+
+def _stop_worker(proc):
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        print("[run] detect worker stopped")
 
 
 def _emergency_rtl(io, mode, attempts=3):

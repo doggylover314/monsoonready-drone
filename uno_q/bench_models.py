@@ -121,6 +121,9 @@ def main():
     import cv2
     import onnxruntime as ort
 
+    # Silence the /sys/class/drm GPU-probe warning (no GPU on this board to
+    # find; the probe failing is the expected outcome, not a problem).
+    ort.set_default_logger_severity(3)
     print(f"onnxruntime {ort.__version__}, cpu count {os.cpu_count()}, "
           f"threads {args.threads or 'default'}")
     frames = load_images(args.images, cv2, args.limit)

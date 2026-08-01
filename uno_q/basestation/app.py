@@ -66,7 +66,10 @@ def summarize(mission_id, events):
         't_end': events[-1]['t'] if events else None,
         'final': end[-1]['final'] if end else 'in progress / interrupted',
         'detections': len(by('detection')),
-        'drops': len(by('drop')),
+        # Only gates that actually actuated count as treatments, matching the
+        # dashboard tile and mission_end's dropper.succeeded. ok absent means
+        # true (pre-2026-08-01 logs predate the field).
+        'drops': len([e for e in by('drop') if e.get('ok', True)]),
         'aborts': len(by('abort')),
         'fixes': len(by('fix')),
     }
