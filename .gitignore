@@ -11,6 +11,9 @@ training/excluded/
 training/dataset/
 training/*.pt
 training/train.log
+# pretrained checkpoints download to CWD; variant ONNX exports are regenerable
+*.pt
+training/variants/
 *.zip
 
 # machine-generated param snapshots (board state, regenerate anytime;
