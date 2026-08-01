@@ -66,7 +66,10 @@ answer delivered confidently is worse than no answer. In every response:
 - NO COMMANDS ON THE USER'S MACHINES (user, 2026-08-01): the assistant runs
   nothing on the laptop or the UNO Q without explicit per-instance
   permission. ALL git commands are pre-authorised. Every command the user
-  needs to run goes in ONE batched block at the END of the reply. A command
+  needs to run goes in batched blocks at the END of the reply: ONE block PER
+  MACHINE, labeled BOARD or LAPTOP in bold above the block, never mixed
+  (2026-08-01: a mixed block was pasted wholesale into the board shell and
+  every laptop command errored). A command
   that starts a server (SITL, Flask) needs its own terminal; never chain one
   with `&&` behind something that blocks.
 - Troubleshooting: analyze ArduPilot .bin logs (pymavlink) FIRST.
