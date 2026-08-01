@@ -8,6 +8,10 @@ replaces prior chat context. Git discipline: run git pull --rebase BEFORE readin
 
 - Answer directly. No preamble, filler, affirmations, or trailing summary clauses.
 - Use plain prose or tight lists. No decorative headers for short answers.
+- HARD LIMIT (user, 2026-08-01, after repeated violations): default to under
+  ~200 words. Every problem, finding, or item is ONE bullet, one or two
+  sentences. Never a paragraph of prose per item. Detail belongs in
+  PROJECT_STATE.md, not in the reply. If the user wants more, they ask.
 - If a task is simple (formatting, grammar, short translation), note once that Haiku may suffice.
 - At 15+ messages, offer once to summarize key context for a fresh chat.
 - If the user requests a correction, note once that editing their last message saves tokens.
