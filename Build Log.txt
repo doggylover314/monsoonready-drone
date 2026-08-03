@@ -34,7 +34,6 @@ Camera: Logitech B525 USB webcam; already owned and UVC works on the UNO Q today
 Obstacle/Height Detection: 7x VL53L0X (one per arm, one pointing up) translated to MAVLink by an ESP32 through a TCA9548A multiplexer, chosen to minimise cost; plus a downward Benewake TF-Luna (native Pixhawk support) for extra range, descent precision, and puddle size for larvicide dosing.
 Geofencing: manual geofence exclusion zones also used during testing, as a precaution on top of the sensors.
 Larvicide: granular Bti, which kills only mosquito/blackfly/midge larvae and just has to land in the puddle; demo flights use inert salt to avoid pesticide regulation.
-Dispenser: SG90 servo as a gate on a small tube; cheapest possible actuator, no tank, pump, or nozzle.
+Dispenser: MG90 servo (metal gears for high precision) as a gate on a small tube; cheapest possible actuator, no tank, pump, or nozzle.
 Servo Power: XY-3606 buck converter as a separate 5V supply so a servo stall cannot brown out the UNO Q.
-OLED Status Display: the kit's 1.3 inch I2C OLED wired as a Pixhawk status display (prearm pass/fail, GPS satellites, EKF, mode, battery) so readiness is checkable at the field without a laptop.
-Parts Ordered: F550 frame kit, 3 spare arms, TF-Luna, SG90 servo, replacement power module, replacement buzzer, XY-3606 buck converter, second battery strap, spare 1045 props and nut caps, conformal coating, DF13 cable.
+OLED Status Display: the kit's 1.3 inch I2C OLED wired as a Pixhawk status display (prearm pass/fail, GPS satellites, EKF, mode, battery) so readiness is checkable at the field without a ground station.

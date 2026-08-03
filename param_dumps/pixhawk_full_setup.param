@@ -39,11 +39,14 @@ RC8_OPTION,31             # 31 = Motor Emergency Stop / kill (VERIFY)
 # RC6_OPTION,4            # 4 = RTL; UNCOMMENT once the spare 2-pos switch
 #                           channel is confirmed (was undocumented pre-reset)
 
-# --- Serial map (final, per July 2026 decision) ---
-# SERIAL1 (TELEM1) = SiK telemetry radio: leave at defaults (protocol 2, 57)
-SERIAL2_PROTOCOL,2        # TELEM2 = ESP32 obstacle module, MAVLink2
-SERIAL2_BAUD,115          # must equal ESP32 PIXHAWK_BAUD (115200)
-BRD_SER2_RTSCTS,0         # no flow-control pins wired on the ESP32 link. VERIFY name
+# --- Serial map (REVISED 2026-08-02: user wired TELEM1<->TELEM2 opposite to
+#     the July plan: ESP32 is on TELEM1, SiK on TELEM2. Params follow the
+#     wires, same rule as the 2026-07-27 SERIAL4/5 swap.) ---
+SERIAL1_PROTOCOL,2        # TELEM1 = ESP32 obstacle module, MAVLink2
+SERIAL1_BAUD,115          # must equal ESP32 PIXHAWK_BAUD (115200)
+BRD_SER1_RTSCTS,0         # no flow-control pins wired on the ESP32 link. VERIFY name
+SERIAL2_PROTOCOL,2        # TELEM2 = SiK telemetry radio, MAVLink2
+SERIAL2_BAUD,57           # SiK default 57600
 SERIAL4_PROTOCOL,9        # SERIAL4 = TF-Luna, Rangefinder protocol (ports swapped at build 2026-07-27: user wired Luna to #4 lines). VERIFY 9=Rangefinder
 SERIAL4_BAUD,115          # TF-Luna default 115200
 SERIAL5_PROTOCOL,2        # SERIAL5 = UNO Q, MAVLink2 (swap upside: SERIAL5 boot noise now hits junk-tolerant pymavlink, not the Luna)
@@ -73,6 +76,17 @@ AVOID_DIST_MAX,1.5        # m, non-GPS modes; must be < reliable sensor range
 AVOID_ACCEL_MAX,3
 AVOID_BACKUP_SPD,0.75
 AVOID_BACKUP_DZ,0.1
+
+# --- Dropper servo: MG90 on AUX OUT 6 = output channel 14 (MAIN1-8 are 1-8,
+#     AUX1-6 are 9-14; user-assigned 2026-08-02, servo not yet arrived, change
+#     all three if the channel moves). FUNCTION 0 frees the pin from the motor
+#     map so MAV_CMD_DO_SET_SERVO drives it; without this the command is
+#     silently ignored. MIN/MAX must bracket the dropper pulses (closed 1000 /
+#     open 1900 defaults in uno_q/dropper.py). AUX5-6 NODMA affects only
+#     bidir-DShot, plain PWM is fine here. ---
+SERVO14_FUNCTION,0
+SERVO14_MIN,800
+SERVO14_MAX,2200
 
 # --- Guided safety (UNO Q command link watchdog) ---
 GUID_TIMEOUT,3            # s without new commands -> stop and hover. VERIFY name

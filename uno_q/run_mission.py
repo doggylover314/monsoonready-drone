@@ -112,7 +112,10 @@ def main():
                     help='MEASURED horizontal FOV (camera_geom.calibrate_fov). '
                          'Omit to keep the nadir assumption.')
     ap.add_argument('--mount-yaw-deg', type=float, default=0.0)
-    ap.add_argument('--servo-channel', type=int, default=9)
+    ap.add_argument('--servo-channel', type=int, default=14,
+                    help='AUX OUT 6 = ch14 (user-assigned 2026-08-02); '
+                         'SERVO14_FUNCTION=0 must be pushed or DO_SET_SERVO '
+                         'is silently ignored')
     ap.add_argument('--servo-closed-us', type=int, default=1000)
     ap.add_argument('--servo-open-us', type=int, default=1900)
     ap.add_argument('--det-file', default=DET_FILE_DEFAULT,

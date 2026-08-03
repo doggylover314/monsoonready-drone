@@ -120,10 +120,11 @@ static const uint8_t SECTOR_FOR_CHANNEL[NUM_RING_SENSORS] __attribute__((unused)
 // -----------------------------------------------------------------------------
 // SERIAL PORTS
 // -----------------------------------------------------------------------------
-#define PIXHAWK_SERIAL Serial2 // hardware UART2 -> Pixhawk TELEM2
-#define PIXHAWK_TX_PIN 17      // ESP32 TX2 -> Pixhawk TELEM2 RX
-#define PIXHAWK_RX_PIN 16      // ESP32 RX2 <- Pixhawk TELEM2 TX
-#define PIXHAWK_BAUD 115200    // MUST equal ArduPilot SERIAL2_BAUD (115 = 115200)
+#define PIXHAWK_SERIAL Serial2 // hardware UART2 -> Pixhawk TELEM1 (user wired
+                               // TELEM1<->TELEM2 opposite to plan, 2026-08-02)
+#define PIXHAWK_TX_PIN 17      // ESP32 TX2 -> Pixhawk TELEM1 RX
+#define PIXHAWK_RX_PIN 16      // ESP32 RX2 <- Pixhawk TELEM1 TX
+#define PIXHAWK_BAUD 115200    // MUST equal ArduPilot SERIAL1_BAUD (115 = 115200)
 
 #define DEBUG_SERIAL Serial    // USB serial for the human-readable log
 #define DEBUG_BAUD 115200
