@@ -48,6 +48,56 @@ MAG_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_MAG
 GPS_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_GPS
 
 
+def wait_autopilot(m, timeout=30):
+    """Lock onto the AUTOPILOT's heartbeat, not whatever heartbeat lands first.
+
+    mavutil.wait_heartbeat() returns the first HEARTBEAT of ANY kind, and this
+    bus has two senders: the flight controller (sys 1 comp 1) and the ESP32
+    (sys 1 comp 195). When the ESP32's arrives first, wait_heartbeat returns
+    it, but pymavlink refuses to lock its sysid onto it (correctly: the ESP32
+    declares MAV_TYPE_ONBOARD_CONTROLLER + MAV_AUTOPILOT_INVALID, both of
+    which probably_vehicle_heartbeat() rejects). target_system is then left at
+    0 = BROADCAST, so every command goes out addressed to nobody in
+    particular and the acks do not come back reliably. That is exactly the
+    "no ack" seen on 2026-08-02, on the runs whose banner said "system 0".
+
+    So: keep reading until an actual autopilot heartbeat shows up, then pin
+    the target explicitly. Same filter mavlink_io.py already uses.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        hb = m.recv_match(type='HEARTBEAT', blocking=True, timeout=2)
+        if hb is None:
+            continue
+        if (hb.autopilot != mavutil.mavlink.MAV_AUTOPILOT_INVALID
+                and hb.get_srcComponent()
+                == mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1):
+            m.target_system = hb.get_srcSystem()
+            m.target_component = hb.get_srcComponent()
+            return True
+    return False
+
+
+def send_and_ack(m, cmd, *params, timeout=5.0):
+    """Send a COMMAND_LONG and wait for ITS ack.
+
+    Drains the receive backlog first: this link streams everything at 4 Hz and
+    a command sent on top of an unread pile means the ack is behind seconds of
+    stale telemetry. Matching on ack.command matters too, because the FC also
+    acks the stream requests this script makes.
+    """
+    while m.recv_match(blocking=False) is not None:
+        pass
+    p = list(params) + [0] * (7 - len(params))
+    m.mav.command_long_send(m.target_system, m.target_component, cmd, 0, *p)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ack = m.recv_match(type='COMMAND_ACK', blocking=True, timeout=1)
+        if ack is not None and ack.command == cmd:
+            return mavutil.mavlink.enums['MAV_RESULT'][ack.result].name
+    return 'NO ACK'
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--conn', default='/dev/ttyACM0')
@@ -68,11 +118,10 @@ def main():
     print(f"connecting {args.conn} ...")
     m = mavutil.mavlink_connection(args.conn, baud=args.baud,
                                    source_system=250)
-    hb = m.wait_heartbeat(timeout=30)
-    if hb is None:
-        raise SystemExit("FAIL: no heartbeat on USB at all")
-    print(f"heartbeat from system {m.target_system}\n"
-          f"listening {args.seconds:.0f}s ...")
+    if not wait_autopilot(m):
+        raise SystemExit("FAIL: no autopilot heartbeat on USB")
+    print(f"autopilot is system {m.target_system} component "
+          f"{m.target_component}\nlistening {args.seconds:.0f}s ...")
     # Ask for everything at a modest rate; ArduPilot honours this legacy
     # request and it is one call instead of one per message id.
     m.mav.request_data_stream_send(
@@ -165,27 +214,29 @@ def main():
         print(f"\nservo wiggle on ch{args.wiggle} (props off, watch the "
               f"gate): open 1900 ...")
         for us in (1900, 1000):
-            m.mav.command_long_send(
-                m.target_system, m.target_component,
-                mavutil.mavlink.MAV_CMD_DO_SET_SERVO, 0,
-                args.wiggle, us, 0, 0, 0, 0, 0)
-            ack = m.recv_match(type='COMMAND_ACK', blocking=True, timeout=3)
-            res = 'no ack' if ack is None else \
-                mavutil.mavlink.enums['MAV_RESULT'][ack.result].name
+            res = send_and_ack(m, mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
+                               args.wiggle, us)
             print(f"  {us}us -> {res}")
             time.sleep(1.5)
         print("  ack proves acceptance; movement is verified by eye. No "
               "movement + ACCEPTED = SERVOn_FUNCTION not 0, or wiring/power.")
 
     if args.motor_test:
-        motor_test(m, args.motors, args.motor_throttle)
+        motor_test(m, args.motors, args.motor_throttle, rc_live)
 
     print(f"\n{'ALL WIRED CHECKS PASS' if ok else 'SOMETHING FAILED, see above'}")
     raise SystemExit(0 if ok else 1)
 
 
-def motor_test(m, motors, throttle_pct):
+def motor_test(m, motors, throttle_pct, rc_live):
     """Spin each motor briefly, in ArduPilot's TEST ORDER, one at a time.
+
+    TRANSMITTER MUST BE ON. Observed 2026-08-02: identical commands at the
+    same 8% throttle did nothing with the TX off and spun the motors with it
+    on, so ArduPilot is gating the motor test on live RC input. (The exact
+    check in the firmware has not been read; the behaviour is empirical, but
+    it reproduced three times.) The check below refuses to send rather than
+    let a dead-quiet run look like broken ESCs.
 
     MAV_CMD_DO_MOTOR_TEST numbers motors in ArduPilot's test sequence, which
     for a hexa X goes clockwise from the front-right. That is the point of the
@@ -197,6 +248,11 @@ def motor_test(m, motors, throttle_pct):
     ArduPilot's hexa layout). Neither can be checked in software: this only
     commands the spin, your eyes do the verifying.
     """
+    if not rc_live:
+        print("\nMOTOR TEST SKIPPED: no live RC. Switch the transmitter on "
+              "and re-run; without it the commands are refused and every "
+              "motor looks dead.")
+        return
     print(f"\nMOTOR TEST: {motors} motors, {throttle_pct}% throttle, 2s each.")
     print("PROPS MUST BE OFF. Type 'spin' to continue, anything else aborts.")
     try:
@@ -207,17 +263,13 @@ def motor_test(m, motors, throttle_pct):
         print("  no console input available, aborted")
         return
     for i in range(1, motors + 1):
-        m.mav.command_long_send(
-            m.target_system, m.target_component,
-            mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST, 0,
-            i,                                            # motor number
+        res = send_and_ack(
+            m, mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
+            i,                                             # motor number
             mavutil.mavlink.MOTOR_TEST_THROTTLE_PERCENT,   # throttle type
             throttle_pct, 2,                               # value, seconds
             0,                                             # motor count
-            mavutil.mavlink.MOTOR_TEST_ORDER_DEFAULT, 0)
-        ack = m.recv_match(type='COMMAND_ACK', blocking=True, timeout=3)
-        res = 'no ack' if ack is None else \
-            mavutil.mavlink.enums['MAV_RESULT'][ack.result].name
+            mavutil.mavlink.MOTOR_TEST_ORDER_DEFAULT)
         print(f"  motor {i}: {res}  <- which arm spun? note it")
         time.sleep(3)
     print("  expected: 1 = front-right, then clockwise. Any other order is a "
