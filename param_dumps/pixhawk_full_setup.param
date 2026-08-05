@@ -77,16 +77,19 @@ AVOID_ACCEL_MAX,3
 AVOID_BACKUP_SPD,0.75
 AVOID_BACKUP_DZ,0.1
 
-# --- Dropper servo: MG90 on AUX OUT 6 = output channel 14 (MAIN1-8 are 1-8,
-#     AUX1-6 are 9-14; user-assigned 2026-08-02, servo not yet arrived, change
-#     all three if the channel moves). FUNCTION 0 frees the pin from the motor
-#     map so MAV_CMD_DO_SET_SERVO drives it; without this the command is
-#     silently ignored. MIN/MAX must bracket the dropper pulses (closed 1000 /
-#     open 1900 defaults in uno_q/dropper.py). AUX5-6 NODMA affects only
-#     bidir-DShot, plain PWM is fine here. ---
-SERVO14_FUNCTION,0
-SERVO14_MIN,800
-SERVO14_MAX,2200
+# --- Dropper servo: MG90 on AUX OUT 1 = output channel 9 (MAIN1-8 are
+#     SERVO1-8, AUX1-6 are SERVO9-14; user wired it to AUX1 on 2026-08-02,
+#     superseding the provisional AUX6/ch14 assignment). FUNCTION 0 frees the
+#     pin from the motor map so MAV_CMD_DO_SET_SERVO drives it; without this
+#     the command is silently ignored. MIN/MAX must bracket the dropper pulses
+#     (closed 1000 / open 1900 defaults in uno_q/dropper.py).
+#     NOTE: SERVO14_FUNCTION/MIN/MAX were pushed to the board on 2026-08-02
+#     before the channel was known. They are harmless (FUNCTION 0 = the output
+#     is simply not driven by anything) and are left alone rather than
+#     "cleaned up", since ch14 drives nothing either way. ---
+SERVO9_FUNCTION,0
+SERVO9_MIN,800
+SERVO9_MAX,2200
 
 # --- Guided safety (UNO Q command link watchdog) ---
 GUID_TIMEOUT,3            # s without new commands -> stop and hover. VERIFY name

@@ -19,14 +19,18 @@ Pixhawk on USB, battery or USB power, PROPS OFF. Listens for --seconds
              transmitting mode (fake mode needs the GPIO4 jumper)
   RC         RCIN: RC_CHANNELS values look live (transmitter must be ON;
              0/65535 everywhere = no RX signal)
-  SERVO      only with --wiggle N: DO_SET_SERVO open/close cycle. Needs
-             SERVOn_FUNCTION=0 pushed. WATCH THE GATE: an ack here proves the
-             command was accepted, only your eyes prove the servo moved.
+  UP-SENSOR  the 7th VL53L0X on mux ch6: upward DISTANCE_SENSOR flow
+             (needs RNGFND2_TYPE=10 pushed)
+  SERVO      only with --wiggle (bare flag = ch9 = AUX1): DO_SET_SERVO
+             open/close cycle. Needs SERVOn_FUNCTION=0 pushed. WATCH THE GATE:
+             an ack proves the command was accepted, only your eyes prove the
+             servo moved.
+  MOTORS     only with --motor-test, PROPS OFF: spins each motor in turn to
+             prove ESC wiring, motor order and direction (all verified by eye)
 
   NOT CHECKABLE FROM USB: SiK radio on TELEM2 (verify separately: QGC over
-  the radio link with USB unplugged), buzzer/switch (audible/visible),
-  ESCs/motors (QGC motor test, props off, calibration step), UNO Q SERIAL5
-  half (blocked on TODO 7 anyway).
+  the radio link with USB unplugged), buzzer/switch (audible/visible), OLED
+  (look at it), UNO Q SERIAL5 half (blocked on TODO 7 anyway).
 
 Uses only pymavlink (same venv as the other tools). Read-only except the
 explicit --wiggle.
@@ -49,9 +53,16 @@ def main():
     ap.add_argument('--conn', default='/dev/ttyACM0')
     ap.add_argument('--baud', type=int, default=115200)
     ap.add_argument('--seconds', type=float, default=25.0)
-    ap.add_argument('--wiggle', type=int, default=None, metavar='CH',
-                    help='cycle the dropper servo on this output channel '
-                         '(e.g. 14 = AUX6). Props off. Watch the gate.')
+    ap.add_argument('--wiggle', type=int, nargs='?', const=9, default=None,
+                    metavar='CH',
+                    help='cycle the dropper servo; bare flag = ch9 (AUX1, as '
+                         'wired). Props off. Watch the gate.')
+    ap.add_argument('--motor-test', action='store_true',
+                    help='PROPS OFF. Spin each of the 6 motors in turn at '
+                         'low throttle to prove ESC wiring and motor order.')
+    ap.add_argument('--motor-throttle', type=int, default=8,
+                    help='percent throttle for --motor-test (default 8)')
+    ap.add_argument('--motors', type=int, default=6)
     args = ap.parse_args()
 
     print(f"connecting {args.conn} ...")
@@ -130,12 +141,15 @@ def main():
                   f"{seen['rng_down']} downward DISTANCE_SENSOR msgs"
                   + (f", {rng_down_m:.2f} m" if rng_down_m is not None
                      else "") + " (0 = wire OR params not pushed)")
-    ok &= verdict('ESP32', seen['esp_hb'] > 0,
+    ok &= verdict('ESP32', seen['esp_hb'] > 0 and seen['obst'] > 0,
                   f"{seen['esp_hb']} comp195 heartbeats, "
-                  f"{seen['obst']} OBSTACLE_DISTANCE, "
-                  f"{seen['rng_up']} upward rangefinder "
-                  f"(hb only = alive but not transmitting: fake mode "
-                  f"without GPIO4 jumper)")
+                  f"{seen['obst']} OBSTACLE_DISTANCE (the 6-sensor ring). "
+                  f"Heartbeats but 0 ring msgs = alive and not transmitting: "
+                  f"in fake mode that means the GPIO4 jumper is missing")
+    ok &= verdict('UP-SENSOR', seen['rng_up'] > 0,
+                  f"{seen['rng_up']} upward DISTANCE_SENSOR msgs (mux ch6). "
+                  f"0 with the sensor wired = ch6 init failed; the ESP32 "
+                  f"serial monitor prints per-sensor init")
     ok &= verdict('RC', rc_live,
                   f"{seen['rc_msgs']} RC_CHANNELS msgs, "
                   + ("live values" if rc_live else
@@ -143,7 +157,9 @@ def main():
     print("  ----  SiK        not checkable from USB: connect QGC over the "
           "radio with USB unplugged")
     print("  ----  BUZZ/SW    audible/visible only")
-    print("  ----  MOTORS     QGC motor test, props off (calibration step)")
+    if not args.motor_test:
+        print("  ----  MOTORS     not tested; --motor-test spins them "
+              "(PROPS OFF) or use QGC's motor test")
 
     if args.wiggle is not None:
         print(f"\nservo wiggle on ch{args.wiggle} (props off, watch the "
@@ -161,8 +177,52 @@ def main():
         print("  ack proves acceptance; movement is verified by eye. No "
               "movement + ACCEPTED = SERVOn_FUNCTION not 0, or wiring/power.")
 
+    if args.motor_test:
+        motor_test(m, args.motors, args.motor_throttle)
+
     print(f"\n{'ALL WIRED CHECKS PASS' if ok else 'SOMETHING FAILED, see above'}")
     raise SystemExit(0 if ok else 1)
+
+
+def motor_test(m, motors, throttle_pct):
+    """Spin each motor briefly, in ArduPilot's TEST ORDER, one at a time.
+
+    MAV_CMD_DO_MOTOR_TEST numbers motors in ArduPilot's test sequence, which
+    for a hexa X goes clockwise from the front-right. That is the point of the
+    test: motor 1 must be the front-right arm, and each subsequent number the
+    next one clockwise. A motor that spins out of sequence is a swapped ESC
+    signal lead, which flies exactly once.
+
+    Direction is checked by eye at the same time (alternating CW/CCW per
+    ArduPilot's hexa layout). Neither can be checked in software: this only
+    commands the spin, your eyes do the verifying.
+    """
+    print(f"\nMOTOR TEST: {motors} motors, {throttle_pct}% throttle, 2s each.")
+    print("PROPS MUST BE OFF. Type 'spin' to continue, anything else aborts.")
+    try:
+        if input("> ").strip().lower() != 'spin':
+            print("  aborted, nothing commanded")
+            return
+    except EOFError:
+        print("  no console input available, aborted")
+        return
+    for i in range(1, motors + 1):
+        m.mav.command_long_send(
+            m.target_system, m.target_component,
+            mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST, 0,
+            i,                                            # motor number
+            mavutil.mavlink.MOTOR_TEST_THROTTLE_PERCENT,   # throttle type
+            throttle_pct, 2,                               # value, seconds
+            0,                                             # motor count
+            mavutil.mavlink.MOTOR_TEST_ORDER_DEFAULT, 0)
+        ack = m.recv_match(type='COMMAND_ACK', blocking=True, timeout=3)
+        res = 'no ack' if ack is None else \
+            mavutil.mavlink.enums['MAV_RESULT'][ack.result].name
+        print(f"  motor {i}: {res}  <- which arm spun? note it")
+        time.sleep(3)
+    print("  expected: 1 = front-right, then clockwise. Any other order is a "
+          "swapped ESC lead. Directions must alternate; fix by swapping any "
+          "two motor phase wires, never by reordering the signal leads.")
 
 
 if __name__ == '__main__':

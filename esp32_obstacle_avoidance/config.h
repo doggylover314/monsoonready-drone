@@ -53,7 +53,10 @@
 // Set to 1 to run with NO hardware attached: the sensor layer returns simulated
 // distances so you can verify the MAVLink output on the wire (or in Mission
 // Planner) before you have any sensors wired. Set to 0 for real VL53L0X reads.
-#define USE_FAKE_SENSORS 1
+// 2026-08-03: set to 0 for the real-mode-first flash (ring is fully wired;
+// see PROJECT_STATE TODO 4). Flip back to 1 only to bisect link-vs-ring, and
+// remember fake mode then needs the GPIO4 jumper to transmit at all.
+#define USE_FAKE_SENSORS 0
 
 // Fake-mode flight guard: while USE_FAKE_SENSORS is 1, MAVLink is only
 // transmitted if this pin is jumpered to GND (bench-only jumper). If a
