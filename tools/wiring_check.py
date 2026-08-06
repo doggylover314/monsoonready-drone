@@ -241,21 +241,36 @@ def main():
                   f"in fake mode that means the GPIO4 jumper is missing")
     ok &= verdict('UP-SENSOR', seen['rng_up'] > 0,
                   f"{seen['rng_up']} upward DISTANCE_SENSOR msgs (mux ch6). "
-                  f"0 with the sensor wired = ch6 init failed; the ESP32 "
-                  f"serial monitor prints per-sensor init")
+                  f"An empty ceiling is NOT the explanation for 0: a clear "
+                  f"reading is still transmitted (as max+1). 0 means the "
+                  f"read failed, so read the ESP32 boot lines")
     ok &= verdict('RC', rc_live,
                   f"{seen['rc_msgs']} RC_CHANNELS msgs, "
                   + ("live values" if rc_live else
                      "no live values (is the transmitter on?)"))
-    if seen['radio']:
-        ok &= verdict('SiK', True,
-                      f"{seen['radio']} RADIO_STATUS msgs, local rssi {rssi} "
-                      f"remote {remrssi} (this whole run came over the radio, "
-                      f"which IS the SiK test; higher rssi is better, and the "
-                      f"two ends should be within ~20 of each other)")
+    # Is this run coming over the air? RADIO_STATUS is the nice proof, but a
+    # SiK only injects it when its MAVLink framing mode is on, so its absence
+    # proves nothing. The link itself is the better evidence: autopilot
+    # telemetry cannot arrive on a non-USB serial port unless it crossed the
+    # radio (the Pixhawk's own USB is a ttyACM, and the ESP32's USB port
+    # carries no autopilot traffic at all).
+    via_radio = ('ACM' not in args.conn
+                 and not args.conn.startswith(('tcp:', 'udp:', 'tcpin:')))
+    if via_radio:
+        detail = (f"autopilot telemetry arrived over {args.conn}, so the "
+                  f"whole radio path works")
+        if seen['radio']:
+            detail += (f"; {seen['radio']} RADIO_STATUS msgs, local rssi "
+                       f"{rssi} remote {remrssi} (higher is better, and the "
+                       f"two ends should be within ~20 of each other)")
+        else:
+            detail += ("; no RADIO_STATUS injected, which just means the "
+                       "radio's MAVLink framing mode is off, so no rssi "
+                       "figures are available")
+        ok &= verdict('SiK', True, detail)
     else:
-        print("  ----  SiK        not exercised: this run was not over the "
-              "radio. Re-run with --conn /dev/ttyUSB0 --baud 57600")
+        print("  ----  SiK        not exercised: this run was on USB. Re-run "
+              "with --conn /dev/ttyUSB0 --baud 57600")
     print("  ----  BUZZ/SW    audible/visible only")
     if not args.motor_test:
         print("  ----  MOTORS     not tested; --motor-test spins them "
