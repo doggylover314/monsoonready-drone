@@ -115,7 +115,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--conn', default='/dev/ttyACM0')
     ap.add_argument('--baud', type=int, default=115200)
-    ap.add_argument('--seconds', type=float, default=25.0)
+    ap.add_argument('--seconds', type=float, default=12.0,
+                    help='MAXIMUM listen time. The loop exits as soon as '
+                         'every check has what it needs, so a fully healthy '
+                         'aircraft finishes in a few seconds; the full '
+                         'window is only ever spent waiting for something '
+                         'that never arrives.')
     ap.add_argument('--wiggle', type=int, nargs='?', const=9, default=None,
                     metavar='CH',
                     help='cycle the dropper servo; bare flag = ch9 (AUX1, as '
@@ -134,7 +139,8 @@ def main():
     if not wait_autopilot(m):
         raise SystemExit("FAIL: no autopilot heartbeat on USB")
     print(f"autopilot is system {m.target_system} component "
-          f"{m.target_component}\nlistening {args.seconds:.0f}s ...")
+          f"{m.target_component}\nlistening (up to {args.seconds:.0f}s, "
+          f"exits early once everything has reported) ...")
     # Ask for everything at a modest rate; ArduPilot honours this legacy
     # request and it is one call instead of one per message id. Over a SiK
     # radio 4 Hz of everything does not fit (the air link is far slower than
@@ -156,7 +162,17 @@ def main():
     mag_present = mag_healthy = False
     sys_status_seen = False
 
-    t_end = time.time() + args.seconds
+    def all_satisfied():
+        """Everything a healthy aircraft must produce. Deliberately requires
+        TWO heartbeats from each source: one proves the sender exists, two
+        prove it is still sending. Nothing here waits for a GPS fix, which
+        indoors would never come."""
+        return (seen['fc_hb'] >= 2 and seen['esp_hb'] >= 2
+                and seen['gps_msgs'] and seen['rng_down'] and seen['obst']
+                and seen['rng_up'] and sys_status_seen and rc_live)
+
+    t_start = time.time()
+    t_end = t_start + args.seconds
     while time.time() < t_end:
         msg = m.recv_match(blocking=True, timeout=0.5)
         if msg is None:
@@ -194,6 +210,11 @@ def main():
             sys_status_seen = True
             mag_present = bool(msg.onboard_control_sensors_enabled & MAG_BIT)
             mag_healthy = bool(msg.onboard_control_sensors_health & MAG_BIT)
+
+        if all_satisfied():
+            print(f"  everything reporting after "
+                  f"{time.time() - t_start:.1f}s, no need to keep listening")
+            break
 
     def verdict(name, ok, detail):
         print(f"  {'PASS' if ok else 'FAIL':4}  {name:<10} {detail}")
