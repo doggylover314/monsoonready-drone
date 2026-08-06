@@ -60,6 +60,13 @@ UP = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_90      # 24
 MAG_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_MAG
 GPS_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_GPS
 
+# Must match the ESP32: mavlink_proximity.h SECTOR_NO_DATA, config.h ring size.
+SECTOR_NO_DATA = 65535
+RING_SECTORS = 6
+# Bearing of each ring sector, for naming the dead one in plain language
+# (config.h: bearing = SENSOR_ANGLE_OFFSET_DEG + 60*s, clockwise from nose).
+SECTOR_BEARING = [30 + 60 * s for s in range(RING_SECTORS)]
+
 
 def wait_autopilot(m, timeout=30):
     """Lock onto the AUTOPILOT's heartbeat, not whatever heartbeat lands first.
@@ -156,6 +163,7 @@ def main():
         'gps_msgs': 0, 'rc_msgs': 0, 'radio': 0,
     }
     rssi = remrssi = None
+    ring_ok = set()            # ring sectors that ever reported real data
     sats = fix = -1
     rng_down_m = None
     rc_live = False
@@ -169,6 +177,7 @@ def main():
         indoors would never come."""
         return (seen['fc_hb'] >= 2 and seen['esp_hb'] >= 2
                 and seen['gps_msgs'] and seen['rng_down'] and seen['obst']
+                and len(ring_ok) == RING_SECTORS
                 and seen['rng_up'] and sys_status_seen and rc_live)
 
     t_start = time.time()
@@ -187,6 +196,13 @@ def main():
                 seen['fc_hb'] += 1
         elif t == 'OBSTACLE_DISTANCE':
             seen['obst'] += 1
+            # The message arriving proves the ESP32 is transmitting, NOT that
+            # every sensor works: a dead ring sensor still occupies its slot,
+            # filled with SECTOR_NO_DATA. Checking only that the message
+            # exists hid a dead ch1 for days (2026-08-06), so score sectors.
+            for s in range(RING_SECTORS):
+                if msg.distances[s] != SECTOR_NO_DATA:
+                    ring_ok.add(s)
         elif t == 'DISTANCE_SENSOR':
             if msg.orientation == DOWN:
                 seen['rng_down'] += 1
@@ -236,9 +252,18 @@ def main():
                      else "") + " (0 = wire OR params not pushed)")
     ok &= verdict('ESP32', seen['esp_hb'] > 0 and seen['obst'] > 0,
                   f"{seen['esp_hb']} comp195 heartbeats, "
-                  f"{seen['obst']} OBSTACLE_DISTANCE (the 6-sensor ring). "
-                  f"Heartbeats but 0 ring msgs = alive and not transmitting: "
-                  f"in fake mode that means the GPIO4 jumper is missing")
+                  f"{seen['obst']} OBSTACLE_DISTANCE. Heartbeats but 0 ring "
+                  f"msgs = alive and not transmitting: in fake mode that "
+                  f"means the GPIO4 jumper is missing")
+    dead = [s for s in range(RING_SECTORS) if s not in ring_ok]
+    ok &= verdict('RING', seen['obst'] > 0 and not dead,
+                  f"{len(ring_ok)}/{RING_SECTORS} sectors reporting"
+                  + ("" if not dead else
+                     ": DEAD " + ", ".join(f"s{s}({SECTOR_BEARING[s]}deg)"
+                                           for s in dead)
+                     + ". The ring message still streams with a dead sensor's "
+                       "slot filled as no-data, so this is invisible unless "
+                       "the sectors are scored"))
     ok &= verdict('UP-SENSOR', seen['rng_up'] > 0,
                   f"{seen['rng_up']} upward DISTANCE_SENSOR msgs (mux ch6). "
                   f"An empty ceiling is NOT the explanation for 0: a clear "
