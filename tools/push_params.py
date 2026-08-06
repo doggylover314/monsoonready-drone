@@ -21,6 +21,10 @@ from pymavlink import mavutil
 ROOT = Path(__file__).resolve().parent.parent
 SETUP = ROOT / "param_dumps" / "pixhawk_full_setup.param"
 PORT = sys.argv[1] if len(sys.argv) > 1 else "/dev/ttyACM0"
+# Baud matters only for real serial links. USB CDC ignores it; a SiK ground
+# radio does not (its PC-side port is 57600 by default), so:
+#     push_params.py /dev/ttyUSB0 57600
+BAUD = int(sys.argv[2]) if len(sys.argv) > 2 else 115200
 
 
 def f32(x: float) -> float:
@@ -56,8 +60,8 @@ def set_param(m, name: str, value: float) -> tuple[bool, float | None]:
 
 def main() -> None:
     overrides = load_overrides()
-    m = mavutil.mavlink_connection(PORT, baud=115200)
-    print(f"waiting for heartbeat on {PORT} ...")
+    m = mavutil.mavlink_connection(PORT, baud=BAUD)
+    print(f"waiting for heartbeat on {PORT} at {BAUD} ...")
     m.wait_heartbeat(timeout=30)
     print(f"connected: sys {m.target_system} comp {m.target_component}\n")
 

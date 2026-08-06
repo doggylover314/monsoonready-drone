@@ -2,11 +2,24 @@
 """Bench wiring check: one listen on the Pixhawk USB, one PASS/FAIL line per
 wired subsystem (2026-08-02 port assignments).
 
-    training/.venv/bin/python tools/wiring_check.py                # laptop
-    training/.venv/bin/python tools/wiring_check.py --wiggle 14    # + servo test
+    training/.venv/bin/python tools/wiring_check.py                 # over USB
+    training/.venv/bin/python tools/wiring_check.py --wiggle        # + servo
+    training/.venv/bin/python tools/wiring_check.py \
+        --conn /dev/ttyUSB0 --baud 57600                            # over SiK
 
 Pixhawk on USB, battery or USB power, PROPS OFF. Listens for --seconds
-(default 25) and then judges. What each check proves, and what it cannot:
+(default 25) and then judges.
+
+OVER THE SiK RADIO instead of USB: the aircraft runs on battery, the ground
+radio is the PC's serial port (--conn /dev/ttyUSB0, --baud 57600 = the
+radio's PC-side rate, unrelated to SERIAL2_BAUD on the aircraft). Everything
+still works, and the run additionally PROVES the SiK link, which USB never
+can. The stream rate is halved automatically on a low-baud link because 4 Hz
+of everything does not fit through the air link, and the losses would print
+as spurious FAILs. Param pushes are still best done on USB: they are many
+small round trips and each retry costs radio time.
+
+What each check proves, and what it cannot:
 
   FC         heartbeat from the autopilot at all
   GPS        SERIAL3 wiring: message flow + sat count (sats/fix will be poor
@@ -123,15 +136,20 @@ def main():
     print(f"autopilot is system {m.target_system} component "
           f"{m.target_component}\nlistening {args.seconds:.0f}s ...")
     # Ask for everything at a modest rate; ArduPilot honours this legacy
-    # request and it is one call instead of one per message id.
+    # request and it is one call instead of one per message id. Over a SiK
+    # radio 4 Hz of everything does not fit (the air link is far slower than
+    # its 57600 serial port), and the dropped messages would show up as
+    # spurious FAILs, so slow the stream down on any low-baud link.
+    rate = 4 if args.baud > 57600 else 2
     m.mav.request_data_stream_send(
         m.target_system, m.target_component,
-        mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1)
+        mavutil.mavlink.MAV_DATA_STREAM_ALL, rate, 1)
 
     seen = {
         'fc_hb': 0, 'esp_hb': 0, 'obst': 0, 'rng_down': 0, 'rng_up': 0,
-        'gps_msgs': 0, 'rc_msgs': 0,
+        'gps_msgs': 0, 'rc_msgs': 0, 'radio': 0,
     }
+    rssi = remrssi = None
     sats = fix = -1
     rng_down_m = None
     rc_live = False
@@ -167,6 +185,11 @@ def main():
             vals = [getattr(msg, f'chan{i}_raw') for i in range(1, 9)]
             if any(800 < v < 2200 for v in vals):
                 rc_live = True
+        elif t in ('RADIO_STATUS', 'RADIO'):
+            # Injected by the SiK ground radio itself, so its presence proves
+            # the whole radio path end to end. Only ever seen on a radio link.
+            seen['radio'] += 1
+            rssi, remrssi = msg.rssi, msg.remrssi
         elif t == 'SYS_STATUS':
             sys_status_seen = True
             mag_present = bool(msg.onboard_control_sensors_enabled & MAG_BIT)
@@ -203,8 +226,15 @@ def main():
                   f"{seen['rc_msgs']} RC_CHANNELS msgs, "
                   + ("live values" if rc_live else
                      "no live values (is the transmitter on?)"))
-    print("  ----  SiK        not checkable from USB: connect QGC over the "
-          "radio with USB unplugged")
+    if seen['radio']:
+        ok &= verdict('SiK', True,
+                      f"{seen['radio']} RADIO_STATUS msgs, local rssi {rssi} "
+                      f"remote {remrssi} (this whole run came over the radio, "
+                      f"which IS the SiK test; higher rssi is better, and the "
+                      f"two ends should be within ~20 of each other)")
+    else:
+        print("  ----  SiK        not exercised: this run was not over the "
+              "radio. Re-run with --conn /dev/ttyUSB0 --baud 57600")
     print("  ----  BUZZ/SW    audible/visible only")
     if not args.motor_test:
         print("  ----  MOTORS     not tested; --motor-test spins them "
