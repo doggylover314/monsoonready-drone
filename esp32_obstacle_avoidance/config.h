@@ -1,7 +1,7 @@
 // =============================================================================
 //  config.h  --  Central configuration for the ESP32 obstacle avoidance
 //                module (7x VL53L0X -> TCA9548A -> ESP32 -> Pixhawk):
-//                6 sensors in a horizontal ring (one per arm) + 1 pointing UP.
+//                6 sensors in a horizontal ring (between the arms) + 1 UP.
 //
 //  Everything you are likely to change lives here: pins, baud rates, the
 //  fake-sensor test knobs, the reported range, and the MAVLink identity.
@@ -16,17 +16,18 @@
 //   GPIO22 (SCL) --- SCL (mux upstream)
 //   3V3          --- VIN                     VIN of every sensor
 //   GND          --- GND                     GND of every sensor
-//                    SD0/SC0 -------------->  sensor 0  (arm at OFFSET +   0 deg)
-//                    SD1/SC1 -------------->  sensor 1  (arm at OFFSET +  60 deg)
-//                    SD2/SC2 -------------->  sensor 2  (arm at OFFSET + 120 deg)
-//                    SD3/SC3 -------------->  sensor 3  (arm at OFFSET + 180 deg)
-//                    SD4/SC4 -------------->  sensor 4  (arm at OFFSET + 240 deg)
-//                    SD5/SC5 -------------->  sensor 5  (arm at OFFSET + 300 deg)
+//                    SD0/SC0 -------------->  sensor 0  (bearing OFFSET +   0 deg)
+//                    SD1/SC1 -------------->  sensor 1  (bearing OFFSET +  60 deg)
+//                    SD2/SC2 -------------->  sensor 2  (bearing OFFSET + 120 deg)
+//                    SD3/SC3 -------------->  sensor 3  (bearing OFFSET + 180 deg)
+//                    SD4/SC4 -------------->  sensor 4  (bearing OFFSET + 240 deg)
+//                    SD5/SC5 -------------->  sensor 5  (bearing OFFSET + 300 deg)
 //                    SD6/SC6 -------------->  sensor 6  (points straight UP)
 //
-//   OFFSET = SENSOR_ANGLE_OFFSET_DEG below: 30 for a hexa X layout (two arms
-//   at the front, ring sensor 0 on the front-right arm), 0 for hexa Plus
-//   (one arm pointing straight forward). Angles clockwise from above.
+//   OFFSET = SENSOR_ANGLE_OFFSET_DEG below. THIS BUILD USES 0: the sensors are
+//   mounted BETWEEN the arms with sensor 0 facing straight out the nose
+//   (measured on the airframe 2026-08-06). Use 30 only if the ring is instead
+//   mounted ON the arms of a hexa X. Angles clockwise from above.
 //
 //   All seven VL53L0X keep their default I2C address (0x29); the mux gates the
 //   bus so only one is visible at a time -- no XSHUT address juggling needed.
@@ -65,19 +66,28 @@
 #define FAKE_TX_ENABLE_PIN 4
 
 // -----------------------------------------------------------------------------
-// GEOMETRY  (6 ring sensors, one per arm -> 60 deg per sector, + 1 UP sensor)
+// GEOMETRY  (6 ring sensors, between the arms -> 60 deg/sector, + 1 UP sensor)
 // -----------------------------------------------------------------------------
 #define NUM_SENSORS 7        // total mux channels in use (0..5 = ring, 6 = up)
 #define NUM_RING_SENSORS 6   // horizontal ring only (goes into OBSTACLE_DISTANCE)
 #define UP_SENSOR_CHANNEL 6  // mux channel of the upward sensor (DISTANCE_SENSOR)
 #define SECTOR_INCREMENT_DEG (360.0f / NUM_RING_SENSORS) // 60.0 deg
 
-// Bearing of ring sensor 0, in degrees CLOCKWISE from vehicle forward. The ring
-// sensors sit on the hexa arms: a hexa X frame (two arms at the front) has arms
-// at 30/90/150/210/270/330 deg -> use 30. A hexa Plus frame (one arm straight
-// forward) has arms at 0/60/... -> use 0. This is sent as the OBSTACLE_DISTANCE
-// angle_offset, so ArduPilot rotates the ring for us; no remapping needed here.
-#define SENSOR_ANGLE_OFFSET_DEG 30.0f
+// Bearing of ring sensor 0, in degrees CLOCKWISE from vehicle forward. Sent as
+// the OBSTACLE_DISTANCE angle_offset, so ArduPilot rotates the ring for us and
+// no remapping is needed here.
+//
+// CORRECTED 2026-08-06 (30.0 -> 0.0) once the ring was physically built: the
+// sensors are NOT on the arms, they sit BETWEEN them, with sensor 0 pointing
+// straight out the nose. So the bearings are 0/60/120/180/240/300, not the
+// 30/90/... that hexa-X arm mounting would give. The old value was written
+// when the mounting was still assumed to be arm-mounted.
+//
+// This is not cosmetic: angle_offset is what tells ArduPilot which way an
+// obstacle lies. Leaving it at 30 with this build reports every obstacle 30
+// degrees clockwise of where it really is, so avoidance would slide the
+// aircraft along the wrong vector.
+#define SENSOR_ANGLE_OFFSET_DEG 0.0f
 
 // Map each physical ring mux channel to an OBSTACLE_DISTANCE sector index.
 // Sector s covers a bearing of (SENSOR_ANGLE_OFFSET_DEG + s * 60) degrees,

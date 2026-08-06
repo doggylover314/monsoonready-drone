@@ -48,10 +48,11 @@ GND          ─────── GND                    GND of every sensor
                      SD6/SC6 ────────────►  sensor 6   pointing straight UP
 ```
 
-- **OFFSET = `SENSOR_ANGLE_OFFSET_DEG`** in `config.h`: `30` for a hexa **X**
-  frame (two arms at the front, sensor 0 on the front-right arm), `0` for hexa
-  **Plus** (one arm straight forward). It is sent as the `OBSTACLE_DISTANCE`
-  `angle_offset`, so ArduPilot rotates the ring automatically.
+- **OFFSET = `SENSOR_ANGLE_OFFSET_DEG`** in `config.h`: `0` on this airframe,
+  whose ring is mounted **between** the arms with sensor 0 facing straight out
+  the nose. Use `30` only for a ring mounted **on** hexa X arms. It is sent as
+  the `OBSTACLE_DISTANCE` `angle_offset`, so ArduPilot rotates the ring
+  automatically.
 - All seven VL53L0X keep the **default address `0x29`** — the mux gates the bus
   so only one is visible at a time (no XSHUT address-swapping needed).
 - **Angles are clockwise from vehicle forward, seen from above** — this matches
@@ -209,9 +210,9 @@ no longer exist.
 - **6 ring sensors ⇒ 60° increment.** ArduPilot reads `round(360 / increment)`
   = **6** sectors, i.e. `distances[0..5]`. Ring sensor on mux channel N fills
   sector N.
-- **Sector 0 sits at `SENSOR_ANGLE_OFFSET_DEG` clockwise from the nose** (30°
-  default for hexa X arms), sent as `angle_offset`, with
-  `frame = MAV_FRAME_BODY_FRD`.
+- **Sector 0 sits at `SENSOR_ANGLE_OFFSET_DEG` clockwise from the nose** (0°
+  on this build, the ring being between the arms), sent as `angle_offset`,
+  with `frame = MAV_FRAME_BODY_FRD`.
 - **The upward sensor (channel 6) goes out as a separate `DISTANCE_SENSOR`**
   message with `orientation = MAV_SENSOR_ROTATION_PITCH_90` (24 = up). A failed
   read sends nothing that cycle; a "clear" read sends `RANGE_MAX_CM + 1`, which
@@ -249,7 +250,7 @@ no longer exist.
 ## 8. Quick tuning cheatsheet (`config.h`)
 
 - `USE_FAKE_SENSORS` — `1` to test with no hardware, `0` for real sensors.
-- `SENSOR_ANGLE_OFFSET_DEG` — `30` for hexa X arms, `0` for hexa Plus.
+- `SENSOR_ANGLE_OFFSET_DEG` — `0` for a ring between the arms (this build), `30` for one on hexa X arms.
 - `PIXHAWK_BAUD` — keep in sync with `SERIAL2_BAUD` (115200 ↔ 115).
 - `RANGE_MIN_CM` / `RANGE_MAX_CM` — the window ArduPilot will act on.
 - `SECTOR_FOR_CHANNEL[]` — remap if your physical channel order differs.

@@ -65,7 +65,11 @@ SECTOR_NO_DATA = 65535
 RING_SECTORS = 6
 # Bearing of each ring sector, for naming the dead one in plain language
 # (config.h: bearing = SENSOR_ANGLE_OFFSET_DEG + 60*s, clockwise from nose).
-SECTOR_BEARING = [30 + 60 * s for s in range(RING_SECTORS)]
+# Offset is 0 on this airframe: the ring sits BETWEEN the arms with sensor 0
+# facing straight out the nose (measured 2026-08-06). Keep in step with
+# config.h SENSOR_ANGLE_OFFSET_DEG.
+RING_ANGLE_OFFSET_DEG = 0
+SECTOR_BEARING = [RING_ANGLE_OFFSET_DEG + 60 * s for s in range(RING_SECTORS)]
 
 
 def wait_autopilot(m, timeout=30):
