@@ -143,6 +143,55 @@ static void runOneConfig(uint8_t cfg_i) {
   muxCloseAll();
 }
 
+// Repeat pass at the CONFIGURED bus settings. The sweep above samples each
+// channel once, which is useless against a fault that comes and goes: the
+// 2026-08-06 logs had ch1 and ch3 passing and failing in different columns of
+// different boots, which is not a speed dependency at all, it is
+// intermittency. Counting successes over many tries turns "sometimes" into a
+// number, and separates hard-dead (0/N) from marginal (say 17/20).
+static void runStress(uint8_t reps) {
+  DEBUG_SERIAL.printf("\n--- REPEAT TEST: %u tries per channel at the "
+                      "configured %lu Hz / %u us ---\n",
+                      reps, (unsigned long)I2C_CLOCK_HZ,
+                      (unsigned)TCA_SETTLE_US);
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.setClock(I2C_CLOCK_HZ);
+
+  for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) {
+    uint8_t present = 0, inited = 0, read_ok = 0;
+    for (uint8_t r = 0; r < reps; r++) {
+      muxSelect(ch, TCA_SETTLE_US);
+      Wire.beginTransmission(VL53L0X_ADDR);
+      if (Wire.endTransmission() != 0) { delay(20); continue; }
+      present++;
+      VL53L0X s;
+      s.setTimeout(SENSOR_TIMEOUT_MS);
+      if (!s.init()) { delay(20); continue; }
+      inited++;
+      s.startContinuous();
+      delay(40);
+      s.readRangeContinuousMillimeters();
+      if (!s.timeoutOccurred()) read_ok++;
+      s.stopContinuous();
+      delay(20);
+    }
+    DEBUG_SERIAL.printf("  ch%u%s  answers %2u/%2u   init %2u/%2u   "
+                        "read %2u/%2u%s\n",
+                        ch, ch == UP_SENSOR_CHANNEL ? "(up)" : "    ",
+                        present, reps, inited, reps, read_ok, reps,
+                        (present == 0) ? "   <-- never on the bus at all"
+                        : (inited < reps) ? "   <-- INTERMITTENT" : "");
+  }
+  muxCloseAll();
+  DEBUG_SERIAL.println(F(
+      "  0/N answers        = that sensor is not on the bus: power, a wire,\n"
+      "                       XSHUT held low, or dead. Not a timing problem.\n"
+      "  N/N answers but\n"
+      "  init below N/N     = INTERMITTENT: a loose contact or a sagging 3V3\n"
+      "                       rail, NOT bus speed. Meter 3V3 AT THAT SENSOR\n"
+      "                       while it runs and wiggle its connector."));
+}
+
 void runI2cDiag() {
   DEBUG_SERIAL.println(F("\n\n================ I2C DIAGNOSTIC ================"));
   DEBUG_SERIAL.printf("SDA=GPIO%u SCL=GPIO%u, mux 0x%02X, %u channels "
@@ -152,6 +201,7 @@ void runI2cDiag() {
   DEBUG_SERIAL.println(F("Nothing is transmitted to the Pixhawk in this mode."));
 
   for (uint8_t i = 0; i < NUM_CONFIGS; i++) runOneConfig(i);
+  runStress(20);
 
   DEBUG_SERIAL.println(F("\n================ SUMMARY ================"));
   DEBUG_SERIAL.println(F("channel   400k/0   400k/50  100k/50  50k/200"));
