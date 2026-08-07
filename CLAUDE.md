@@ -67,7 +67,11 @@ answer delivered confidently is worse than no answer. In every response:
   nothing on the laptop or the UNO Q without explicit per-instance
   permission. ALL git commands are pre-authorised. Every command the user
   needs to run goes in batched blocks at the END of the reply: ONE block PER
-  MACHINE, labeled BOARD or LAPTOP in bold above the block, never mixed
+  MACHINE, labeled BOARD or LAPTOP in bold above the block, never mixed.
+  NEVER prefix laptop commands with `cd "/media/sleuther/Stuff/Robu AI
+  Challenge"` (user, 2026-08-06, emphatic): he knows his working directory
+  and the repeated cd is noise. Give the bare command with repo-relative
+  paths (e.g. `training/.venv/bin/python tools/push_params.py`)
   (2026-08-01: a mixed block was pasted wholesale into the board shell and
   every laptop command errored). A command
   that starts a server (SITL, Flask) needs its own terminal; never chain one
