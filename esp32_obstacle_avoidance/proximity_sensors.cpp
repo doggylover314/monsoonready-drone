@@ -13,6 +13,13 @@
 // per sensor, otherwise every channel reports the same value.
 static VL53L0X g_sensor[NUM_SENSORS];
 
+// Is a sensor physically present on this mux channel? Ring channels come from
+// RING_SENSOR_FITTED, the up channel from UP_SENSOR_FITTED (both in config.h).
+static bool isFitted(uint8_t ch) {
+  if (ch == UP_SENSOR_CHANNEL) return UP_SENSOR_FITTED;
+  return (ch < NUM_RING_SENSORS) ? RING_SENSOR_FITTED[ch] : false;
+}
+
 // Select a single downstream channel on the TCA9548A. The control register is a
 // bitmask, so writing (1 << ch) enables exactly that one channel and disables
 // the rest. Call this before every transaction with the sensor on that channel.
@@ -30,7 +37,7 @@ static void tcaselect(uint8_t ch) {
 // -----------------------------------------------------------------------------
 bool ProximitySensors::begin() {
 #if USE_FAKE_SENSORS
-  for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) _ok[ch] = true;
+  for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) _ok[ch] = isFitted(ch);
   DEBUG_SERIAL.println(F("[sensors] FAKE mode: no hardware in use."));
   return true;
 #else
@@ -39,6 +46,18 @@ bool ProximitySensors::begin() {
 
   bool all_ok = true;
   for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) {
+    // Channels declared empty in config.h are skipped entirely: probing one
+    // costs about a second of boot time waiting for a timeout, and reports a
+    // "FAILED" that hides the failures that matter. _ok stays false, so
+    // readAll() keeps returning SENSOR_MM_ERROR for it and the sector goes
+    // out as "unknown", which is the correct thing to tell an autopilot
+    // about a direction we cannot see.
+    if (!isFitted(ch)) {
+      _ok[ch] = false;
+      DEBUG_SERIAL.printf("[sensors] ch%u: not fitted (config.h), sector "
+                          "reported as unknown\n", ch);
+      continue;
+    }
     tcaselect(ch);
     g_sensor[ch].setTimeout(SENSOR_TIMEOUT_MS);
 

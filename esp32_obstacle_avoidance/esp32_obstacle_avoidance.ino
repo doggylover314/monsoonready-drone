@@ -52,9 +52,25 @@ static void printBanner() {
 #else
   DEBUG_SERIAL.println(F(" MODE          : REAL VL53L0X via TCA9548A mux"));
 #endif
-  DEBUG_SERIAL.printf (" SENSORS       : %u ring @ %.0f deg spacing + 1 UP (ch%u)\n",
-                       (unsigned)NUM_RING_SENSORS, (double)SECTOR_INCREMENT_DEG,
-                       (unsigned)UP_SENSOR_CHANNEL);
+  {
+    // Spell out which ring channels are fitted and which bearings are
+    // therefore unreported: flying with a partial ring is fine, but only if
+    // nobody is under the impression it covers 360 degrees.
+    unsigned fitted = 0;
+    DEBUG_SERIAL.printf(" SENSORS       : ring %.0f deg spacing + UP (ch%u). Fitted:",
+                        (double)SECTOR_INCREMENT_DEG,
+                        (unsigned)UP_SENSOR_CHANNEL);
+    for (uint8_t ch = 0; ch < NUM_RING_SENSORS; ch++) {
+      if (!RING_SENSOR_FITTED[ch]) continue;
+      fitted++;
+      DEBUG_SERIAL.printf(" ch%u(%.0fdeg)", ch,
+                          (double)(SENSOR_ANGLE_OFFSET_DEG +
+                                   SECTOR_FOR_CHANNEL[ch] * SECTOR_INCREMENT_DEG));
+    }
+    DEBUG_SERIAL.printf("\n                 %u of %u ring sensors; the rest are "
+                        "reported as UNKNOWN (never as clear)\n",
+                        fitted, (unsigned)NUM_RING_SENSORS);
+  }
   DEBUG_SERIAL.printf (" REPORT RANGE  : %u..%u cm (OBSTACLE_DISTANCE min/max)\n",
                        (unsigned)RANGE_MIN_CM, (unsigned)RANGE_MAX_CM);
   DEBUG_SERIAL.printf (" PIXHAWK LINK  : Serial2 @ %lu baud (TX=GPIO%u, RX=GPIO%u)\n",
@@ -81,7 +97,10 @@ static void printReadings(uint32_t now_ms, const uint16_t mm[NUM_SENSORS],
     unsigned bearing = (unsigned)(SENSOR_ANGLE_OFFSET_DEG +
                                   sector * SECTOR_INCREMENT_DEG + 0.5f) % 360u;
     DEBUG_SERIAL.printf("s%u[%3u]:", (unsigned)sector, bearing);
-    if (v == MavlinkProximity::SECTOR_NO_DATA)          DEBUG_SERIAL.print("ERR   ");
+    // "----" = no sensor fitted here, which is a configuration fact, not a
+    // fault. Distinguished from ERR so a real failure still stands out.
+    if (!RING_SENSOR_FITTED[ch])                        DEBUG_SERIAL.print("----  ");
+    else if (v == MavlinkProximity::SECTOR_NO_DATA)     DEBUG_SERIAL.print("ERR   ");
     else if (v == MavlinkProximity::SECTOR_NO_OBSTACLE) DEBUG_SERIAL.print("CLEAR ");
     else                                                DEBUG_SERIAL.printf("%3ucm ", (unsigned)v);
   }

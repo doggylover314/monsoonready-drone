@@ -104,6 +104,24 @@
 static const uint8_t SECTOR_FOR_CHANNEL[NUM_RING_SENSORS] __attribute__((unused)) =
     {0, 1, 2, 3, 4, 5};
 
+// Which ring channels actually have a sensor fitted right now. false = that
+// mux channel is deliberately EMPTY, so the firmware must not probe it, must
+// not call it a failure, and must not pretend to see anything there.
+//
+// 2026-08-06: the three rear-facing sensors (channels 2, 3, 4 = bearings 120,
+// 180, 240) were removed while chasing the bus-instability fault, which is
+// also the bisect-by-load test: fewer devices on the bus is the experiment.
+//
+// SAFETY, and the reason this is only a probing/logging change: an unfitted
+// channel reports SENSOR_MM_ERROR, which classifyCm() turns into
+// SECTOR_NO_DATA, which goes on the wire as "unknown" (65535). ArduPilot
+// treats an unknown sector as NO INFORMATION, never as clear, so avoidance
+// simply has no opinion about the rear. Do NOT "fix" absent sectors by
+// sending max range: that would tell the autopilot the rear is proven clear.
+static const bool RING_SENSOR_FITTED[NUM_RING_SENSORS] __attribute__((unused)) =
+    {true, true, false, false, false, true};
+#define UP_SENSOR_FITTED 1   // channel 6
+
 // -----------------------------------------------------------------------------
 // I2C  (ESP32 <-> TCA9548A <-> VL53L0X)
 // -----------------------------------------------------------------------------
