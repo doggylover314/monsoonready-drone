@@ -59,6 +59,13 @@
 // remember fake mode then needs the GPIO4 jumper to transmit at all.
 #define USE_FAKE_SENSORS 0
 
+// Bench diagnostic mode. 1 = instead of flying the normal loop, run the I2C
+// report in i2c_diag.cpp once at boot and then idle: per-channel device scan,
+// mux readback, stuck-line check, and a sweep of bus speed/settle time to
+// separate "sensor absent" from "bus too fast for this wiring". Transmits
+// NOTHING to the Pixhawk. Set back to 0 to fly.
+#define RUN_I2C_DIAG 0
+
 // Fake-mode flight guard: while USE_FAKE_SENSORS is 1, MAVLink is only
 // transmitted if this pin is jumpered to GND (bench-only jumper). If a
 // fake-mode build is ever flashed on the drone by mistake, no phantom

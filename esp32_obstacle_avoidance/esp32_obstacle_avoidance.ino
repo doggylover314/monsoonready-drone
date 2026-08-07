@@ -26,6 +26,7 @@
 #include "config.h"
 #include "proximity_sensors.h"
 #include "mavlink_proximity.h"
+#include "i2c_diag.h"
 
 ProximitySensors sensors;
 MavlinkProximity mav;
@@ -97,6 +98,12 @@ static void printReadings(uint32_t now_ms, const uint16_t mm[NUM_SENSORS],
 void setup() {
   DEBUG_SERIAL.begin(DEBUG_BAUD);
   delay(300);
+#if RUN_I2C_DIAG
+  // Bench mode: report on the I2C bus and stop. Deliberately before the
+  // Pixhawk link is opened, so a diagnostic build cannot transmit anything.
+  runI2cDiag();
+  return;
+#endif
 #if USE_FAKE_SENSORS
   pinMode(FAKE_TX_ENABLE_PIN, INPUT_PULLUP); // bench jumper to GND enables TX
 #endif
@@ -119,6 +126,12 @@ void setup() {
 
 // -----------------------------------------------------------------------------
 void loop() {
+#if RUN_I2C_DIAG
+  // Diagnostic build: the report already ran in setup(). Idle rather than
+  // repeat it, so the output stays readable in the serial monitor.
+  delay(1000);
+  return;
+#else
   // Read every iteration -> the buffer always holds the freshest sample when
   // we send. The VL53L0X units keep ranging continuously in the background.
   sensors.readAll(latest_mm);
@@ -155,5 +168,6 @@ void loop() {
                              (unsigned)FAKE_TX_ENABLE_PIN);
 #endif
   }
-#endif
+#endif  // SEND_HEARTBEAT
+#endif  // RUN_I2C_DIAG
 }
