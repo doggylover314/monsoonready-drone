@@ -158,6 +158,11 @@ def main():
     # its 57600 serial port), and the dropped messages would show up as
     # spurious FAILs, so slow the stream down on any low-baud link.
     rate = 4 if args.baud > 57600 else 2
+    # A radio link adds latency and drops packets, so an ack that would
+    # arrive comfortably over USB can miss a 5s window and print a false
+    # "NO ACK" on a command that actually worked. Be more patient on a slow
+    # link rather than teaching the operator to ignore the ack line.
+    ack_timeout = 5.0 if args.baud > 57600 else 12.0
     m.mav.request_data_stream_send(
         m.target_system, m.target_component,
         mavutil.mavlink.MAV_DATA_STREAM_ALL, rate, 1)
@@ -310,20 +315,20 @@ def main():
               f"gate): open 1900 ...")
         for us in (1900, 1000):
             res = send_and_ack(m, mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
-                               args.wiggle, us)
+                               args.wiggle, us, timeout=ack_timeout)
             print(f"  {us}us -> {res}")
             time.sleep(1.5)
         print("  ack proves acceptance; movement is verified by eye. No "
               "movement + ACCEPTED = SERVOn_FUNCTION not 0, or wiring/power.")
 
     if args.motor_test:
-        motor_test(m, args.motors, args.motor_throttle, rc_live)
+        motor_test(m, args.motors, args.motor_throttle, rc_live, ack_timeout)
 
     print(f"\n{'ALL WIRED CHECKS PASS' if ok else 'SOMETHING FAILED, see above'}")
     raise SystemExit(0 if ok else 1)
 
 
-def motor_test(m, motors, throttle_pct, rc_live):
+def motor_test(m, motors, throttle_pct, rc_live, ack_timeout=5.0):
     """Spin each motor briefly, in ArduPilot's TEST ORDER, one at a time.
 
     TRANSMITTER MUST BE ON. Observed 2026-08-02: identical commands at the
@@ -364,7 +369,8 @@ def motor_test(m, motors, throttle_pct, rc_live):
             mavutil.mavlink.MOTOR_TEST_THROTTLE_PERCENT,   # throttle type
             throttle_pct, 2,                               # value, seconds
             0,                                             # motor count
-            mavutil.mavlink.MOTOR_TEST_ORDER_DEFAULT)
+            mavutil.mavlink.MOTOR_TEST_ORDER_DEFAULT,
+            timeout=ack_timeout)
         print(f"  motor {i}: {res}  <- which arm spun? note it")
         time.sleep(3)
     print("  expected: 1 = front-right, then clockwise. Any other order is a "

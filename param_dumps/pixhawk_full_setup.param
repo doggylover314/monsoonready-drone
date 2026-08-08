@@ -108,6 +108,18 @@ MOT_HOVER_LEARN,2         # 2 = learn and save
 
 # --- Battery monitor (after installing NEW power module; calibrate vs multimeter) ---
 BATT_MONITOR,4            # 4 = analog voltage+current. Reboot, then calibrate
+# Pack size, 3S 8000mAh (Build Log). Added to this file 2026-08-08: it had
+# only ever been typed into QGC by hand, so a push_params run would not have
+# restored it and nothing tracked it.
+#
+# READ THIS BEFORE TRUSTING THE PERCENTAGE: ArduPilot's "battery remaining"
+# is COULOMB COUNTING, (BATT_CAPACITY - consumed mAh) / BATT_CAPACITY, and
+# consumed resets to zero at every boot. It therefore reads 100% at power-on
+# no matter what the pack's real state of charge is. It is a fuel gauge that
+# assumes you started with a full tank, so it is only meaningful if you
+# actually take off on a full pack. The protections that do NOT depend on
+# that assumption are the voltage ones below.
+BATT_CAPACITY,8000
 BATT_LOW_VOLT,10.8        # 3.6 V/cell -> triggers low action
 BATT_CRT_VOLT,10.2        # 3.4 V/cell -> triggers critical action
 BATT_FS_LOW_ACT,2         # 2 = RTL (user-confirmed policy)
