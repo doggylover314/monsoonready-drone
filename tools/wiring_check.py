@@ -25,16 +25,21 @@ small round trips and each retry costs radio time.
 What each check proves, and what it cannot:
 
   FC         heartbeat from the autopilot at all
-  GPS        SERIAL3 wiring: message flow + sat count (sats/fix will be poor
-             indoors; wiring verdict is 'messages arrive', not 'fix')
+  GPS        SERIAL3 wiring: the autopilot's GPS-driver-present bit, since
+             GPS_RAW_INT keeps flowing with no receiver attached. Sat count
+             is reported but not required (0 sats indoors is normal)
   COMPASS    I2C splice: mag sensor present+enabled+healthy per SYS_STATUS
-  TF-LUNA    SERIAL4 half of the split cable: downward DISTANCE_SENSOR flow
-             (needs the swapped SERIAL4/5 + RNGFND1 params pushed first)
+  TF-LUNA    SERIAL4 half of the split cable: a downward DISTANCE_SENSOR
+             reading INSIDE the sensor's own min/max, because ArduPilot keeps
+             publishing the message with a 0/out-of-range value when the
+             sensor is disconnected
   ESP32      TELEM1: heartbeat from compid 195; plus OBSTACLE_DISTANCE ring
              and the upward DISTANCE_SENSOR when the sketch is in a
              transmitting mode (fake mode needs the GPIO4 jumper)
-  RC         RCIN: RC_CHANNELS values look live (transmitter must be ON;
-             0/65535 everywhere = no RX signal)
+  RC         RCIN: the autopilot's RC-receiver HEALTH bit, which it clears
+             on link loss or failsafe. NOT the channel values: a receiver in
+             failsafe emits perfectly in-range numbers, which is why this
+             check passed with the transmitter off until 2026-08-08
   UP-SENSOR  the 7th VL53L0X on mux ch6: upward DISTANCE_SENSOR flow
              (needs RNGFND2_TYPE=10 pushed)
   SERVO      only with --wiggle (bare flag = ch9 = AUX1): DO_SET_SERVO
@@ -65,6 +70,10 @@ UP = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_90      # 24
 
 MAG_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_MAG
 GPS_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_GPS
+# The autopilot's own opinion of the RC link. This is the ONLY trustworthy
+# "is the transmitter on" signal: see the RC check below for why the channel
+# values are not.
+RC_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_RC_RECEIVER
 
 # Must match the ESP32: mavlink_proximity.h SECTOR_NO_DATA, config.h ring size.
 SECTOR_NO_DATA = 65535
@@ -245,7 +254,10 @@ def main():
     ring_ok = set()            # ring sectors that ever reported real data
     sats = fix = -1
     rng_down_m = None
-    rc_live = False
+    rng_bounds = None
+    rc_frames = []
+    rc_present = rc_healthy = False
+    gps_present = False
     mag_present = mag_healthy = False
     sys_status_seen = False
 
@@ -254,8 +266,8 @@ def main():
         TWO heartbeats from each source: one proves the sender exists, two
         prove it is still sending. Nothing here waits for a GPS fix, which
         indoors would never come."""
-        core = (seen['fc_hb'] >= 2 and seen['gps_msgs'] and seen['rng_down']
-                and sys_status_seen and rc_live)
+        core = (seen['fc_hb'] >= 2 and seen['gps_msgs'] and gps_present
+                and seen['rng_down'] and sys_status_seen and rc_healthy)
         if not args.expect_esp32:
             return core
         return (core and seen['esp_hb'] >= 2 and seen['obst']
@@ -288,6 +300,12 @@ def main():
             if msg.orientation == DOWN:
                 seen['rng_down'] += 1
                 rng_down_m = msg.current_distance / 100.0
+                # Keep the sensor's own declared bounds so the verdict can
+                # tell a real return from the 0 / out-of-range value a
+                # disconnected serial rangefinder reports while ArduPilot
+                # keeps dutifully publishing the message.
+                rng_bounds = (msg.min_distance / 100.0,
+                              msg.max_distance / 100.0)
             elif msg.orientation == UP:
                 seen['rng_up'] += 1
         elif t == 'GPS_RAW_INT':
@@ -295,9 +313,13 @@ def main():
             sats, fix = msg.satellites_visible, msg.fix_type
         elif t == 'RC_CHANNELS':
             seen['rc_msgs'] += 1
+            # Deliberately NOT used to decide whether the link is alive: a
+            # receiver in failsafe keeps emitting perfectly in-range values
+            # (held last-known, or its programmed failsafe positions), so
+            # "the numbers look plausible" passed with the transmitter
+            # switched OFF (found 2026-08-08). Kept only to show movement.
             vals = [getattr(msg, f'chan{i}_raw') for i in range(1, 9)]
-            if any(800 < v < 2200 for v in vals):
-                rc_live = True
+            rc_frames.append(tuple(vals))
         elif t in ('RADIO_STATUS', 'RADIO'):
             # Injected by the SiK ground radio itself, so its presence proves
             # the whole radio path end to end. Only ever seen on a radio link.
@@ -307,6 +329,12 @@ def main():
             sys_status_seen = True
             mag_present = bool(msg.onboard_control_sensors_enabled & MAG_BIT)
             mag_healthy = bool(msg.onboard_control_sensors_health & MAG_BIT)
+            # The autopilot's own RC verdict. ArduPilot clears this health bit
+            # when the RC link is lost or in failsafe, which is exactly the
+            # condition the channel values fail to show.
+            rc_present = bool(msg.onboard_control_sensors_enabled & RC_BIT)
+            rc_healthy = bool(msg.onboard_control_sensors_health & RC_BIT)
+            gps_present = bool(msg.onboard_control_sensors_enabled & GPS_BIT)
 
         if all_satisfied():
             print(f"  everything reporting after "
@@ -319,15 +347,22 @@ def main():
 
     print("\nresults:")
     ok = True
+    gps_word = 'up' if gps_present else 'NOT PRESENT (receiver not detected)'
     ok &= verdict('FC', seen['fc_hb'] > 0,
                   f"{seen['fc_hb']} heartbeats")
-    ok &= verdict('GPS', seen['gps_msgs'] > 0,
-                  f"{seen['gps_msgs']} msgs, fix_type {fix}, {sats} sats "
-                  f"(sats/fix poor indoors is normal; msgs=0 is a wire)")
+    # GPS_RAW_INT keeps flowing with NO receiver attached (fix 0, sats 0), so
+    # counting messages proves only that the autopilot is talking to us. The
+    # enabled bit is the autopilot saying a GPS driver actually came up.
+    ok &= verdict('GPS', seen['gps_msgs'] > 0 and gps_present,
+                  f"{seen['gps_msgs']} msgs, driver {gps_word}, "
+                  f"fix_type {fix}, {sats} sats "
+                  f"(0 sats indoors is normal, a missing driver is not)")
     ok &= verdict('COMPASS', mag_present and mag_healthy,
                   "mag enabled+healthy" if sys_status_seen
                   else "no SYS_STATUS received")
-    ok &= verdict('TF-LUNA', seen['rng_down'] > 0,
+    rng_real = (rng_down_m is not None and rng_bounds is not None
+                and rng_bounds[0] <= rng_down_m <= rng_bounds[1])
+    ok &= verdict('TF-LUNA', seen['rng_down'] > 0 and rng_real,
                   f"{seen['rng_down']} downward DISTANCE_SENSOR msgs"
                   + (f", {rng_down_m:.2f} m" if rng_down_m is not None
                      else "") + " (0 = wire OR params not pushed)")
@@ -355,10 +390,16 @@ def main():
                       f"ch6). An empty ceiling is NOT the explanation for 0: "
                       f"a clear reading is still transmitted (as max+1). 0 "
                       f"means the read failed, so read the ESP32 boot lines")
-    ok &= verdict('RC', rc_live,
-                  f"{seen['rc_msgs']} RC_CHANNELS msgs, "
-                  + ("live values" if rc_live else
-                     "no live values (is the transmitter on?)"))
+    moving = len(set(rc_frames)) > 1
+    health_word = 'healthy' if rc_healthy else \
+        'UNHEALTHY (link lost or in failsafe)'
+    ok &= verdict('RC', rc_healthy,
+                  f"{seen['rc_msgs']} RC_CHANNELS msgs; autopilot reports "
+                  f"receiver {'present' if rc_present else 'ABSENT'}/"
+                  f"{health_word}"
+                  + (", channels moving" if moving else
+                     ", channels static (either you did not touch the sticks "
+                     "or the receiver is holding failsafe values)"))
     # Is this run coming over the air? RADIO_STATUS is the nice proof, but a
     # SiK only injects it when its MAVLink framing mode is on, so its absence
     # proves nothing. The link itself is the better evidence: autopilot
@@ -399,7 +440,8 @@ def main():
               "movement + ACCEPTED = SERVOn_FUNCTION not 0, or wiring/power.")
 
     if args.motor_test:
-        motor_test(m, args.motors, args.motor_throttle, rc_live, ack_timeout)
+        motor_test(m, args.motors, args.motor_throttle, rc_healthy,
+                   ack_timeout)
 
     print(f"\n{'ALL WIRED CHECKS PASS' if ok else 'SOMETHING FAILED, see above'}")
     raise SystemExit(0 if ok else 1)
