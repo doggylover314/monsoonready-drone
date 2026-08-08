@@ -2,10 +2,13 @@
 """Bench wiring check: one listen on the Pixhawk USB, one PASS/FAIL line per
 wired subsystem (2026-08-02 port assignments).
 
-    training/.venv/bin/python tools/wiring_check.py                 # over USB
-    training/.venv/bin/python tools/wiring_check.py --wiggle        # + servo
-    training/.venv/bin/python tools/wiring_check.py \
-        --conn /dev/ttyUSB0 --baud 57600                            # over SiK
+    training/.venv/bin/python tools/wiring_check.py            # auto-detect
+    training/.venv/bin/python tools/wiring_check.py --wiggle   # + servo
+    training/.venv/bin/python tools/wiring_check.py --conn /dev/ttyUSB1
+
+Port and baud are worked out when exactly one serial device is present: a
+ttyUSB is taken as the SiK radio (57600), a ttyACM as the Pixhawk USB
+(115200). With several present it refuses to guess.
 
 Pixhawk on USB, battery or USB power, PROPS OFF. Listens for --seconds
 (default 25) and then judges.
@@ -50,6 +53,9 @@ explicit --wiggle.
 """
 
 import argparse
+import glob
+import os
+import sys
 import time
 
 from pymavlink import mavutil
@@ -70,6 +76,58 @@ RING_SECTORS = 6
 # config.h SENSOR_ANGLE_OFFSET_DEG.
 RING_ANGLE_OFFSET_DEG = 0
 SECTOR_BEARING = [RING_ANGLE_OFFSET_DEG + 60 * s for s in range(RING_SECTORS)]
+
+
+def require_port(conn):
+    """Fail with something actionable when the device node is not there.
+
+    pymavlink's own failure is a two-screen traceback ending in ENOENT, which
+    buries the only useful question: which serial devices DO exist right now?
+    Ports move constantly here (Pixhawk USB is a ttyACM, the SiK radio and
+    the ESP32 both want ttyUSB0, and whichever was plugged in first wins).
+    """
+    if conn.startswith(('tcp:', 'udp:', 'tcpin:')) or os.path.exists(conn):
+        return
+    found = sorted(glob.glob('/dev/ttyACM*') + glob.glob('/dev/ttyUSB*'))
+    msg = f"{conn} does not exist. "
+    if found:
+        msg += ("Serial devices present right now: " + ", ".join(found) +
+                ". Pass one with --conn (and --baud 57600 for the SiK "
+                "radio, 115200 for the Pixhawk's USB).")
+    else:
+        msg += ("NO serial devices at all: nothing is plugged in, or the "
+                "aircraft/radio is unpowered.")
+    sys.exit(msg)
+
+
+def resolve_link(conn, baud):
+    """Work out which port and baud to use, and say so out loud.
+
+    Ports move constantly on this bench: the Pixhawk's USB is a ttyACM, while
+    the SiK radio and the ESP32 both land on ttyUSB and whichever was plugged
+    in first takes the lower number. Hard-coding a default just produces a
+    traceback on the wrong day, so when the caller does not name a port we
+    pick the only candidate if there is exactly one, and refuse to guess when
+    there is more than one.
+
+    Baud follows the port type unless the caller asked for a specific rate:
+    115200 for the Pixhawk over USB, 57600 for a SiK ground radio.
+    """
+    if conn is not None:
+        require_port(conn)
+        return conn, baud if baud else (115200 if 'ACM' in conn else 57600)
+    found = sorted(glob.glob('/dev/ttyACM*') + glob.glob('/dev/ttyUSB*'))
+    if not found:
+        sys.exit("no serial devices found: nothing plugged in, or the "
+                 "aircraft/radio is unpowered.")
+    if len(found) > 1:
+        sys.exit("several serial devices present (" + ", ".join(found) +
+                 "); name one with --conn, since guessing between a radio "
+                 "and something else would be a coin flip.")
+    port = found[0]
+    rate = baud if baud else (115200 if 'ACM' in port else 57600)
+    print(f"using the only serial device present: {port} at {rate}")
+    return port, rate
 
 
 def wait_autopilot(m, timeout=30):
@@ -124,8 +182,12 @@ def send_and_ack(m, cmd, *params, timeout=5.0):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--conn', default='/dev/ttyACM0')
-    ap.add_argument('--baud', type=int, default=115200)
+    ap.add_argument('--conn', default=None,
+                    help='serial device; omit to auto-pick when '
+                         'exactly one is present')
+    ap.add_argument('--baud', type=int, default=None,
+                    help='omit to follow the port type: 115200 '
+                         'for the Pixhawk USB, 57600 for a SiK radio')
     ap.add_argument('--seconds', type=float, default=12.0,
                     help='MAXIMUM listen time. The loop exits as soon as '
                          'every check has what it needs, so a fully healthy '
@@ -142,7 +204,15 @@ def main():
     ap.add_argument('--motor-throttle', type=int, default=8,
                     help='percent throttle for --motor-test (default 8)')
     ap.add_argument('--motors', type=int, default=6)
+    ap.add_argument('--expect-esp32', action='store_true',
+                    help='require the obstacle ring to be present and '
+                         'reporting. OFF by default because the ring was '
+                         'parked on 2026-08-06 and the ESP32 is unplugged; '
+                         'without this flag its absence is reported but does '
+                         'not fail the run. Turn it on if the ring is '
+                         'refitted, so a silent ring is a failure again.')
     args = ap.parse_args()
+    args.conn, args.baud = resolve_link(args.conn, args.baud)
 
     print(f"connecting {args.conn} ...")
     m = mavutil.mavlink_connection(args.conn, baud=args.baud,
@@ -184,10 +254,12 @@ def main():
         TWO heartbeats from each source: one proves the sender exists, two
         prove it is still sending. Nothing here waits for a GPS fix, which
         indoors would never come."""
-        return (seen['fc_hb'] >= 2 and seen['esp_hb'] >= 2
-                and seen['gps_msgs'] and seen['rng_down'] and seen['obst']
-                and len(ring_ok) == RING_SECTORS
-                and seen['rng_up'] and sys_status_seen and rc_live)
+        core = (seen['fc_hb'] >= 2 and seen['gps_msgs'] and seen['rng_down']
+                and sys_status_seen and rc_live)
+        if not args.expect_esp32:
+            return core
+        return (core and seen['esp_hb'] >= 2 and seen['obst']
+                and len(ring_ok) == RING_SECTORS and seen['rng_up'])
 
     t_start = time.time()
     t_end = t_start + args.seconds
@@ -259,25 +331,30 @@ def main():
                   f"{seen['rng_down']} downward DISTANCE_SENSOR msgs"
                   + (f", {rng_down_m:.2f} m" if rng_down_m is not None
                      else "") + " (0 = wire OR params not pushed)")
-    ok &= verdict('ESP32', seen['esp_hb'] > 0 and seen['obst'] > 0,
-                  f"{seen['esp_hb']} comp195 heartbeats, "
-                  f"{seen['obst']} OBSTACLE_DISTANCE. Heartbeats but 0 ring "
-                  f"msgs = alive and not transmitting: in fake mode that "
-                  f"means the GPIO4 jumper is missing")
-    dead = [s for s in range(RING_SECTORS) if s not in ring_ok]
-    ok &= verdict('RING', seen['obst'] > 0 and not dead,
-                  f"{len(ring_ok)}/{RING_SECTORS} sectors reporting"
-                  + ("" if not dead else
-                     ": DEAD " + ", ".join(f"s{s}({SECTOR_BEARING[s]}deg)"
-                                           for s in dead)
-                     + ". The ring message still streams with a dead sensor's "
-                       "slot filled as no-data, so this is invisible unless "
-                       "the sectors are scored"))
-    ok &= verdict('UP-SENSOR', seen['rng_up'] > 0,
-                  f"{seen['rng_up']} upward DISTANCE_SENSOR msgs (mux ch6). "
-                  f"An empty ceiling is NOT the explanation for 0: a clear "
-                  f"reading is still transmitted (as max+1). 0 means the "
-                  f"read failed, so read the ESP32 boot lines")
+    if not args.expect_esp32 and seen['esp_hb'] == 0:
+        print("  ----  ESP32      absent, and not expected: the obstacle ring "
+              "is parked (2026-08-06). Pass --expect-esp32 once it is "
+              "refitted so a silent ring fails again.")
+    else:
+        ok &= verdict('ESP32', seen['esp_hb'] > 0 and seen['obst'] > 0,
+                      f"{seen['esp_hb']} comp195 heartbeats, "
+                      f"{seen['obst']} OBSTACLE_DISTANCE. Heartbeats but 0 "
+                      f"ring msgs = alive and not transmitting: in fake mode "
+                      f"that means the GPIO4 jumper is missing")
+        dead = [s for s in range(RING_SECTORS) if s not in ring_ok]
+        ok &= verdict('RING', seen['obst'] > 0 and not dead,
+                      f"{len(ring_ok)}/{RING_SECTORS} sectors reporting"
+                      + ("" if not dead else
+                         ": DEAD " + ", ".join(f"s{s}({SECTOR_BEARING[s]}deg)"
+                                               for s in dead)
+                         + ". The ring message still streams with a dead "
+                           "sensor's slot filled as no-data, so this is "
+                           "invisible unless the sectors are scored"))
+        ok &= verdict('UP-SENSOR', seen['rng_up'] > 0,
+                      f"{seen['rng_up']} upward DISTANCE_SENSOR msgs (mux "
+                      f"ch6). An empty ceiling is NOT the explanation for 0: "
+                      f"a clear reading is still transmitted (as max+1). 0 "
+                      f"means the read failed, so read the ESP32 boot lines")
     ok &= verdict('RC', rc_live,
                   f"{seen['rc_msgs']} RC_CHANNELS msgs, "
                   + ("live values" if rc_live else

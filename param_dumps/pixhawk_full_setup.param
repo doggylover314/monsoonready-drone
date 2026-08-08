@@ -64,7 +64,15 @@ RNGFND2_TYPE,10           # 10 = MAVLink
 RNGFND2_ORIENT,24         # 24 = up
 
 # --- Proximity ring: ESP32 OBSTACLE_DISTANCE ---
-PRX1_TYPE,2               # 2 = MAVLink
+# PRX1_TYPE IS DELIBERATELY COMMENTED OUT (2026-08-06): the obstacle ring is
+# parked and the ESP32 is unplugged, and PRX1_TYPE=2 makes that module an
+# ARMING DEPENDENCY, so pushing it would block every arm attempt.
+# This bit me on 2026-08-08: PRX1_TYPE was set to 0 by hand, then this file
+# was pushed and put it straight back to 2. A param file that contradicts the
+# aircraft's actual fit will always win, so the fix belongs HERE, not in a
+# one-off command.
+# UNCOMMENT only when the ESP32 is refitted AND transmitting.
+# PRX1_TYPE,2             # 2 = MAVLink
 PRX1_ORIENT,0
 PRX1_YAW_CORR,0
 

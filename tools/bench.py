@@ -11,8 +11,9 @@ gets the link details right in one place.
     training/.venv/bin/python tools/bench.py getparam PRX1_TYPE
     training/.venv/bin/python tools/bench.py setparam RNGFND1_GNDCLR 0.14
 
-DEFAULTS TO THE RADIO (/dev/ttyUSB0 at 57600), because that is how the field
-tests are run. Add --conn /dev/ttyACM0 --baud 115200 for USB.
+PORT AND BAUD ARE WORKED OUT FOR YOU when only one serial device is present:
+a ttyUSB is assumed to be the SiK radio (57600), a ttyACM the Pixhawk's USB
+(115200). With several plugged in it refuses to guess; name one with --conn.
 
 Two things this gets right that a hand-typed one-liner does not:
 
@@ -34,12 +35,13 @@ import time
 from pymavlink import mavutil
 
 # Same directory, and this is how the fix stays in one place.
-from wiring_check import wait_autopilot
+from wiring_check import resolve_link, wait_autopilot
 
 DOWN = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_270
 
 
 def connect(args):
+    args.conn, args.baud = resolve_link(args.conn, args.baud)
     print(f"connecting {args.conn} at {args.baud} ...")
     m = mavutil.mavlink_connection(args.conn, baud=args.baud,
                                    source_system=250)
@@ -154,8 +156,12 @@ def main():
                                     'rng', 'getparam', 'setparam'])
     ap.add_argument('name', nargs='?')
     ap.add_argument('value', nargs='?')
-    ap.add_argument('--conn', default='/dev/ttyUSB0')
-    ap.add_argument('--baud', type=int, default=57600)
+    ap.add_argument('--conn', default=None,
+                    help='serial device; omit to auto-pick when '
+                         'exactly one is present')
+    ap.add_argument('--baud', type=int, default=None,
+                    help='omit to follow the port type: 57600 '
+                         'for a SiK radio, 115200 for USB')
     ap.add_argument('--seconds', type=float, default=60.0)
     args = ap.parse_args()
 
