@@ -87,6 +87,31 @@ RING_ANGLE_OFFSET_DEG = 0
 SECTOR_BEARING = [RING_ANGLE_OFFSET_DEG + 60 * s for s in range(RING_SECTORS)]
 
 
+def serial_candidates():
+    """Serial devices that could plausibly be the Pixhawk or a SiK radio.
+
+    Linux and macOS name these completely differently, and this repo is used
+    from both (the owner's Linux laptop and Raghav's MacBook), so a
+    Linux-only glob silently finds nothing on a Mac and the tool reports
+    "nothing plugged in" while the hardware sits there working.
+
+    On macOS use the /dev/cu.* names, never /dev/tty.*: opening a tty.* device
+    blocks waiting for carrier detect, which a USB serial adapter never
+    asserts, so the tool would hang instead of failing.
+    """
+    return sorted(
+        glob.glob('/dev/ttyACM*') +          # Linux: Pixhawk USB CDC
+        glob.glob('/dev/ttyUSB*') +          # Linux: SiK radio, ESP32
+        glob.glob('/dev/cu.usbmodem*') +     # macOS: Pixhawk USB CDC
+        glob.glob('/dev/cu.usbserial*') +    # macOS: FTDI-based SiK
+        glob.glob('/dev/cu.SLAB_USBtoUART*'))  # macOS: CP210x-based SiK
+
+
+def is_usb_cdc(port):
+    """True for a directly-attached Pixhawk (115200), false for a radio."""
+    return 'ACM' in port or 'usbmodem' in port
+
+
 def require_port(conn):
     """Fail with something actionable when the device node is not there.
 
@@ -97,7 +122,7 @@ def require_port(conn):
     """
     if conn.startswith(('tcp:', 'udp:', 'tcpin:')) or os.path.exists(conn):
         return
-    found = sorted(glob.glob('/dev/ttyACM*') + glob.glob('/dev/ttyUSB*'))
+    found = serial_candidates()
     msg = f"{conn} does not exist. "
     if found:
         msg += ("Serial devices present right now: " + ", ".join(found) +
@@ -112,20 +137,21 @@ def require_port(conn):
 def resolve_link(conn, baud):
     """Work out which port and baud to use, and say so out loud.
 
-    Ports move constantly on this bench: the Pixhawk's USB is a ttyACM, while
-    the SiK radio and the ESP32 both land on ttyUSB and whichever was plugged
-    in first takes the lower number. Hard-coding a default just produces a
-    traceback on the wrong day, so when the caller does not name a port we
-    pick the only candidate if there is exactly one, and refuse to guess when
-    there is more than one.
+    Ports move constantly on this bench, and differ by OS: on Linux the
+    Pixhawk's USB is a ttyACM while the SiK radio and the ESP32 both land on
+    ttyUSB with whichever was plugged in first taking the lower number; on
+    macOS they are /dev/cu.usbmodem* and /dev/cu.usbserial* (or SLAB_*).
+    Hard-coding a default just produces a traceback on the wrong machine, so
+    when the caller does not name a port we pick the only candidate if there
+    is exactly one, and refuse to guess when there is more than one.
 
     Baud follows the port type unless the caller asked for a specific rate:
-    115200 for the Pixhawk over USB, 57600 for a SiK ground radio.
+    115200 for a directly-attached Pixhawk, 57600 for a SiK ground radio.
     """
     if conn is not None:
         require_port(conn)
-        return conn, baud if baud else (115200 if 'ACM' in conn else 57600)
-    found = sorted(glob.glob('/dev/ttyACM*') + glob.glob('/dev/ttyUSB*'))
+        return conn, baud if baud else (115200 if is_usb_cdc(conn) else 57600)
+    found = serial_candidates()
     if not found:
         sys.exit("no serial devices found: nothing plugged in, or the "
                  "aircraft/radio is unpowered.")
@@ -134,7 +160,7 @@ def resolve_link(conn, baud):
                  "); name one with --conn, since guessing between a radio "
                  "and something else would be a coin flip.")
     port = found[0]
-    rate = baud if baud else (115200 if 'ACM' in port else 57600)
+    rate = baud if baud else (115200 if is_usb_cdc(port) else 57600)
     print(f"using the only serial device present: {port} at {rate}")
     return port, rate
 
