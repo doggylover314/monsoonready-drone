@@ -29,6 +29,7 @@ Two things this gets right that a hand-typed one-liner does not:
 """
 
 import argparse
+import struct
 import sys
 import time
 
@@ -108,7 +109,10 @@ def cmd_gps(m, args):
         if g is None:
             continue
         hdop = g.eph / 100.0
-        ok = g.satellites_visible >= 10 and 0 < hdop < 1.5
+        # fix_type must be 3D: a 2D fix has no usable altitude and ArduPilot
+        # will not navigate on it, yet it can show 10+ sats and a good HDOP.
+        ok = (g.fix_type >= mavutil.mavlink.GPS_FIX_TYPE_3D_FIX
+              and g.satellites_visible >= 10 and 0 < hdop < 1.5)
         print(f"  {time.time() - t0:5.0f}s  fix {g.fix_type}  "
               f"sats {g.satellites_visible:2d}  hdop {hdop:5.2f}"
               f"{'   READY' if ok else ''}")
@@ -119,31 +123,66 @@ def cmd_rng(m, args):
     print("downward rangefinder; over water watch for dropouts, which are "
           "the whole point of the TF-Luna bench (TODO 6):")
     end = time.time() + args.seconds
+    last_down = time.time()
     misses = 0
     while time.time() < end:
-        d = m.recv_match(type='DISTANCE_SENSOR', blocking=True, timeout=2)
-        if d is None:
+        d = m.recv_match(type='DISTANCE_SENSOR', blocking=True, timeout=0.5)
+        # Time the gap between DOWNWARD frames specifically. Keying on
+        # recv_match's timeout hid every dropout whenever the upward sensor
+        # was streaming, since its frames reset the clock.
+        if time.time() - last_down > 1.0:
             misses += 1
-            print(f"  --- no reading ({misses}) ---")
+            print(f"  --- NO DOWNWARD READING for "
+                  f"{time.time() - last_down:.1f}s  (dropout {misses}) ---")
+            last_down = time.time()
+        if d is None or d.orientation != DOWN:
             continue
-        if d.orientation == DOWN:
-            print(f"  {d.current_distance / 100.0:6.2f} m")
+        last_down = time.time()
+        lo, hi = d.min_distance / 100.0, d.max_distance / 100.0
+        val = d.current_distance / 100.0
+        flag = '' if lo <= val <= hi else f'   OUT OF RANGE ({lo:.2f}-{hi:.2f})'
+        print(f"  {val:6.2f} m{flag}")
+
+
+def await_param(m, name, timeout=10.0):
+    """The PARAM_VALUE for THIS name, discarding others.
+
+    ArduPilot broadcasts PARAM_VALUE whenever any parameter changes, and a
+    second GCS on the same link produces more, so taking "the next one" and
+    labelling it with the name you asked for can report a completely
+    different parameter's value. push_params.py already does this correctly.
+    """
+    end = time.time() + timeout
+    while time.time() < end:
+        p = m.recv_match(type='PARAM_VALUE', blocking=True, timeout=1)
+        if p is None:
+            continue
+        got = p.param_id if isinstance(p.param_id, str) else p.param_id.decode()
+        if got.strip('\x00') == name:
+            return p
+    return None
 
 
 def cmd_getparam(m, args):
     m.mav.param_request_read_send(m.target_system, m.target_component,
                                   args.name.encode(), -1)
-    p = m.recv_match(type='PARAM_VALUE', blocking=True, timeout=10)
+    p = await_param(m, args.name)
     print(f"  {args.name} = {p.param_value if p else 'NO REPLY'}")
 
 
 def cmd_setparam(m, args):
+    want = float(args.value)
     m.mav.param_set_send(m.target_system, m.target_component,
-                         args.name.encode(), float(args.value),
+                         args.name.encode(), want,
                          mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
-    p = m.recv_match(type='PARAM_VALUE', blocking=True, timeout=10)
+    p = await_param(m, args.name)
     got = p.param_value if p else None
     print(f"  {args.name} = {got if got is not None else 'NO REPLY'}")
+    if got is not None and struct.unpack('f', struct.pack('f', got))[0] != \
+            struct.unpack('f', struct.pack('f', want))[0]:
+        print(f"  REFUSED OR CLAMPED: asked {want}, board stored {got}. The "
+              f"write did NOT take effect as typed.")
+        sys.exit(1)
     if got is None:
         print("  no echo: over a radio link a lost packet looks exactly like "
               "a refused write, so re-read it with getparam before believing "

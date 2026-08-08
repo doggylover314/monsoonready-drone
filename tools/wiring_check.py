@@ -195,6 +195,18 @@ def wait_autopilot(m, timeout=30):
     return False
 
 
+def drain_statustext(m):
+    """Any STATUSTEXT waiting right now. ArduPilot explains a refused motor
+    test here ("Motor Test: Safety switch", "Motor Test: RC not calibrated"),
+    and the ack alone is just MAV_RESULT_FAILED with no reason."""
+    out = []
+    while True:
+        s = m.recv_match(type='STATUSTEXT', blocking=False)
+        if s is None:
+            return out
+        out.append(s.text)
+
+
 def send_and_ack(m, cmd, *params, timeout=5.0):
     """Send a COMMAND_LONG and wait for ITS ack.
 
@@ -237,8 +249,11 @@ def main():
                     help='PROPS OFF. Spin each of the 6 motors in turn at '
                          'low throttle to prove ESC wiring and motor order.')
     ap.add_argument('--motor-throttle', type=int, default=8,
+                    choices=range(1, 21), metavar='1-20',
                     help='percent throttle for --motor-test (default 8)')
     ap.add_argument('--motors', type=int, default=6)
+    ap.add_argument('--servo-closed-us', type=int, default=1000,
+                    help='pulse the gate is re-commanded to on exit')
     ap.add_argument('--expect-esp32', action='store_true',
                     help='require the obstacle ring to be present and '
                          'reporting. OFF by default because the ring was '
@@ -247,6 +262,12 @@ def main():
                          'not fail the run. Turn it on if the ring is '
                          'refitted, so a silent ring is a failure again.')
     args = ap.parse_args()
+    if args.wiggle is not None and not 1 <= args.wiggle <= 16:
+        sys.exit(f"--wiggle {args.wiggle} is not an output channel (1-16)")
+    if args.wiggle not in (None, 9):
+        print(f"NOTE: this project wires the dropper to ch9 (AUX1); you asked "
+              f"for ch{args.wiggle}. A channel whose SERVOn_FUNCTION is not 0 "
+              f"will ack ACCEPTED and move nothing.")
     args.conn, args.baud = resolve_link(args.conn, args.baud)
 
     print(f"connecting {args.conn} ...")
@@ -283,6 +304,7 @@ def main():
     rng_bounds = None
     rc_frames = []
     rc_present = rc_healthy = False
+    rc_ever_bad = mag_ever_bad = False
     gps_present = False
     mag_present = mag_healthy = False
     sys_status_seen = False
@@ -320,7 +342,10 @@ def main():
             # filled with SECTOR_NO_DATA. Checking only that the message
             # exists hid a dead ch1 for days (2026-08-06), so score sectors.
             for s in range(RING_SECTORS):
-                if msg.distances[s] != SECTOR_NO_DATA:
+                d = msg.distances[s]
+                # 0 cm is what a failed I2C read looks like, not an obstacle
+                # touching the airframe; mirror the TF-LUNA bounds check.
+                if d != SECTOR_NO_DATA and 0 < d <= msg.max_distance:
                     ring_ok.add(s)
         elif t == 'DISTANCE_SENSOR':
             if msg.orientation == DOWN:
@@ -360,6 +385,12 @@ def main():
             # condition the channel values fail to show.
             rc_present = bool(msg.onboard_control_sensors_enabled & RC_BIT)
             rc_healthy = bool(msg.onboard_control_sensors_health & RC_BIT)
+            # Sticky: the safety property is "solid for the whole window",
+            # not "healthy in the last frame we happened to look at".
+            if not rc_healthy:
+                rc_ever_bad = True
+            if not bool(msg.onboard_control_sensors_health & MAG_BIT):
+                mag_ever_bad = True
             gps_present = bool(msg.onboard_control_sensors_enabled & GPS_BIT)
 
         if all_satisfied():
@@ -374,7 +405,10 @@ def main():
     print("\nresults:")
     ok = True
     gps_word = 'up' if gps_present else 'NOT PRESENT (receiver not detected)'
-    ok &= verdict('FC', seen['fc_hb'] > 0,
+    # Two, not one: the file's own all_satisfied() documents that one
+    # heartbeat proves the sender existed and two prove it is still sending.
+    # A controller that beats once and browns out used to read PASS.
+    ok &= verdict('FC', seen['fc_hb'] >= 2,
                   f"{seen['fc_hb']} heartbeats")
     # GPS_RAW_INT keeps flowing with NO receiver attached (fix 0, sats 0), so
     # counting messages proves only that the autopilot is talking to us. The
@@ -383,9 +417,18 @@ def main():
                   f"{seen['gps_msgs']} msgs, driver {gps_word}, "
                   f"fix_type {fix}, {sats} sats "
                   f"(0 sats indoors is normal, a missing driver is not)")
-    ok &= verdict('COMPASS', mag_present and mag_healthy,
-                  "mag enabled+healthy" if sys_status_seen
-                  else "no SYS_STATUS received")
+    # Detail must follow the VERDICT, not merely whether SYS_STATUS arrived:
+    # a FAIL line used to print the words "mag enabled+healthy".
+    if not sys_status_seen:
+        mag_detail = "no SYS_STATUS received"
+    elif mag_present and mag_healthy:
+        mag_detail = "mag enabled+healthy"
+    else:
+        mag_detail = (f"enabled={mag_present} healthy={mag_healthy}"
+                      + ("  (no compass detected, or COMPASS_USE=0)"
+                         if not mag_present else
+                         "  (detected but reporting unhealthy)"))
+    ok &= verdict('COMPASS', mag_present and mag_healthy, mag_detail)
     rng_real = (rng_down_m is not None and rng_bounds is not None
                 and rng_bounds[0] <= rng_down_m <= rng_bounds[1])
     ok &= verdict('TF-LUNA', seen['rng_down'] > 0 and rng_real,
@@ -419,10 +462,13 @@ def main():
     moving = len(set(rc_frames)) > 1
     health_word = 'healthy' if rc_healthy else \
         'UNHEALTHY (link lost or in failsafe)'
-    ok &= verdict('RC', rc_healthy,
+    ok &= verdict('RC', rc_healthy and not rc_ever_bad,
                   f"{seen['rc_msgs']} RC_CHANNELS msgs; autopilot reports "
                   f"receiver {'present' if rc_present else 'ABSENT'}/"
                   f"{health_word}"
+                  + ("; DROPPED OUT at least once during the window, which "
+                     "is an intermittent link, not a healthy one"
+                     if rc_ever_bad else "")
                   + (", channels moving" if moving else
                      ", channels static (either you did not touch the sticks "
                      "or the receiver is holding failsafe values)"))
@@ -457,17 +503,33 @@ def main():
     if args.wiggle is not None:
         print(f"\nservo wiggle on ch{args.wiggle} (props off, watch the "
               f"gate): open 1900 ...")
-        for us in (1900, 1000):
-            res = send_and_ack(m, mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
-                               args.wiggle, us, timeout=ack_timeout)
-            print(f"  {us}us -> {res}")
-            time.sleep(1.5)
+        wiggle_ok = True
+        try:
+            for us in (1900, 1000):
+                res = send_and_ack(m, mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
+                                   args.wiggle, us, timeout=ack_timeout)
+                print(f"  {us}us -> {res}")
+                if res != 'MAV_RESULT_ACCEPTED':
+                    wiggle_ok = False
+                time.sleep(1.5)
+        finally:
+            # The gate must never be left open by an interrupted run or a lost
+            # ack. Re-command closed unconditionally and say whether it took.
+            closed = send_and_ack(m, mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
+                                  args.wiggle, args.servo_closed_us,
+                                  timeout=ack_timeout)
+            print(f"  final close {args.servo_closed_us}us -> {closed}")
+            if closed != 'MAV_RESULT_ACCEPTED':
+                print("  COULD NOT CONFIRM THE GATE CLOSED. Check it by eye "
+                      "before flying; a gate left open dumps the payload.")
+                wiggle_ok = False
+        ok &= wiggle_ok
         print("  ack proves acceptance; movement is verified by eye. No "
               "movement + ACCEPTED = SERVOn_FUNCTION not 0, or wiring/power.")
 
     if args.motor_test:
-        motor_test(m, args.motors, args.motor_throttle, rc_healthy,
-                   ack_timeout)
+        ok &= motor_test(m, args.motors, args.motor_throttle,
+                         rc_healthy and not rc_ever_bad, ack_timeout)
 
     print(f"\n{'ALL WIRED CHECKS PASS' if ok else 'SOMETHING FAILED, see above'}")
     raise SystemExit(0 if ok else 1)
@@ -497,16 +559,17 @@ def motor_test(m, motors, throttle_pct, rc_live, ack_timeout=5.0):
         print("\nMOTOR TEST SKIPPED: no live RC. Switch the transmitter on "
               "and re-run; without it the commands are refused and every "
               "motor looks dead.")
-        return
+        return False
     print(f"\nMOTOR TEST: {motors} motors, {throttle_pct}% throttle, 2s each.")
     print("PROPS MUST BE OFF. Type 'spin' to continue, anything else aborts.")
     try:
         if input("> ").strip().lower() != 'spin':
             print("  aborted, nothing commanded")
-            return
+            return False
     except EOFError:
         print("  no console input available, aborted")
-        return
+        return False
+    all_ok = True
     for i in range(1, motors + 1):
         res = send_and_ack(
             m, mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
@@ -516,11 +579,18 @@ def motor_test(m, motors, throttle_pct, rc_live, ack_timeout=5.0):
             0,                                             # motor count
             mavutil.mavlink.MOTOR_TEST_ORDER_DEFAULT,
             timeout=ack_timeout)
-        print(f"  motor {i}: {res}  <- which arm spun? note it")
+        if res == 'MAV_RESULT_ACCEPTED':
+            print(f"  motor {i}: {res}  <- which arm spun? note it")
+        else:
+            print(f"  motor {i}: {res}   (not accepted, so nothing spun)")
+            all_ok = False
+        for line in drain_statustext(m):
+            print(f"     FC says: {line}")
         time.sleep(3)
     print("  expected: 1 = front-right, then clockwise. Any other order is a "
           "swapped ESC lead. Directions must alternate; fix by swapping any "
           "two motor phase wires, never by reordering the signal leads.")
+    return all_ok
 
 
 if __name__ == '__main__':
