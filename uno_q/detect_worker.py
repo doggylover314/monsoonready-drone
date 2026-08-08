@@ -40,6 +40,31 @@ from detector import OnnxDetector
 DEFAULT_OUT = '/tmp/monsoonready_det.json'
 
 
+def save_annotated(save_dir, seq, frame, rows, w, h):
+    """Write the frame with its detection boxes drawn on it.
+
+    The boxes come back from the model in LETTERBOX space (the padded 640
+    square), so they have to be un-padded and un-scaled before they mean
+    anything about the real image; camera_geom.letterbox_to_frame is the same
+    conversion the flight code uses to locate a puddle, reused here so the
+    picture cannot disagree with the mission's own maths.
+    """
+    import cv2
+    from camera_geom import letterbox_to_frame
+    os.makedirs(save_dir, exist_ok=True)
+    img = frame.copy()
+    for x1, y1, x2, y2, conf in rows:
+        ax, ay = letterbox_to_frame(x1, y1, w, h, OnnxDetector.SIZE)
+        bx, by = letterbox_to_frame(x2, y2, w, h, OnnxDetector.SIZE)
+        cv2.rectangle(img, (int(ax), int(ay)), (int(bx), int(by)),
+                      (0, 255, 0), 2)
+        cv2.putText(img, f"{conf:.2f}", (int(ax), max(12, int(ay) - 4)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+    path = os.path.join(save_dir, f"det_{seq:06d}.jpg")
+    cv2.imwrite(path, img)
+    return path
+
+
 def write_atomic(path, payload):
     tmp = path + '.tmp'
     with open(tmp, 'w') as f:
@@ -53,6 +78,13 @@ def main():
     ap.add_argument('--camera', type=int, default=1)
     ap.add_argument('--conf', type=float, default=0.5)
     ap.add_argument('--out', default=DEFAULT_OUT)
+    ap.add_argument('--save-dir', default=None,
+                    help='write an annotated JPEG for every frame that has a '
+                         'detection. This is the docs/07 "unoq_detection" '
+                         'evidence and the only way to see WHAT the board '
+                         'detected during a field flight, since nothing else '
+                         'keeps the image. Off by default: it writes to disk '
+                         'on every hit and must not run unattended in flight.')
     ap.add_argument('--interval', type=float, default=1.0,
                     help='min seconds between capture starts. Slower models '
                          'simply run back to back; 0 pegs a core for nothing '
@@ -78,10 +110,13 @@ def main():
             payload = {'seq': seq, 't_frame': t0, 'camera_ok': False,
                        'w': None, 'h': None, 'rows': []}
         else:
-            t_frame, w, h, rows = res
+            t_frame, w, h, rows, frame = res
             payload = {'seq': seq, 't_frame': t_frame, 'camera_ok': True,
                        'w': w, 'h': h,
                        'rows': [[float(v) for v in r[:5]] for r in rows]}
+            if args.save_dir and rows:
+                save_annotated(args.save_dir, seq, frame, payload['rows'],
+                               w, h)
         write_atomic(out, payload)
         if payload['rows']:
             best = max(r[4] for r in payload['rows'])

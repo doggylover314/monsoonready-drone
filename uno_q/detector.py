@@ -275,10 +275,12 @@ class OnnxDetector(_RowResolver):
         """Grab one frame and run the model. No telemetry, no dedup: this is
         the piece detect_worker.py runs in its own process.
 
-        Returns (t_frame_wall, w, h, rows) with rows = every model row at or
-        above conf, in letterbox space; or None if the camera gave no frame.
-        t_frame is time.time() AT CAPTURE, not after inference: the consumer
-        pairs it with the telemetry from when the frame was taken.
+        Returns (t_frame_wall, w, h, rows, frame) with rows = every model row
+        at or above conf, in letterbox space; or None if the camera gave no
+        frame. t_frame is time.time() AT CAPTURE, not after inference: the
+        consumer pairs it with the telemetry from when the frame was taken.
+        The BGR frame comes back too so a caller can save annotated evidence
+        without grabbing a second, different image.
         """
         frame = self._grab()
         t_frame = time.time()
@@ -297,7 +299,7 @@ class OnnxDetector(_RowResolver):
         x = boxed[:, :, ::-1].transpose(2, 0, 1)[None].astype(np.float32) / 255
         out = self.sess.run(None, {self._in: x})[0][0]
         rows = [r for r in out if float(r[4]) >= self.conf]
-        return t_frame, w, h, rows
+        return t_frame, w, h, rows, frame
 
     def poll(self, tel):
         if tel.lat is None:
@@ -314,7 +316,7 @@ class OnnxDetector(_RowResolver):
                 self._warned = True
             return None
         self._warned = False
-        _t, w, h, rows = res
+        _t, w, h, rows, _frame = res
         return self._resolve(tel, rows, w, h)
 
 
