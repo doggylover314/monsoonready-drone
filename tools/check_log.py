@@ -100,6 +100,10 @@ def main():
     errs, msgs = [], []
     volt_min, consumed, energy = None, None, None
     peak_amp = 0.0
+    # Battery-monitor calibration AS FLOWN. The board's current settings are not
+    # evidence about an old flight: these are the only trustworthy source for
+    # what scaling produced the amps in THIS log.
+    batt_cal = {}
 
     while True:
         msg = m.recv_match()
@@ -153,6 +157,11 @@ def main():
             peak_amp = max(peak_amp, getattr(msg, 'Curr', 0.0) or 0.0)
             consumed = getattr(msg, 'CurrTot', consumed)
             energy = getattr(msg, 'EnrgTot', energy)
+        elif t == 'PARM':
+            name = getattr(msg, 'Name', '')
+            if name in ('BATT_AMP_PERVLT', 'BATT_AMP_OFFSET', 'BATT_VOLT_MULT',
+                        'BATT_CURR_PIN', 'BATT_CAPACITY', 'BATT_MONITOR'):
+                batt_cal[name] = getattr(msg, 'Value', None)
 
     print(f"\n=== {args.logfile} ===")
 
@@ -247,6 +256,27 @@ def main():
                       "sense line is dead, not that the pack is flat.")
         if peak_amp:
             print(f"  peak current {peak_amp:.0f} A")
+        if batt_cal:
+            print("  monitor calibration AS FLOWN: "
+                  + ", ".join(f"{k}={v:g}" for k, v in sorted(batt_cal.items())))
+            # Sanity ceiling. ArduPilot computes amps as
+            #   (pin_volts - BATT_AMP_OFFSET) * BATT_AMP_PERVLT
+            # and the Pixhawk's analog input saturates at 3.3 V, so PERVLT alone
+            # fixes the largest current the board is CAPABLE of reporting. A
+            # logged peak at or above that ceiling is a scaling fault, not a
+            # measurement, and no amount of flying will make it true.
+            pervlt = batt_cal.get('BATT_AMP_PERVLT')
+            if pervlt and peak_amp:
+                ceiling = (3.3 - (batt_cal.get('BATT_AMP_OFFSET') or 0.0)) * pervlt
+                if peak_amp > ceiling * 1.02:
+                    print(f"  IMPOSSIBLE: PERVLT {pervlt:g} on a 3.3 V input "
+                          f"caps the readable current at {ceiling:.0f} A, yet "
+                          f"{peak_amp:.0f} A was logged. The amps in this log "
+                          f"are not physical: treat consumed mAh and burn rate "
+                          f"as UNUSABLE until the monitor is recalibrated.")
+                else:
+                    print(f"  (PERVLT {pervlt:g} allows up to ~{ceiling:.0f} A "
+                          f"before the input saturates)")
         if flight_s:
             print(f"  motors running for {flight_s:.0f}s total across this "
                   f"log ({flight_s / 60:.1f} min)")
