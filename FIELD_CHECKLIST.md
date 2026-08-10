@@ -28,6 +28,10 @@ Disarm airborne only for an imminent person-strike or an unrecoverable flyaway.
       flow rate those seconds are proportional to nothing. Measure it at two
       dwells if you can, e.g. 0.5 s and 2 s, so you know whether flow is
       actually linear in time or whether the gate takes a moment to get going.
+      `./python tools/flow_test.py` drives the gate and does the arithmetic:
+      it reports g/s and, more usefully, the opening lag, i.e. how much of a
+      short dose delivers nothing. **NOT needed for today's flight** — this
+      only matters before dosing is claimed to work in grams.
 - [ ] **3. Phone hotspot to the UNO Q.** Not set up yet, and without it there
       is no in-flight detection recording. Do it now, on your home wifi, where
       failure is free. Turn the hotspot on, join the board to it, note the IP
