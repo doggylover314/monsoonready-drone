@@ -1,16 +1,1 @@
-#!/usr/bin/env bash
-# Shorthand for this repo's virtualenv pip:  ./pip install pymavlink
-#
-# Resolves the venv per machine rather than hard-coding one path, because the
-# two machines that use this repo name theirs differently: the Linux laptop
-# has training/.venv (it also holds torch/ultralytics for training) and the
-# MacBook has .venv-tools (tools only, no training). A symlink would break on
-# whichever machine it was not created on.
-set -euo pipefail
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-for venv in "$here/training/.venv" "$here/.venv-tools"; do
-    if [ -x "$venv/bin/pip" ]; then exec "$venv/bin/pip" "$@"; fi
-done
-echo "no virtualenv found: expected training/.venv or .venv-tools." >&2
-echo "create one with:  python3 -m venv .venv-tools && ./pip install pymavlink pyserial" >&2
-exit 1
+.venv/bin/pip

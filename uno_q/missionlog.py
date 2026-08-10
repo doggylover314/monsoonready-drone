@@ -76,8 +76,12 @@ class MissionLog:
     def latch(self, lat, lon):
         self._w('latch', lat=lat, lon=lon)
 
-    def drop(self, lat, lon, rng, ok=True):
-        self._w('drop', lat=lat, lon=lon, rng=rng, ok=bool(ok))
+    def drop(self, lat, lon, rng, ok=True, dwell_s=None, area_m2=None):
+        # dwell_s and area_m2 are absent in logs written before 2026-08-10;
+        # the dashboard must treat a missing field as "not recorded", not as
+        # zero, or old flights would render as zero-dose drops.
+        self._w('drop', lat=lat, lon=lon, rng=rng, ok=bool(ok),
+                dwell_s=dwell_s, area_m2=area_m2)
 
     def abort(self, lat, lon, reason):
         self._w('abort', lat=lat, lon=lon, reason=reason)

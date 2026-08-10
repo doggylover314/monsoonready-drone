@@ -84,6 +84,33 @@ class CameraGeometry:
         return w, h
 
 
+def ground_area_m2(geom, px1, py1, px2, py2, height_m):
+    """Approximate ground area of a detection box, in square metres.
+
+    Computed by projecting the box's two opposite CORNERS to the ground and
+    multiplying the resulting side lengths, NOT by scaling the pixel area by a
+    single factor: ground_offset is linear in tangent space, so a box far from
+    the image centre covers more ground per pixel than one at the centre, and
+    a single scale factor would understate it.
+
+    THREE ERRORS THIS CARRIES, all of which matter if a dose is sized from it:
+      * a bounding BOX overestimates any non-rectangular puddle, without
+        bound. An L-shaped or diagonal puddle can be a small fraction of its
+        box. Honest area needs a segmentation model, which is a different
+        training run (PROJECT_STATE records the dataset already has polygons
+        that the detect model discards).
+      * it inherits the FOV error proportionally, squared: a 10% FOV error is
+        a ~20% area error.
+      * height_m must be true AGL. Above the rangefinder's range that is the
+        EKF's above-home figure, which is wrong over sloping ground.
+    Treat the result as an order-of-magnitude input to dosing, not a
+    measurement, and say so wherever it is displayed.
+    """
+    ax, ay = geom.ground_offset(px1, py1, height_m)
+    bx, by = geom.ground_offset(px2, py2, height_m)
+    return abs(bx - ax) * abs(by - ay)
+
+
 def camera_to_ned(right_m, down_m, heading_deg, mount_yaw_deg=0.0):
     """Rotate a camera-frame offset into (north_m, east_m).
 

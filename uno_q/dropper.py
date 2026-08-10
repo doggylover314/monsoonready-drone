@@ -46,7 +46,7 @@ from mavlink_io import PWM_MIN_US, PWM_MAX_US
 
 
 class Dropper:
-    def trigger(self):
+    def trigger(self, dwell_s=None):
         raise NotImplementedError
 
 
@@ -59,11 +59,14 @@ class LogDropper(Dropper):
         self.times = []
         self._log = log
 
-    def trigger(self):
+    def trigger(self, dwell_s=None):
         self.fired += 1
         self.succeeded += 1
         self.times.append(time.monotonic())
-        self._log(f"[dropper] TRIGGER #{self.fired} (simulated)")
+        self.dwells = getattr(self, 'dwells', [])
+        self.dwells.append(dwell_s)
+        self._log(f"[dropper] TRIGGER #{self.fired} (simulated"
+                  + (f", dwell {dwell_s:.2f}s)" if dwell_s else ")"))
         return True
 
 
@@ -111,7 +114,23 @@ class PixhawkServoDropper(Dropper):
         thrown into the state machine mid-descent is a runaway.
     """
 
-    def __init__(self, io, channel=9, closed_us=1000, open_us=1900,
+    # GATE TRAVEL, measured on the bench 2026-08-10 and then REVERSED at the
+    # user's instruction. Observation: 1000us -> 1900us (900us) swung the horn
+    # 90 degrees CLOCKWISE, which implies roughly 10us per degree ON THIS
+    # SERVO (a ratio, not a datasheet figure: MG90 travel per microsecond
+    # varies by unit, so treat it as calibration, not spec). The gate must
+    # instead open 60 degrees COUNTER-CLOCKWISE, so open has to sit BELOW
+    # closed in pulse width, 60 * 10 = 600us below it.
+    #   closed 1600us  ->  open 1000us   = 600us = ~60 deg CCW
+    # Both stay inside the 800-2200us guard. VERIFY BY EYE on the bench: if
+    # the throw is not 60 degrees, adjust DEG_PER_US rather than guessing new
+    # pulse numbers, and if it turns the wrong way swap these two values.
+    US_PER_DEG = 10.0
+    DEFAULT_CLOSED_US = 1600
+    DEFAULT_OPEN_US = 1000
+
+    def __init__(self, io, channel=9, closed_us=DEFAULT_CLOSED_US,
+                 open_us=DEFAULT_OPEN_US,
                  dwell_s=1.0, log=print, sleep=time.sleep):
         for name, v in (('closed_us', closed_us), ('open_us', open_us)):
             if not PWM_MIN_US <= v <= PWM_MAX_US:
@@ -159,11 +178,22 @@ class PixhawkServoDropper(Dropper):
                      f"FAILED ({why}): {exc}")
             return None
 
-    def trigger(self):
-        """Open, dwell, close. Returns True only if the gate actually opened."""
+    def trigger(self, dwell_s=None):
+        """Open, dwell, close. Returns True only if the gate actually opened.
+
+        dwell_s overrides the configured dwell for THIS drop, which is how a
+        bigger puddle gets a bigger dose: the gate is a fixed aperture, so the
+        only quantity available to vary is how long it stays open. Dose is
+        therefore proportional to time only if the granule flow rate is
+        constant, which is exactly what the TODO 3 bench test measures and
+        which has NOT been measured yet: until it has, the numbers below are
+        proportional, not calibrated in grams.
+        """
         self.fired += 1
         self.times.append(time.monotonic())
-        self.log(f"[dropper] TRIGGER #{self.fired}: gate -> {self.open_us}us")
+        dwell = self.dwell_s if dwell_s is None else max(0.05, float(dwell_s))
+        self.log(f"[dropper] TRIGGER #{self.fired}: gate -> {self.open_us}us "
+                 f"for {dwell:.2f}s")
 
         opened = self._safe(self.open_us, 'open')
         if opened is None:
@@ -172,7 +202,7 @@ class PixhawkServoDropper(Dropper):
         self.gate_open = True
         self.succeeded += 1
 
-        self._sleep(self.dwell_s)
+        self._sleep(dwell)
 
         if self._safe(self.closed_us, 'close') is None:
             # The payload went out, so the drop itself succeeded, but a gate
@@ -253,16 +283,18 @@ class ServoDropper(Dropper):
             self.log(f"[dropper] {method}{args} FAILED ({why}): {exc}")
             return None
 
-    def trigger(self):
+    def trigger(self, dwell_s=None):
         self.fired += 1
         self.times.append(time.monotonic())
-        self.log(f"[dropper] TRIGGER #{self.fired}: gate -> {self.open_deg}deg")
+        dwell = self.dwell_s if dwell_s is None else max(0.05, float(dwell_s))
+        self.log(f"[dropper] TRIGGER #{self.fired}: gate -> {self.open_deg}deg "
+                 f"for {dwell:.2f}s")
         opened = self._safe('servo_set', self.open_deg, why='open')
         if opened is None:
             self.log("[dropper] gate did NOT open: this site is UNTREATED")
             return False
         self.succeeded += 1
-        self._sleep(self.dwell_s)
+        self._sleep(dwell)
         self._safe('servo_set', self.closed_deg, why='close')
         if self.detach_after:
             self._safe('servo_detach', why='release')

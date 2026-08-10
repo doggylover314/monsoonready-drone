@@ -59,6 +59,17 @@ class MissionConfig:
     rng_expect_m: float = 6.0      # EKF alt by which rangefinder must have acquired
     floor_margin_m: float = 1.0
     drop_dwell_s: float = 2.0      # hold position AFTER the gate closes again
+    # AREA-PROPORTIONAL DOSING. The gate is a fixed aperture, so dose is set
+    # by how long it stays open: dwell = area_m2 * dose_s_per_m2, clamped.
+    # The clamps are the safety net, because the area estimate is a bounding
+    # box (it overestimates non-rectangular water) inheriting the FOV error
+    # squared. An UNKNOWN area falls back to dose_s_default, never to the
+    # maximum: over-dosing a puddle you cannot measure wastes the hopper on
+    # one site and strands later ones untreated.
+    dose_s_per_m2: float = 0.4
+    dose_s_min: float = 0.3
+    dose_s_max: float = 3.0
+    dose_s_default: float = 1.0    # used when the area is unknown
     # The gate must not open while the aircraft is still sinking, or the
     # granules leave from below the intended release height. DROP commands a
     # stop and waits for the autopilot to actually achieve it, bounded by
@@ -99,6 +110,7 @@ class Mission:
         self.history = []          # (t, state, note)
         self.wp_i = 0
         self.target = None         # latched (lat, lon)
+        self.target_area_m2 = None # estimated puddle area at latch time
         self.abort_reason = None
         self._t_state = 0.0        # time of last state entry
         self._rng_acquired = False # ground return seen during current descent
@@ -222,6 +234,21 @@ class Mission:
         self.io.goto(lat, lon, self.cfg.survey_alt_m)
         self._set('SURVEY', f"wp {self.wp_i}")
 
+    def dose_for(self, area_m2):
+        """Seconds to hold the gate open for a puddle of this area.
+
+        Returns (seconds, description). Unknown area is NOT treated as large.
+        """
+        cfg = self.cfg
+        if area_m2 is None:
+            return cfg.dose_s_default, 'area unknown, default dose'
+        raw = area_m2 * cfg.dose_s_per_m2
+        dwell = min(cfg.dose_s_max, max(cfg.dose_s_min, raw))
+        note = f'{area_m2:.1f} m2'
+        if dwell != raw:
+            note += f' (clamped from {raw:.2f}s)'
+        return dwell, note
+
     def _st_survey(self):
         det = self.det.poll(self.io.tel)
         if det is not None:
@@ -230,6 +257,7 @@ class Mission:
             self.target = offset_latlon(det.lat, det.lon,
                                         self.cfg.lateral_offset_n_m,
                                         self.cfg.lateral_offset_e_m)
+            self.target_area_m2 = getattr(det, 'area_m2', None)
             self.rec.latch(*self.target)
             self.io.goto(*self.target, self.cfg.survey_alt_m)
             self._set('APPROACH',
@@ -326,7 +354,9 @@ class Mission:
                 return
             if not self._stopped():
                 return
-            ok = self.dropper.trigger()
+            dwell, why = self.dose_for(self.target_area_m2)
+            self.log(f"[mission] dose {dwell:.2f}s ({why})")
+            ok = self.dropper.trigger(dwell)
             self._t_dropped = time.monotonic()
             self._drop_ok = ok is not False
             # Record where the gate ACTUALLY opened, and whether it did. A
@@ -335,7 +365,8 @@ class Mission:
             # never got any Bti).
             self.rec.drop(tel.lat, tel.lon,
                           tel.rng_m if tel.rng_valid else None,
-                          ok=(ok is not False))
+                          ok=(ok is not False),
+                          dwell_s=dwell, area_m2=self.target_area_m2)
             if ok is False:
                 self.log("[mission] DROP FAILED: gate did not actuate")
             return
@@ -354,6 +385,7 @@ class Mission:
         if (tel.rel_alt_m is not None
                 and tel.rel_alt_m >= cfg.survey_alt_m - cfg.alt_tol_m):
             self.target = None
+            self.target_area_m2 = None
             self._goto_current_wp()   # resume survey where we left off
             return
         self.io.velocity_ned(0, 0, -cfg.climb_mps)

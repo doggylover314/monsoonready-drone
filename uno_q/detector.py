@@ -8,7 +8,7 @@ import math
 import os
 import time
 
-from camera_geom import camera_to_ned, letterbox_to_frame
+from camera_geom import camera_to_ned, ground_area_m2, letterbox_to_frame
 
 # A rangefinder reading older than this is not trusted as an AGL source.
 RNG_FRESH_S = 1.0
@@ -41,10 +41,14 @@ def quiet_import_onnxruntime():
 
 
 class Detection:
-    def __init__(self, lat, lon, confidence=1.0):
+    def __init__(self, lat, lon, confidence=1.0, area_m2=None):
         self.lat = lat
         self.lon = lon
         self.confidence = confidence
+        # Estimated ground area of the detection box. None whenever the
+        # geometry or a height is missing, which the mission must treat as
+        # "unknown size", never as "small".
+        self.area_m2 = area_m2
 
 
 class DetectionSource:
@@ -102,7 +106,7 @@ class _RowResolver(DetectionSource):
                       key=lambda r: -float(r[4]))
         for row in rows:
             conf = float(row[4])
-            lat, lon, how = self._locate(tel, row, w, h, at_t)
+            lat, lon, how, area = self._locate(tel, row, w, h, at_t)
             # Dedup on the SITE, not on where the drone happened to be: the
             # same puddle seen from two positions must resolve to one target.
             if any(dist_m(lat, lon, flat, flon) <= self.skip_radius_m
@@ -110,9 +114,11 @@ class _RowResolver(DetectionSource):
                 continue                  # already treated this site
             self._fired.append((lat, lon))
             self.log(f"[detector] puddle conf {conf:.2f} {how}"
+                     + (f" ~{area:.1f} m2" if area is not None else
+                        " (area unknown)")
                      + (f" ({len(rows)} candidates this frame)"
                         if len(rows) > 1 else ""))
-            return Detection(lat, lon, conf)
+            return Detection(lat, lon, conf, area)
         return None
 
     @staticmethod
@@ -144,7 +150,7 @@ class _RowResolver(DetectionSource):
         height_m, source = self._height_agl(tel, at_t)
         if (self.geom is None or height_m is None
                 or tel.heading_deg is None):
-            return tel.lat, tel.lon, 'at nadir'
+            return tel.lat, tel.lon, 'at nadir', None
         cx = (float(row[0]) + float(row[2])) / 2
         cy = (float(row[1]) + float(row[3])) / 2
         px, py = letterbox_to_frame(cx, cy, frame_w, frame_h, self.SIZE)
@@ -152,7 +158,14 @@ class _RowResolver(DetectionSource):
         n, e = camera_to_ned(right_m, down_m, tel.heading_deg,
                              self.mount_yaw_deg)
         lat, lon = offset_latlon(tel.lat, tel.lon, n, e)
-        return lat, lon, f"offset {n:+.1f}m N {e:+.1f}m E @{height_m:.1f}m {source}"
+        ax, ay = letterbox_to_frame(float(row[0]), float(row[1]),
+                                    frame_w, frame_h, self.SIZE)
+        bx, by = letterbox_to_frame(float(row[2]), float(row[3]),
+                                    frame_w, frame_h, self.SIZE)
+        area = ground_area_m2(self.geom, ax, ay, bx, by, height_m)
+        return (lat, lon,
+                f"offset {n:+.1f}m N {e:+.1f}m E @{height_m:.1f}m {source}",
+                area)
 
 
 class FakeDetector(DetectionSource):

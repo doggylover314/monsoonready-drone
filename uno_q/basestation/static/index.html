@@ -245,7 +245,9 @@ function table() {
   for (const e of state.events) {
     if (e.e === 'fix') continue;
     const detail = e.e === 'abort' ? e.reason
-      : e.e === 'drop' ? `rng ${e.rng?.toFixed(2)} m`
+      : e.e === 'drop' ? `rng ${e.rng?.toFixed(2)} m` +
+          (e.dwell_s != null ? `, dose ${e.dwell_s.toFixed(2)} s` : '') +
+          (e.area_m2 != null ? ` (~${e.area_m2.toFixed(1)} m²)` : '')
       : e.e === 'detection' ? `conf ${e.conf?.toFixed(2)}`
       : e.e === 'state' ? `${e.from} → ${e.to}${e.note ? ' (' + e.note + ')' : ''}`
       : e.e === 'mission_end' ? `final ${e.final}, drops ${e.drops}`
@@ -354,10 +356,16 @@ function render() {
      means it worked, which is what the runner assumed at the time.) */
   if (layer('ly-drop')) for (const d of of('drop')) {
     const p = proj.px(d.lat, d.lon), ok = d.ok !== false;
-    ring(p, 9);
+    /* Radius encodes the DOSE, not the puddle: 8 px at the minimum dose up to
+       14 px at the 3 s maximum. Drops logged before 2026-08-10 have no
+       dwell_s and draw at the old fixed size, so an old flight is not
+       silently rendered as a minimum dose. */
+    const r = d.dwell_s != null
+      ? 8 + 6 * Math.min(1, Math.max(0, (d.dwell_s - 0.3) / 2.7)) : 8;
+    ring(p, r + 1);
     if (ok) {
       ctx.fillStyle = '#0ca30c';
-      ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill();
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath();
       ctx.moveTo(p.x - 3.5, p.y + 0.5); ctx.lineTo(p.x - 1, p.y + 3);
       ctx.lineTo(p.x + 4, p.y - 3); ctx.stroke();
@@ -367,7 +375,13 @@ function render() {
       ctx.lineWidth = 2; xmark(p, 3.5);
     }
     state.hits.push({...p, r: 11, html:
-      (ok ? `<b>Treated</b> drop at rng ${d.rng?.toFixed(2)} m`
+      (ok ? `<b>Treated</b> drop at rng ${d.rng?.toFixed(2)} m` +
+             (d.dwell_s != null
+               ? `<br>dose: gate open ${d.dwell_s.toFixed(2)} s` : '') +
+             (d.area_m2 != null
+               ? `<br>puddle ~${d.area_m2.toFixed(1)} m² <span class="t">` +
+                 `(bounding-box estimate, overestimates odd shapes)</span>`
+               : '')
           : `<b>Drop FAILED</b> gate did not actuate, site untreated`) +
       `<br><span class="t">${fmtT(d.t)} &middot; ${d.mission}</span>`});
   }

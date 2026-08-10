@@ -32,5 +32,8 @@ PRIVATE.md
 .DS_Store
 Thumbs.db
 
-# repo-root venv shortcuts (./python, ./pip) are committed on purpose;
-# listing them here only to note they are NOT stray scripts.
+
+# repo-root venv. On this laptop it is a symlink to training/.venv (which also
+# holds torch/ultralytics); on the Mac it is the venv itself. Same path either
+# way, so the committed ./python and ./pip symlinks work on both machines.
+.venv
