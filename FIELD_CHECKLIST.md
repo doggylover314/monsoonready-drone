@@ -82,6 +82,9 @@ Cannot get the measurement without:
 - Notebook and pen for stopwatch times and voltages
 
 Nearly-free insurance:
+- **PLIERS** (user, 2026-08-10, learned at the field): motor nuts cannot be
+  tightened properly by hand, and a nut backing off in flight was crash #1.
+  This is a permanent line on the list, not a one-off.
 - **Loctite + hex drivers**, spare props, spare prop nuts
 - **Multimeter** - the only way to check pack voltage against what the FC reports
 - SD card reader, in case the log comes off the card
