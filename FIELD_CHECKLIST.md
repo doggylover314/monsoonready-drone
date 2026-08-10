@@ -98,6 +98,13 @@ make the mAh-per-minute figure meaningless.
 - [ ] **11.** Switch to **AltHold** and hold station over the tray. Start a
       stopwatch. Note the time at each of: first low-battery warning, and any
       change in how it flies.
+      **THE STOPWATCH IS NOW THE ENDURANCE MEASUREMENT, NOT THE LOG.** As of
+      2026-08-10 the logged current is proven non-physical (BATT_AMP_PERVLT=17
+      on a 3.3 V input cannot report more than 56 A, yet log 37 holds 105 A),
+      so mAh-consumed and burn rate are garbage. Minutes on a stopwatch from a
+      FULL pack to the first low-voltage warning is a real number that needs no
+      working current sensor, and it is the number to quote. If the pack is not
+      full, you are not getting an endurance figure today, only a flight.
 - [ ] **12. Land as soon as the low-battery warning sounds.** Do not fly to
       the failsafe deliberately — you already know it triggers RTL and climbs
       to 15 m, and a LiPo taken below ~3.3 V per cell resting is damaged.
