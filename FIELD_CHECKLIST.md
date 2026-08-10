@@ -87,6 +87,10 @@ Nearly-free insurance:
   This is a permanent line on the list, not a one-off.
 - **Loctite + hex drivers**, spare props, spare prop nuts
 - **Multimeter** - the only way to check pack voltage against what the FC reports
+- **THE SD CARD ITSELF, IN THE AIRCRAFT** (user, 2026-08-10, nearly forgotten
+  because it was still in the reader after the last log pull). No card, no
+  log, and the log is the only record of what the flight actually did. Check
+  it is seated in the Pixhawk BEFORE leaving, every single time.
 - SD card reader, in case the log comes off the card
 - First aid kit. Six props at hover RPM cut.
 
