@@ -15,29 +15,42 @@ handover is worse than none, because it reads as current.
 Read CLAUDE.md and PROJECT_STATE.md completely before doing anything, and
 PRIVATE.md if present. git pull --rebase first.
 
-Continuing MonsoonReady. Last session ended Monday 2026-08-10, evening, right
-after the second real flight.
+Continuing MonsoonReady. Last session ended Monday 2026-08-10, ~22:00, after
+the second real flight and a full day of battery-monitor debugging.
 
-LIVE THREAD: the battery current sensor reads roughly 3-4x high, and it is NOT
-a calibration problem. See PROJECT_STATE.md, the 2026-08-10 LOG 39 entry, for
-the evidence. One-line version: BATT_AMP_PERVLT changed 5.33x between logs 37
-and 39 while the reported current changed 1.13x, so the reading does not
-respond to the parameter and no value of it will fix this.
+THE CURRENT-SENSOR THREAD IS CLOSED. Do not reopen it. BATT_AMP_PERVLT was
+90.6866, which was the power module's "90 A" rating typed into QGC's
+amps-per-volt field. The charger returned 2279 mAh against 8376 counted, a
+3.68x over-count. Corrected to 24, verified by readback, and BATT_MONITOR
+restored to 4 (it had been left at 0 = no sensing) with a reboot done.
 
-Consequences, all load-bearing:
-- Consumed mAh, burn rate and every endurance figure from logs 37 and 39 are
-  UNUSABLE. Real endurance is UNMEASURED. The 4.5 min flight was terminated by
-  the phantom counter reaching BATT_CAPACITY 8000 (8376 counted), not by the
-  pack, which finished at 3.95/3.94/3.97 V per cell.
-- The airframe itself is FINE and this is the good news: log 39 is a PASS,
-  VibeZ median 7.4, zero clipping, hover throttle 0.37-0.40.
+WHAT THAT BOUGHT, all measured rather than modelled:
+- Real hover current 28.8 A, real endurance 16.7 min on a full 8000 mAh pack,
+  13.3 min to a 20% reserve. The 4.5 min "endurance" was the phantom mAh
+  counter hitting BATT_CAPACITY, not the pack.
+- The airframe is healthy: log 39 PASSES, VibeZ median 7.4, ZERO clipping,
+  hover throttle 0.37-0.40, cells finished 3.95/3.94/3.97 balanced.
 
-NEXT ACTION, not yet done: zero-load current reading, props off, disarmed.
-`./python tools/bench.py battery` - under ~1 A is healthy, tens of amps at zero
-throttle means the sense path is faulty rather than miscalibrated.
+ONE VERIFICATION LEFT ON IT, ask me for the result before trusting the fix:
+`./python tools/bench.py battery` with the pack connected and PROPS OFF.
+Reading a parameter proves it is stored, not that the driver is running.
+Expect ~pack voltage and under ~1 A; tens of amps at idle would mean a
+BATT_AMP_OFFSET problem on top of the scale error already fixed.
 
-ALSO AWAITING: the mAh the charger returned into the pack after that flight.
-Expect 2000-2800 against 8376 counted. Ask me for it; it sizes the error.
+OPEN WORK, none of it started, roughly in priority order:
+- The competition video: 5-10 min, ONE continuous unedited take, opens with a
+  Google search for the date on screen. PROJECT_STATE records a footage freeze
+  around 2026-08-10, which has now PASSED. Resolve that date conflict before
+  planning anything else.
+- Servo gate still opens the wrong way. The fix is mechanical, not a number:
+  reseat the horn 60 deg on the spline THEN swap the pulses in
+  uno_q/dropper.py. Swapping pulses alone moves where the gate RESTS and can
+  leave it open over a loaded hopper.
+- Hopper flow rate never measured: `./python tools/flow_test.py`. Until it is,
+  the variable-dose seconds are proportional to nothing.
+- Camera FOV never measured (TODO 11).
+- Phone hotspot to the UNO Q never set up, so no in-flight detection recording.
+- UNO Q <-> Pixhawk D0/D1 link unproven, which is what blocks full autonomy.
 
 Ask before assuming anything else is still true.
 ```

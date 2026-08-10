@@ -7,11 +7,6 @@
     ./python tools/parameters.py pull                  # dump the whole board
     ./python tools/parameters.py merge [qgc_dump]      # offline file build
 
-Replaces push_params.py, pull_params.py, make_complete_params.py and the
-getparam/setparam subcommands that used to sit in bench.py. Parameter logic
-was spread across four files with three separate copies of "write a value and
-check the echo"; only one of them got the checking right.
-
 RUN WITH QGC CLOSED. It owns the serial port while connected.
 
 USB, NOT THE RADIO, for push: it is many small round trips and every retry
