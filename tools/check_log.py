@@ -259,24 +259,30 @@ def main():
         if batt_cal:
             print("  monitor calibration AS FLOWN: "
                   + ", ".join(f"{k}={v:g}" for k, v in sorted(batt_cal.items())))
-            # Sanity ceiling. ArduPilot computes amps as
-            #   (pin_volts - BATT_AMP_OFFSET) * BATT_AMP_PERVLT
-            # and the Pixhawk's analog input saturates at 3.3 V, so PERVLT alone
-            # fixes the largest current the board is CAPABLE of reporting. A
-            # logged peak at or above that ceiling is a scaling fault, not a
-            # measurement, and no amount of flying will make it true.
-            pervlt = batt_cal.get('BATT_AMP_PERVLT')
-            if pervlt and peak_amp:
-                ceiling = (3.3 - (batt_cal.get('BATT_AMP_OFFSET') or 0.0)) * pervlt
-                if peak_amp > ceiling * 1.02:
-                    print(f"  IMPOSSIBLE: PERVLT {pervlt:g} on a 3.3 V input "
-                          f"caps the readable current at {ceiling:.0f} A, yet "
-                          f"{peak_amp:.0f} A was logged. The amps in this log "
-                          f"are not physical: treat consumed mAh and burn rate "
-                          f"as UNUSABLE until the monitor is recalibrated.")
-                else:
-                    print(f"  (PERVLT {pervlt:g} allows up to ~{ceiling:.0f} A "
-                          f"before the input saturates)")
+            # NO CEILING CHECK HERE ANY MORE. A previous version computed a
+            # "maximum readable current" as 3.3 V x BATT_AMP_PERVLT and called
+            # anything above it IMPOSSIBLE. Log 39 flew with PERVLT=17 and
+            # logged 143 A, which that rule declared impossible while the
+            # aircraft was demonstrably in the air, so the 3.3 V assumption was
+            # simply wrong and the check was a false alarm. Guessing at the
+            # board's analog scaling is how that happened; this file will not
+            # do it again without a datasheet.
+            #
+            # This check needs no hardware assumption at all: an aircraft
+            # cannot draw more out of a pack than the pack holds. When counted
+            # consumption passes BATT_CAPACITY the remaining-percentage hits
+            # zero and ArduPilot fires the battery failsafe on a number rather
+            # than on the cells, which is exactly how a flight gets cut short
+            # with a healthy pack still aboard.
+            cap = batt_cal.get('BATT_CAPACITY')
+            if cap and consumed and consumed > cap:
+                print(f"  PHANTOM CAPACITY CUTOFF: counted {consumed:.0f} mAh "
+                      f"out of a {cap:.0f} mAh pack. Nothing can discharge a "
+                      f"pack past its own capacity, so the current scaling is "
+                      f"wrong and any battery failsafe in this log fired on "
+                      f"arithmetic, not on the cells. Measure the pack's "
+                      f"resting cell voltages: that is the real state of "
+                      f"charge.")
         if flight_s:
             print(f"  motors running for {flight_s:.0f}s total across this "
                   f"log ({flight_s / 60:.1f} min)")
