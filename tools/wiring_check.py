@@ -2,9 +2,9 @@
 """Bench wiring check: one listen on the Pixhawk USB, one PASS/FAIL line per
 wired subsystem (2026-08-02 port assignments).
 
-    training/.venv/bin/python tools/wiring_check.py            # auto-detect
-    training/.venv/bin/python tools/wiring_check.py --wiggle   # + servo
-    training/.venv/bin/python tools/wiring_check.py --conn /dev/ttyUSB1
+    ./python tools/wiring_check.py            # auto-detect
+    ./python tools/wiring_check.py --wiggle   # + servo
+    ./python tools/wiring_check.py --conn /dev/ttyUSB1
 
 Port and baud are worked out when exactly one serial device is present: a
 ttyUSB is taken as the SiK radio (57600), a ttyACM as the Pixhawk USB

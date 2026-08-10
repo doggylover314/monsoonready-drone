@@ -3,13 +3,13 @@
 SiK radio. Replaces the throwaway pymavlink one-liners with something that
 gets the link details right in one place.
 
-    training/.venv/bin/python tools/bench.py mode          # watch mode switch
-    training/.venv/bin/python tools/bench.py battery       # V/A as the FC sees them
-    training/.venv/bin/python tools/bench.py failsafe      # watch STATUSTEXT
-    training/.venv/bin/python tools/bench.py gps           # fix / sats / HDOP
-    training/.venv/bin/python tools/bench.py rng           # downward rangefinder
-    training/.venv/bin/python tools/bench.py getparam PRX1_TYPE
-    training/.venv/bin/python tools/bench.py setparam RNGFND1_GNDCLR 0.14
+    ./python tools/bench.py mode          # watch mode switch
+    ./python tools/bench.py battery       # V/A as the FC sees them
+    ./python tools/bench.py failsafe      # watch STATUSTEXT
+    ./python tools/bench.py gps           # fix / sats / HDOP
+    ./python tools/bench.py rng           # downward rangefinder
+    ./python tools/bench.py getparam PRX1_TYPE
+    ./python tools/bench.py setparam RNGFND1_GNDCLR 0.14
 
 PORT AND BAUD ARE WORKED OUT FOR YOU when only one serial device is present:
 a ttyUSB is assumed to be the SiK radio (57600), a ttyACM the Pixhawk's USB
@@ -120,8 +120,12 @@ def cmd_gps(m, args):
 
 def cmd_rng(m, args):
     streams(m, args.baud)
-    print("downward rangefinder; over water watch for dropouts, which are "
-          "the whole point of the TF-Luna bench (TODO 6):")
+    # NOT for the over-water bench any more: Raghav recorded 2026-08-09 that
+    # the TF-Luna over water DOES NOT WORK and never will, so TODO 6 is closed
+    # by verdict and descend-BESIDE is the only route. This probe is now just
+    # "is the downward rangefinder healthy and continuous over ground".
+    print("downward rangefinder over GROUND (the over-water question is "
+          "settled: it does not work, descend-beside only):")
     end = time.time() + args.seconds
     last_down = time.time()
     misses = 0

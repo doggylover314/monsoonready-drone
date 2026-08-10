@@ -3,7 +3,7 @@
 with readback verification. Immune to QGC's silent bulk-load drops.
 
 Run with QGC CLOSED (it owns the serial port):
-    ../training/.venv/bin/python push_params.py [/dev/ttyACM0]
+    ./python tools/push_params.py [/dev/ttyACM0]
 
 Reads pixhawk_full_setup.param (NAME,VALUE lines), writes each via PARAM_SET,
 confirms the echoed PARAM_VALUE for THAT name, retrying three times. The check

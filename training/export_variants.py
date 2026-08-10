@@ -8,7 +8,7 @@ the architecture, the input shape and the operator mix, which is what decides
 how long a forward pass takes on an A53. If a variant turns out to be fast
 enough, THEN it is worth ~12 h of GPU to train it properly on dataset v2.
 
-    training/.venv/bin/python training/export_variants.py yolo26s yolo26m
+    ./python training/export_variants.py yolo26s yolo26m
 
 Ultralytics downloads any checkpoint it does not already have. If a name does
 not exist upstream it will say so; nothing here guesses at what is published.

@@ -2,7 +2,7 @@
 """Dump EVERY parameter from the Pixhawk and build the canonical full file.
 
 Run with QGC CLOSED (it owns the serial port otherwise):
-    ../training/.venv/bin/python pull_params.py [/dev/ttyACM0]
+    .././python pull_params.py [/dev/ttyACM0]
 
 Outputs, in the project root:
   * pixhawk_all_params_dump.param  : raw NAME,VALUE of every param on the

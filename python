@@ -1,1 +1,9 @@
-.venv/bin/python
+#!/bin/sh
+# ./python -> the venv interpreter in .venv/
+#
+# This is a WRAPPER, not a symlink, and it has to be. CPython finds pyvenv.cfg
+# beside the executable AS INVOKED; a symlink at the repo root has no
+# pyvenv.cfg beside it, so python falls back to sys.prefix=/usr and imports
+# nothing from the venv. That failure is silent: `import torch` just says the
+# module is missing. (Learned 2026-08-10 by shipping the symlink version.)
+exec "$(dirname "$0")/.venv/bin/python" "$@"

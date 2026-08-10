@@ -14,7 +14,7 @@ Disarm airborne only for an imminent person-strike or an unrecoverable flyaway.
       never been actuated. Do this on a table, not on the aircraft's legs, and
       watch the gate with your eyes. An ACCEPTED ack proves only that the
       command was received.
-      `training/.venv/bin/python tools/wiring_check.py --wiggle`
+      `./python tools/wiring_check.py --wiggle`
       The tool now re-commands CLOSED in a `finally` and says so if it cannot
       confirm. If it reports it could not close, **look at the gate** before
       loading any salt.
@@ -42,11 +42,11 @@ restrain the aircraft for the motor test, notebook.
 
 - [ ] **6. Prop nuts by hand, every one.** C1 was a nut backing off.
 - [ ] **7. Power up, DO NOT ARM for 2-5 minutes.**
-      `.venv-tools/bin/python tools/bench.py gps --seconds 300`
+      `./python tools/bench.py gps --seconds 300`
       Wait for `READY` (10+ sats, HDOP < 1.5, 3D fix). Flight 37 achieved
       11 sats / HDOP 0.91, so this is reachable here.
 - [ ] **8. Full wiring check over the radio.**
-      `.venv-tools/bin/python tools/wiring_check.py`
+      `./python tools/wiring_check.py`
       Expect FC / GPS / COMPASS / TF-LUNA / RC / SiK PASS. The rangefinder
       reading below 0.20 m on the legs is now reported as expected, not FAIL.
 - [ ] **9. Start the detection worker** (only if step 3 worked):
@@ -72,7 +72,7 @@ make the mAh-per-minute figure meaningless.
 
 - [ ] **14.** Pull the log **by USB cable or SD card** — never over the radio,
       a `.bin` at a few kB/s takes hours.
-      `.venv-tools/bin/python tools/check_log.py <log>.BIN`
+      `./python tools/check_log.py <log>.BIN`
       Exit code is the verdict now: 0 cleared, 1 a gate failed, 2 unjudgeable.
       Read the **burn rate** line: that is your real endurance.
 - [ ] **15.** Compare the log's consumed mAh against what the charger puts

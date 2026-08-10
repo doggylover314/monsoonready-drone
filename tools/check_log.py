@@ -2,7 +2,7 @@
 """First-look analysis of an ArduPilot .bin log. Run this after EVERY flight,
 before drawing any conclusion from memory of what the aircraft looked like.
 
-    training/.venv/bin/python tools/check_log.py ~/logs/00000037.BIN
+    ./python tools/check_log.py ~/logs/00000037.BIN
 
 EXIT CODE IS THE VERDICT: 0 = analysed and cleared, 1 = a gate failed, 2 = the
 log could not be judged. Chaining `check_log.py x.BIN && next-step` is therefore
