@@ -65,6 +65,13 @@ import time
 
 from pymavlink import mavutil
 
+# One source of truth for the gate pulses. wiring_check used to hard-code
+# 1900/1000 of its own, so changing the dropper's travel silently did nothing
+# to the bench test (found 2026-08-10: the gate kept opening the old way).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                '..', 'uno_q'))
+from dropper import PixhawkServoDropper as _Gate
+
 DOWN = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_270   # 25
 UP = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_90      # 24
 
@@ -252,8 +259,13 @@ def main():
                     choices=range(1, 21), metavar='1-20',
                     help='percent throttle for --motor-test (default 8)')
     ap.add_argument('--motors', type=int, default=6)
-    ap.add_argument('--servo-closed-us', type=int, default=1000,
-                    help='pulse the gate is re-commanded to on exit')
+    ap.add_argument('--servo-closed-us', type=int,
+                    default=_Gate.DEFAULT_CLOSED_US,
+                    help='gate CLOSED pulse (default from dropper.py)')
+    ap.add_argument('--servo-open-us', type=int,
+                    default=_Gate.DEFAULT_OPEN_US,
+                    help='gate OPEN pulse (default from dropper.py). Open '
+                         'below closed = counter-clockwise travel.')
     ap.add_argument('--expect-esp32', action='store_true',
                     help='require the obstacle ring to be present and '
                          'reporting. OFF by default because the ring was '
@@ -510,11 +522,16 @@ def main():
               "(PROPS OFF) or use QGC's motor test")
 
     if args.wiggle is not None:
-        print(f"\nservo wiggle on ch{args.wiggle} (props off, watch the "
-              f"gate): open 1900 ...")
+        travel_deg = abs(args.servo_open_us - args.servo_closed_us) / \
+            _Gate.US_PER_DEG
+        way = 'counter-clockwise' if args.servo_open_us < args.servo_closed_us \
+            else 'clockwise'
+        print(f"\nservo wiggle on ch{args.wiggle} (props off, watch the gate): "
+              f"closed {args.servo_closed_us}us -> open {args.servo_open_us}us"
+              f", about {travel_deg:.0f} deg {way}")
         wiggle_ok = True
         try:
-            for us in (1900, 1000):
+            for us in (args.servo_open_us, args.servo_closed_us):
                 res = send_and_ack(m, mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
                                    args.wiggle, us, timeout=ack_timeout)
                 print(f"  {us}us -> {res}")

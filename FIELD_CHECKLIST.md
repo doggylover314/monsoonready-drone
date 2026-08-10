@@ -10,18 +10,24 @@ Disarm airborne only for an imminent person-strike or an unrecoverable flyaway.
 
 ## BEFORE YOU LEAVE (at the bench, ~20 min)
 
-- [ ] **1. Dropper first movement — PROPS OFF, hopper EMPTY.** The MG90 has
-      never been actuated. Do this on a table, not on the aircraft's legs, and
-      watch the gate with your eyes. An ACCEPTED ack proves only that the
-      command was received.
+- [ ] **1. Gate travel — PROPS OFF, hopper EMPTY.** The gate moves (confirmed
+      2026-08-10) but opened the WRONG WAY, because wiring_check had its own
+      hard-coded 1900/1000 and ignored the dropper's values. Fixed: it now
+      reads them from `dropper.py`, so the banner should read
+      `closed 1600us -> open 1000us, about 60 deg counter-clockwise`.
       `./python tools/wiring_check.py --wiggle`
-      The tool now re-commands CLOSED in a `finally` and says so if it cannot
-      confirm. If it reports it could not close, **look at the gate** before
-      loading any salt.
+      **Watch the gate.** If the throw is not ~60 deg, tune without editing
+      code: `--servo-open-us` / `--servo-closed-us`. If it still turns the
+      wrong way, swap those two numbers, then tell me so the defaults in
+      `dropper.py` are corrected. An ACCEPTED ack proves only that the command
+      arrived; your eyes prove the direction.
 - [ ] **2. Salt flow test — still on the bench.** Load the hopper, trigger the
-      gate, catch the salt, weigh it, time it. Write down grams per second.
-      That number is what a variable dose would later depend on, and it is the
-      one measurement that does not need the aircraft at all.
+      gate, catch the salt, weigh it, time it. Write down **grams per second**.
+      This is now load-bearing, not optional: the dropper does VARIABLE doses
+      (gate held open longer for a bigger puddle, 0.3-3.0 s), and without a
+      flow rate those seconds are proportional to nothing. Measure it at two
+      dwells if you can, e.g. 0.5 s and 2 s, so you know whether flow is
+      actually linear in time or whether the gate takes a moment to get going.
 - [ ] **3. Phone hotspot to the UNO Q.** Not set up yet, and without it there
       is no in-flight detection recording. Do it now, on your home wifi, where
       failure is free. Turn the hotspot on, join the board to it, note the IP
@@ -40,11 +46,14 @@ restrain the aircraft for the motor test, notebook.
 
 ## AT THE SITE — pre-arm
 
+- [ ] **5b. TRANSMITTER ON before you run anything.** Every bench run so far
+      has reported `FAIL RC ... receiver ABSENT/UNHEALTHY`, which is the check
+      doing its job with the TX switched off. It must read PASS before you arm.
 - [ ] **6. Prop nuts by hand, every one.** C1 was a nut backing off.
 - [ ] **7. Power up, DO NOT ARM for 2-5 minutes.**
       `./python tools/bench.py gps --seconds 300`
-      Wait for `READY` (10+ sats, HDOP < 1.5, 3D fix). Flight 37 achieved
-      11 sats / HDOP 0.91, so this is reachable here.
+      Wait for `READY` (10+ sats, HDOP < 1.5, 3D fix). Indoors on 2026-08-10 it
+      already reached fix 3 with 8 sats, so outdoors this should come quickly.
 - [ ] **8. Full wiring check over the radio.**
       `./python tools/wiring_check.py`
       Expect FC / GPS / COMPASS / TF-LUNA / RC / SiK PASS. The rangefinder
@@ -80,6 +89,13 @@ make the mAh-per-minute figure meaningless.
       it decides whether ~105 A is real or `BATT_AMP_PERVLT` is mis-scaled.
 - [ ] **16.** Pull the detection frames if the worker ran:
       `scp -r arduino@<hotspot-ip>:~/field_* /tmp/`
+
+## KNOWN-GOOD AS OF 2026-08-10 (do not re-debug these)
+
+FC, GPS driver, compass, TF-Luna, and the SiK link all PASS. The aircraft has
+flown. The obstacle ring is parked and unplugged by choice. TF-Luna over water
+is settled as a permanent no, so descend-BESIDE is the only design and there is
+no basin test to run.
 
 ## STOP AND GO HOME IF
 
