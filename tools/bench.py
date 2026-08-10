@@ -155,4 +155,12 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        # Ctrl-C is the NORMAL way to end these: every probe runs until
+        # --seconds expires and you usually have what you need before then.
+        # Letting it raise printed a pymavlink traceback that looks exactly
+        # like a tool crash, on a run that in fact worked perfectly.
+        print("\nstopped.")
+        sys.exit(0)
