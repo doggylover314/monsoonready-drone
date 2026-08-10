@@ -64,12 +64,32 @@ Disarm airborne only for an imminent person-strike or an unrecoverable flyaway.
 
 ## TAKE
 
-Aircraft, the pack, charger, TX, MacBook + **USB-C to USB-A adapter or hub**
-(the Air has no USB-A, and both the radio and the Pixhawk cable are USB-A),
-MacBook charger, USB cable for the Pixhawk, SD card reader if logs come off
-the card, SiK radio, phone,
-**Loctite + hex drivers**, spare props, tray + water, salt, something to
-restrain the aircraft for the motor test, notebook.
+**The owner's Linux laptop is NOT going to the field. Every field command runs
+on RAGHAV'S MACBOOK**, so anything not installed on the MacBook does not exist
+once you leave. Confirm before driving: repo pulled, `.venv` recreated
+(the pull deletes `.venv-tools`), QGC installed, SiK serial driver present.
+
+Cannot fly without:
+- Aircraft, **fully charged 3S 8000 pack**, TX (check TX battery)
+- **MacBook + USB-C to USB-A adapter or hub** - the Air has no USB-A and BOTH
+  the SiK radio and the Pixhawk cable are USB-A. No adapter, no telemetry, no
+  checks, no log pull.
+- MacBook charger, SiK radio, USB cable for the Pixhawk
+
+Cannot get the measurement without:
+- **Stopwatch** (phone) - this is the endurance instrument now, not the log
+- **Headlamp or phone torch** - an evening session ends in the dark
+- Notebook and pen for stopwatch times and voltages
+
+Nearly-free insurance:
+- **Loctite + hex drivers**, spare props, spare prop nuts
+- **Multimeter** - the only way to check pack voltage against what the FC reports
+- SD card reader, in case the log comes off the card
+- Tray + water (a dark tray ~60 cm across), spare water
+- First aid kit. Six props at hover RPM cut.
+
+Leave at home: salt and the hopper test (bench job), the obstacle ring
+(parked), anything for the motor test (the aircraft flies, that is settled).
 
 ## AT THE SITE — pre-arm
 
