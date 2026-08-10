@@ -92,6 +92,8 @@ def main():
     vibe_xy = {}              # imu -> ([VibeX], [VibeY])
     clip_first, clip_last = {}, {}
     thr, thr_max = 0.0, 0.0
+    flight_s = 0.0
+    last_ctun_t = None
     ctun_seen = False
     hover = []
     gps_pre, gps_fly = [], []   # (sats, hdop) before motors / while flying
@@ -108,6 +110,15 @@ def main():
 
         if t == 'CTUN':
             ctun_seen = True
+            # Sum the time the motors were actually running, so endurance is
+            # measured rather than guessed. A log can hold many arm/disarm
+            # cycles, and CurrTot accumulates across all of them.
+            ts = getattr(msg, 'TimeUS', 0) / 1e6
+            if thr >= args.min_throttle and last_ctun_t is not None:
+                gap = ts - last_ctun_t
+                if 0 < gap < 1.0:      # ignore gaps across a disarm
+                    flight_s += gap
+            last_ctun_t = ts
             thr = getattr(msg, 'ThO', thr)
             thr_max = max(thr_max, thr)
             if thr >= args.min_throttle:
@@ -236,13 +247,23 @@ def main():
                       "sense line is dead, not that the pack is flat.")
         if peak_amp:
             print(f"  peak current {peak_amp:.0f} A")
+        if flight_s:
+            print(f"  motors running for {flight_s:.0f}s total across this "
+                  f"log ({flight_s / 60:.1f} min)")
         if consumed:
             print(f"  consumed {consumed:.0f} mAh"
                   + (f" ({energy:.1f} Wh)" if energy else ""))
-            print(f"  CROSS-CHECK the current sensor: recharge the pack and "
-                  f"compare what the charger puts back in against "
-                  f"{consumed:.0f} mAh. A large disagreement means "
-                  f"BATT_AMP_PERVLT is mis-scaled, not that the pack is odd.")
+            if flight_s > 30:
+                rate = consumed / (flight_s / 60.0)
+                print(f"  burn rate {rate:.0f} mAh/min -> a full 8000 mAh "
+                      f"pack lasts about {8000 / rate:.1f} min at this load, "
+                      f"or {8000 * 0.8 / rate:.1f} min to a sensible 20% "
+                      f"reserve")
+            print(f"  CROSS-CHECK the current sensor: fly ONE pack from full, "
+                  f"then compare what the charger puts back in against the "
+                  f"consumed figure above. Note CurrTot accumulates over the "
+                  f"WHOLE log, so a log with many arm/disarm cycles is not "
+                  f"one flight's worth.")
 
     # --- errors and messages --------------------------------------------------
     print(f"\nERRORS     {len(errs)} ERR events")

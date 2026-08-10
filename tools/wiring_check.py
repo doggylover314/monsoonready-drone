@@ -429,12 +429,21 @@ def main():
                          if not mag_present else
                          "  (detected but reporting unhealthy)"))
     ok &= verdict('COMPASS', mag_present and mag_healthy, mag_detail)
+    # A disconnected serial rangefinder gets a published 0.00; a HEALTHY one
+    # sitting on its legs legitimately reads BELOW RNGFND1_MIN. Treating
+    # below-min as broken made a working Luna FAIL on the bench (2026-08-08).
     rng_real = (rng_down_m is not None and rng_bounds is not None
-                and rng_bounds[0] <= rng_down_m <= rng_bounds[1])
+                and 0.0 < rng_down_m <= rng_bounds[1])
+    rng_low = rng_real and rng_down_m < rng_bounds[0]
     ok &= verdict('TF-LUNA', seen['rng_down'] > 0 and rng_real,
                   f"{seen['rng_down']} downward DISTANCE_SENSOR msgs"
                   + (f", {rng_down_m:.2f} m" if rng_down_m is not None
-                     else "") + " (0 = wire OR params not pushed)")
+                     else "")
+                  + ("  (below RNGFND1_MIN, which is expected with the "
+                     "aircraft on its legs)" if rng_low else "")
+                  + ("" if rng_real else
+                     "  <- 0.00 or out of range is what ArduPilot publishes "
+                     "when the serial rangefinder is disconnected"))
     if not args.expect_esp32 and seen['esp_hb'] == 0:
         print("  ----  ESP32      absent, and not expected: the obstacle ring "
               "is parked (2026-08-06). Pass --expect-esp32 once it is "
