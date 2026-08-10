@@ -17,6 +17,12 @@ replaces prior chat context. Git discipline: run git pull --rebase BEFORE readin
 - If the user requests a correction, note once that editing their last message saves tokens.
 - Explain how things work while doing them; the user wants to understand, not just delegate.
 - Never use em-dashes.
+- CHECK THE DATE FIRST, EVERY REPLY (user, 2026-08-10, after repeated errors):
+  run `date` before reasoning about anything time-dependent. Sessions span
+  days, the injected date can be stale, and deadlines here are close enough
+  that being two days out changes the advice. This was instituted on the day
+  it turned out to be the Aug 10 footage-freeze date while the assistant
+  still believed it was the 8th.
 
 ## Truth and accuracy rules
 

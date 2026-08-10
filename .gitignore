@@ -31,3 +31,6 @@ PRIVATE.md
 # noise at best and leak local folder state at worst.
 .DS_Store
 Thumbs.db
+
+# repo-root venv shortcuts (./python, ./pip) are committed on purpose;
+# listing them here only to note they are NOT stray scripts.

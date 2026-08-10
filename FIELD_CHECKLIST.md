@@ -1,4 +1,4 @@
-# Field checklist — 2026-08-08 session
+# Field checklist — session of Mon 2026-08-10
 
 One pack. Objective: **a real endurance number**, plus prove the parts that
 have never been proven. Everything else is a bonus.
@@ -92,6 +92,13 @@ make the mAh-per-minute figure meaningless.
 ---
 
 # Weekend video plan
+
+**DATE CONFLICT, RESOLVE THIS BEFORE PLANNING ANYTHING ELSE:** today is Monday
+2026-08-10, which PROJECT_STATE records as the footage freeze (~Aug 10). The
+plan to shoot at the farm "on the weekend" puts the recording on the 15th-16th,
+five days the wrong side of that date. Either the freeze is softer than
+recorded, or the video has to be shot far sooner than the weekend. Check the
+actual submission deadline before committing to a weekend shoot.
 
 Requirements that constrain everything: **5-10 min, ONE continuous unedited
 take, publicly viewable, opens with a Google search for the date on screen,
