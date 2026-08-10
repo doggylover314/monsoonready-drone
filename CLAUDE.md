@@ -77,7 +77,7 @@ answer delivered confidently is worse than no answer. In every response:
   NEVER prefix laptop commands with `cd "/media/sleuther/Stuff/Robu AI
   Challenge"` (user, 2026-08-06, emphatic): he knows his working directory
   and the repeated cd is noise. Give the bare command with repo-relative
-  paths (e.g. `./python tools/push_params.py`)
+  paths (e.g. `./python tools/parameters.py push`)
   (2026-08-01: a mixed block was pasted wholesale into the board shell and
   every laptop command errored). A command
   that starts a server (SITL, Flask) needs its own terminal; never chain one
@@ -88,8 +88,13 @@ answer delivered confidently is worse than no answer. In every response:
 - Build Log.txt is user-maintained: never edit it or propose entries unless asked.
 - UNO Q (ssh address in PRIVATE.md, gitignored; template PRIVATE.sample.md): give bare commands, no ssh prefix.
 - ALL model training happens on the RTX 3050 laptop (never the UNO Q, never cloud).
-- Param writes to the Pixhawk: tools/push_params.py (pymavlink, per-write
-  ack). Never trust QGC bulk load.
+- Param writes to the Pixhawk: tools/parameters.py (pymavlink, per-write
+  ack). Never trust QGC bulk load. That file owns ALL parameter work:
+  get / set / push / pull / merge. tools/bench.py is probes only, and
+  tools/mavlink_link.py is the shared link library that every tool imports
+  (port and baud resolution, autopilot targeting, command acks). One tool
+  per area of expertise (user, 2026-08-10); do not grow a second home for
+  any of these.
 - Base station (uno_q/basestation/): Flask on the UNO Q, port 8080; public
   URL https://drone.reysen.net via cloudflared ON THE BOARD (token in
   /etc/cloudflared; needs board internet at viewing time). Mission data =

@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 '..', 'uno_q'))
 
 from pymavlink import mavutil                                    # noqa: E402
-from wiring_check import resolve_link, send_and_ack, wait_autopilot  # noqa: E402
+from mavlink_link import connect, send_and_ack                   # noqa: E402
 from dropper import PixhawkServoDropper as Gate                  # noqa: E402
 
 
@@ -73,11 +73,7 @@ def main():
     ap.add_argument('--baud', type=int, default=None)
     args = ap.parse_args()
 
-    args.conn, args.baud = resolve_link(args.conn, args.baud)
-    m = mavutil.mavlink_connection(args.conn, baud=args.baud,
-                                   source_system=250)
-    if not wait_autopilot(m):
-        sys.exit("no autopilot heartbeat")
+    m, _, args.baud = connect(args.conn, args.baud)
     ack_timeout = 5.0 if args.baud > 57600 else 12.0
     print(f"gate on ch{args.channel}: {args.closed_us}us closed -> "
           f"{args.open_us}us open")

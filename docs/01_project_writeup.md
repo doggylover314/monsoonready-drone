@@ -278,12 +278,12 @@ it.
 | Merge datasets | `.venv/bin/python training/merge_datasets.py` |
 | Train | `.venv/bin/python training/train.py` (checkpoints per epoch, resumes from `last.pt`) |
 | Export ONNX | `.venv/bin/python training/export.py` |
-| Push Pixhawk params | `python tools/push_params.py` (per-write ack) |
-| Dump Pixhawk params | `python tools/pull_params.py` |
+| Push Pixhawk params | `python tools/parameters.py push` (per-write ack) |
+| Dump Pixhawk params | `python tools/parameters.py pull` |
 | Mission tests | `.venv/bin/python uno_q/sitl_test.py` |
 
 Ground-station **bulk parameter load is not used**: it was found to silently
-drop writes, which is why `tools/push_params.py` acknowledges every individual
+drop writes, which is why `tools/parameters.py` acknowledges every individual
 write. The mission code runs unchanged against the simulator and the aircraft;
 only the connection string differs.
 

@@ -93,7 +93,7 @@ class PixhawkServoDropper(Dropper):
     the UNO Q. Cost: one Pixhawk output. Motors occupy MAIN 1-6 on this hexa,
     so an AUX output is free.
 
-    SETUP (tools/push_params.py, then reboot):
+    SETUP (tools/parameters.py push, then reboot):
         SERVO<channel>_FUNCTION = 0     Disabled, so DO_SET_SERVO controls it
         SERVO<channel>_MIN / _MAX       bracket closed_us and open_us
 

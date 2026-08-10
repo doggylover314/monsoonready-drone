@@ -8,8 +8,12 @@ gets the link details right in one place.
     ./python tools/bench.py failsafe      # watch STATUSTEXT
     ./python tools/bench.py gps           # fix / sats / HDOP
     ./python tools/bench.py rng           # downward rangefinder
-    ./python tools/bench.py getparam PRX1_TYPE
-    ./python tools/bench.py setparam RNGFND1_GNDCLR 0.14
+
+PARAMETERS ARE NOT HERE. getparam/setparam moved to
+tools/parameters.py on 2026-08-10: reading and writing the board's
+configuration is a different job from probing whether a sensor works,
+and keeping them together meant two copies of the write-and-verify
+logic, only one of which checked for a clamped value.
 
 PORT AND BAUD ARE WORKED OUT FOR YOU when only one serial device is present:
 a ttyUSB is assumed to be the SiK radio (57600), a ttyACM the Pixhawk's USB
@@ -29,36 +33,19 @@ Two things this gets right that a hand-typed one-liner does not:
 """
 
 import argparse
-import struct
+import os
 import sys
 import time
 
 from pymavlink import mavutil
 
-# Same directory, and this is how the fix stays in one place.
-from wiring_check import resolve_link, wait_autopilot
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Shared link plumbing. Lives in its own library so this file does not
+# have to import a 623-line PASS/FAIL test just to open a serial port.
+from mavlink_link import connect, request_streams
 
 DOWN = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_270
-
-
-def connect(args):
-    args.conn, args.baud = resolve_link(args.conn, args.baud)
-    print(f"connecting {args.conn} at {args.baud} ...")
-    m = mavutil.mavlink_connection(args.conn, baud=args.baud,
-                                   source_system=250)
-    if not wait_autopilot(m):
-        sys.exit("no autopilot heartbeat (is the radio paired and the "
-                 "aircraft powered?)")
-    print(f"autopilot is system {m.target_system} component "
-          f"{m.target_component}")
-    return m
-
-
-def streams(m, baud):
-    rate = 2 if baud <= 57600 else 4
-    m.mav.request_data_stream_send(m.target_system, m.target_component,
-                                   mavutil.mavlink.MAV_DATA_STREAM_ALL,
-                                   rate, 1)
 
 
 def cmd_mode(m, args):
@@ -78,7 +65,7 @@ def cmd_mode(m, args):
 
 
 def cmd_battery(m, args):
-    streams(m, args.baud)
+    request_streams(m, args.baud)
     print("compare these with the multimeter at the pack:")
     end = time.time() + args.seconds
     while time.time() < end:
@@ -89,7 +76,7 @@ def cmd_battery(m, args):
 
 
 def cmd_failsafe(m, args):
-    streams(m, args.baud)
+    request_streams(m, args.baud)
     print(f"switch the TRANSMITTER OFF now; watching messages "
           f"({args.seconds:.0f}s) ...")
     end = time.time() + args.seconds
@@ -100,7 +87,7 @@ def cmd_failsafe(m, args):
 
 
 def cmd_gps(m, args):
-    streams(m, args.baud)
+    request_streams(m, args.baud)
     print("waiting for 10+ sats and HDOP < 1.5 (CRASH LESSONS rule) ...")
     t0 = time.time()
     end = t0 + args.seconds
@@ -119,7 +106,7 @@ def cmd_gps(m, args):
 
 
 def cmd_rng(m, args):
-    streams(m, args.baud)
+    request_streams(m, args.baud)
     # NOT for the over-water bench any more: Raghav recorded 2026-08-09 that
     # the TF-Luna over water DOES NOT WORK and never will, so TODO 6 is closed
     # by verdict and descend-BESIDE is the only route. This probe is now just
@@ -148,57 +135,11 @@ def cmd_rng(m, args):
         print(f"  {val:6.2f} m{flag}")
 
 
-def await_param(m, name, timeout=10.0):
-    """The PARAM_VALUE for THIS name, discarding others.
-
-    ArduPilot broadcasts PARAM_VALUE whenever any parameter changes, and a
-    second GCS on the same link produces more, so taking "the next one" and
-    labelling it with the name you asked for can report a completely
-    different parameter's value. push_params.py already does this correctly.
-    """
-    end = time.time() + timeout
-    while time.time() < end:
-        p = m.recv_match(type='PARAM_VALUE', blocking=True, timeout=1)
-        if p is None:
-            continue
-        got = p.param_id if isinstance(p.param_id, str) else p.param_id.decode()
-        if got.strip('\x00') == name:
-            return p
-    return None
-
-
-def cmd_getparam(m, args):
-    m.mav.param_request_read_send(m.target_system, m.target_component,
-                                  args.name.encode(), -1)
-    p = await_param(m, args.name)
-    print(f"  {args.name} = {p.param_value if p else 'NO REPLY'}")
-
-
-def cmd_setparam(m, args):
-    want = float(args.value)
-    m.mav.param_set_send(m.target_system, m.target_component,
-                         args.name.encode(), want,
-                         mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
-    p = await_param(m, args.name)
-    got = p.param_value if p else None
-    print(f"  {args.name} = {got if got is not None else 'NO REPLY'}")
-    if got is not None and struct.unpack('f', struct.pack('f', got))[0] != \
-            struct.unpack('f', struct.pack('f', want))[0]:
-        print(f"  REFUSED OR CLAMPED: asked {want}, board stored {got}. The "
-              f"write did NOT take effect as typed.")
-        sys.exit(1)
-    if got is None:
-        print("  no echo: over a radio link a lost packet looks exactly like "
-              "a refused write, so re-read it with getparam before believing "
-              "either.")
-
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('cmd', choices=['mode', 'battery', 'failsafe', 'gps',
-                                    'rng', 'getparam', 'setparam'])
-    ap.add_argument('name', nargs='?')
-    ap.add_argument('value', nargs='?')
+                                    'rng'])
     ap.add_argument('--conn', default=None,
                     help='serial device; omit to auto-pick when '
                          'exactly one is present')
@@ -208,15 +149,9 @@ def main():
     ap.add_argument('--seconds', type=float, default=60.0)
     args = ap.parse_args()
 
-    if args.cmd in ('getparam', 'setparam') and not args.name:
-        sys.exit(f"{args.cmd} needs a parameter name")
-    if args.cmd == 'setparam' and args.value is None:
-        sys.exit("setparam needs a value")
-
-    m = connect(args)
+    m, _, args.baud = connect(args.conn, args.baud)
     {'mode': cmd_mode, 'battery': cmd_battery, 'failsafe': cmd_failsafe,
-     'gps': cmd_gps, 'rng': cmd_rng, 'getparam': cmd_getparam,
-     'setparam': cmd_setparam}[args.cmd](m, args)
+     'gps': cmd_gps, 'rng': cmd_rng}[args.cmd](m, args)
 
 
 if __name__ == '__main__':
