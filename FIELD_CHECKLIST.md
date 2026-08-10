@@ -85,11 +85,21 @@ Nearly-free insurance:
 - **Loctite + hex drivers**, spare props, spare prop nuts
 - **Multimeter** - the only way to check pack voltage against what the FC reports
 - SD card reader, in case the log comes off the card
-- Tray + water (a dark tray ~60 cm across), spare water
 - First aid kit. Six props at hover RPM cut.
 
 Leave at home: salt and the hopper test (bench job), the obstacle ring
-(parked), anything for the motor test (the aircraft flies, that is settled).
+(parked), anything for the motor test (the aircraft flies, that is settled),
+and **the tray and water** - user was right to cut these 2026-08-10. They only
+ever existed to give the CAMERA something to detect, and detection needs the
+UNO Q worker plus the hotspot, neither of which is set up. On an
+endurance-only session they are dead weight. They come back the day the
+detection demo is flown.
+
+**THE UNO Q STILL FLIES, IT JUST NEEDS NO SETUP.** Fitted is not the same as
+configured: it powers off the same rail and boots with the aircraft, so it
+costs nothing to carry and its mass and current draw are part of the flight
+weight the endurance number must be measured at. Do not SSH in, do not start
+the worker.
 
 ## AT THE SITE — pre-arm
 
