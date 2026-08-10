@@ -46,7 +46,10 @@ MERGED = DUMPS / "pixhawk_complete.params"
 # there is no way to ask the board which, so treat a silent no-op after a
 # successful write as "probably needs a reboot" and re-read after one.
 NEEDS_REBOOT = {
-    'BATT_MONITOR': 'battery monitor type: no sensing at all until rebooted',
+    'BATT_MONITOR': 'selects the battery monitor DRIVER, which is built once '
+                    'at startup. The value you just wrote is inert until the '
+                    'board restarts, so the board is still running whatever '
+                    'was set before',
     'BATT_CURR_PIN': 'analog pin assignment is read once at startup',
     'BATT_VOLT_PIN': 'analog pin assignment is read once at startup',
     'PRX1_TYPE': 'proximity driver is instantiated at startup',
@@ -127,14 +130,23 @@ def reboot_note(names):
 
 def cmd_get(args):
     m, _, _ = connect(args.conn, args.baud)
-    m.mav.param_request_read_send(m.target_system, m.target_component,
-                                  args.name.encode(), -1)
-    p = await_param(m, args.name)
-    if p is None:
-        sys.exit(f"  {args.name} = NO REPLY (does the parameter exist on this "
-                 f"firmware? a wrong name is answered with silence, not an "
-                 f"error)")
-    print(f"  {args.name} = {fmt(p.param_value)}")
+    # ASK MORE THAN ONCE. A single dropped request is indistinguishable from a
+    # misspelt parameter, and the old single-shot version accused the user of
+    # a typo when a real read had simply been lost (seen 2026-08-10: the same
+    # BATT_AMP_PERVLT read failed then succeeded, unchanged). Requests are
+    # cheap; a wrong accusation costs a debugging detour.
+    for attempt in range(3):
+        m.mav.param_request_read_send(m.target_system, m.target_component,
+                                      args.name.encode(), -1)
+        p = await_param(m, args.name, timeout=4.0)
+        if p is not None:
+            print(f"  {args.name} = {fmt(p.param_value)}")
+            return
+        if attempt < 2:
+            print(f"  no reply, retrying ({attempt + 2}/3) ...")
+    sys.exit(f"  {args.name} = NO REPLY after 3 requests. Either the name is "
+             f"not on this firmware (a wrong name is answered with silence, "
+             f"not an error) or the link is dropping packets.")
 
 
 def cmd_set(args):
