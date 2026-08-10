@@ -37,3 +37,6 @@ Thumbs.db
 # holds torch/ultralytics); on the Mac it is the venv itself. Same path either
 # way, so the committed ./python and ./pip symlinks work on both machines.
 .venv
+
+# never track a virtualenv (was committed 2026-08-09, 1215 files / 74 MB)
+.venv-tools/
