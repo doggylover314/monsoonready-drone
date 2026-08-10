@@ -103,7 +103,18 @@ def main():
     # Battery-monitor calibration AS FLOWN. The board's current settings are not
     # evidence about an old flight: these are the only trustworthy source for
     # what scaling produced the amps in THIS log.
-    batt_cal = {}
+    #
+    # TIMESTAMPED, AND THAT IS THE WHOLE POINT. A log records a parameter at
+    # boot AND every time it changes, so a value written while the aircraft sat
+    # on the ground AFTER landing appears LATER in the file than the one that
+    # actually flew. Taking the last record burned this project once already:
+    # log 39 was read as having flown at BATT_AMP_PERVLT=17 when 17 was set at
+    # t=758s, 131 seconds after the motors stopped, and the flight really ran
+    # at 90.6866. That single mistake produced a confident and completely wrong
+    # "the current does not respond to the parameter" conclusion. Resolve every
+    # parameter to its value AT THE MOMENT THE MOTORS STARTED.
+    batt_parms = []          # (time_s, name, value), in log order
+    first_fly_t = None       # time the motors first passed the throttle gate
 
     while True:
         msg = m.recv_match()
@@ -118,6 +129,8 @@ def main():
             # measured rather than guessed. A log can hold many arm/disarm
             # cycles, and CurrTot accumulates across all of them.
             ts = getattr(msg, 'TimeUS', 0) / 1e6
+            if thr >= args.min_throttle and first_fly_t is None:
+                first_fly_t = ts
             if thr >= args.min_throttle and last_ctun_t is not None:
                 gap = ts - last_ctun_t
                 if 0 < gap < 1.0:      # ignore gaps across a disarm
@@ -161,7 +174,8 @@ def main():
             name = getattr(msg, 'Name', '')
             if name in ('BATT_AMP_PERVLT', 'BATT_AMP_OFFSET', 'BATT_VOLT_MULT',
                         'BATT_CURR_PIN', 'BATT_CAPACITY', 'BATT_MONITOR'):
-                batt_cal[name] = getattr(msg, 'Value', None)
+                batt_parms.append((getattr(msg, 'TimeUS', 0) / 1e6, name,
+                                   getattr(msg, 'Value', None)))
 
     print(f"\n=== {args.logfile} ===")
 
@@ -246,6 +260,17 @@ def main():
             failed.append('hover throttle')
 
     # --- battery -------------------------------------------------------------
+    # Resolve each parameter to the value in force when the motors started, and
+    # keep anything written later aside so it can be called out rather than
+    # silently believed. With no flight in the log, the last value is all there
+    # is and is the honest answer.
+    batt_cal, batt_late = {}, {}
+    for pt, name, val in batt_parms:
+        if first_fly_t is None or pt <= first_fly_t:
+            batt_cal[name] = val
+        elif batt_cal.get(name) != val:
+            batt_late[name] = val
+
     if volt_min is not None or consumed is not None:
         print("\nBATTERY")
         if volt_min is not None:
@@ -259,6 +284,12 @@ def main():
         if batt_cal:
             print("  monitor calibration AS FLOWN: "
                   + ", ".join(f"{k}={v:g}" for k, v in sorted(batt_cal.items())))
+        if batt_late:
+            print("  CHANGED AFTER THE MOTORS STOPPED, so it did NOT affect "
+                  "this flight's amps: "
+                  + ", ".join(f"{k}->{v:g}" for k, v in sorted(batt_late.items()))
+                  + ". The board carries these values NOW; the line above is "
+                    "what produced the numbers below.")
             # NO CEILING CHECK HERE ANY MORE. A previous version computed a
             # "maximum readable current" as 3.3 V x BATT_AMP_PERVLT and called
             # anything above it IMPOSSIBLE. Log 39 flew with PERVLT=17 and

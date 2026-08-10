@@ -1,5 +1,10 @@
 # Field checklist — session of Mon 2026-08-10
 
+MEASURED 2026-08-10 AND NO LONGER THE OBJECTIVE: endurance is 16.7 min to empty,
+13.3 min to a 20% reserve, at 28.8 A hover. Recovered from charger mAh over motor
+time, not from the log, whose amps were 3.68x high. Next session needs a NEW
+objective; pick one before driving anywhere.
+
 One pack. Objective: **a real endurance number**, plus prove the parts that
 have never been proven. Everything else is a bonus.
 
