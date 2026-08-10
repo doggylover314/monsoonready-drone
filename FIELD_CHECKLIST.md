@@ -38,9 +38,32 @@ Disarm airborne only for an imminent person-strike or an unrecoverable flyaway.
 - [ ] **5. Charge state**: note the pack's resting voltage before you go, so
       the endurance figure has a starting point.
 
+## RAGHAV — DO THIS AT HOME, IT ALL NEEDS INTERNET
+
+- [ ] **Pull the repo first.** The pull DELETES `.venv-tools` (a virtualenv
+      that should never have been committed, untracked 2026-08-10), so his
+      python environment disappears with it. Recreate it under the name every
+      machine now uses:
+      `python3 -m venv .venv && ./pip install pymavlink pyserial`
+      Then prove it: `./python tools/wiring_check.py` should complain about a
+      missing serial device, NOT about a missing module.
+- [ ] **QGC for macOS** installed and opened once.
+- [ ] **Serial driver for the SiK radio.** macOS may need a CP210x or FTDI
+      driver depending on the radio's chip, which is not recorded anywhere in
+      this project. Plug the radio in at home and check it appears as a
+      `/dev/cu.usbserial*` or `/dev/cu.SLAB_USBtoUART*`. Finding out in a
+      field, with no internet, is how the session gets wasted.
+- [ ] **PRIVATE.md** from PRIVATE.sample.md with the board's current IP, and
+      `ssh-copy-id` to the UNO Q: the 2026-07-28 reflash wiped authorized_keys
+      and changed both the hostname and the tailnet IP, so his old access is
+      dead.
+
 ## TAKE
 
-Aircraft, the pack, charger, TX, MacBook + USB cable, SiK radio, phone,
+Aircraft, the pack, charger, TX, MacBook + **USB-C to USB-A adapter or hub**
+(the Air has no USB-A, and both the radio and the Pixhawk cable are USB-A),
+MacBook charger, USB cable for the Pixhawk, SD card reader if logs come off
+the card, SiK radio, phone,
 **Loctite + hex drivers**, spare props, tray + water, salt, something to
 restrain the aircraft for the motor test, notebook.
 
