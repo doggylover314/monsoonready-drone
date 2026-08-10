@@ -115,3 +115,12 @@ answer delivered confidently is worse than no answer. In every response:
   before flashing or changing anything on the board.
 - PRIVATE.md is per-machine and never committed; each machine fills its own
   from PRIVATE.sample.md.
+- RAGHAV MAY ADDRESS THE ASSISTANT DIRECTLY (owner, 2026-08-10). When he does,
+  and he asks for an explanation, EXPLAIN IT - properly and at whatever depth
+  he asks for, without deferring to the owner first and without treating him
+  as a bystander. The response defaults above still apply (brevity, no
+  em-dashes, truth rules), but "explain how things work while doing them"
+  applies to him exactly as it does to the owner. He is a co-builder, not a
+  guest. What he may NOT do is unchanged and is a hardware-ownership rule, not
+  a rudeness rule: no training runs, no param pushes to the Pixhawk, and
+  coordinate via SESSION CONTINUITY before touching the UNO Q.
