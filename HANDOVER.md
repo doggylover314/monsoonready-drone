@@ -28,16 +28,18 @@ clipping.
 
 THE GOAL IS SET (user, 2026-08-11): **Saturday 2026-08-15 is the shoot day AND
 the submission deadline, and the target is the FULL AUTONOMOUS LOOP on camera**
-- survey, detect, drop, flown by the aircraft. No slack: flight, filming and
-upload are all the same day, so anything provable earlier must be proved
-earlier.
+- survey, detect, drop, flown by the aircraft. Flight, filming and upload are
+all the same day, with room for 2-3 attempts (a failure costs a pack recharge,
+a few hours). Anything provable before Saturday must be proved before Saturday:
+attempts cost hours and there are only a few.
 
 THE CRITICAL PATH IS THE UNO Q <-> PIXHAWK D0/D1 LINK (TODO 7). It has never
 worked and the autonomous loop cannot exist without it. Everything else on this
 list is secondary to getting it proven BEFORE Saturday. Fallback, only if it is
 still unproven when the camera is set up: shoot the piloted flight plus a ground
-AI demo and state plainly which parts are autonomous. A failed autonomous
-attempt mid-take is an unusable recording and there is no second take.
+AI demo and state plainly which parts are autonomous. A failed take is
+recoverable; arriving with the link unproven is not, because debugging it in a
+field burns the attempts you came to use.
 
 OPEN WORK, none of it started, in the order that serves Saturday:
 - PROVE THE D0/D1 LINK. Nothing else unblocks the stated goal.

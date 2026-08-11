@@ -8,6 +8,7 @@ gets the link details right in one place.
     ./python tools/bench.py failsafe      # watch STATUSTEXT
     ./python tools/bench.py gps           # fix / sats / HDOP
     ./python tools/bench.py rng           # downward rangefinder
+    ./python tools/bench.py nodes         # who else is on the MAVLink bus
 
 PARAMETERS ARE NOT HERE. getparam/setparam moved to
 tools/parameters.py on 2026-08-10: reading and writing the board's
@@ -62,6 +63,62 @@ def cmd_mode(m, args):
         if mode != last:
             print(f"  {mode}")
             last = mode
+
+
+# Components this project expects to see, so an unexpected one stands out
+# rather than blending into a list of numbers.
+KNOWN_COMPONENTS = {
+    1:   'autopilot (the Pixhawk itself)',
+    191: 'UNO Q  <-- TODO 7: this appearing IS the D0/D1 pass',
+    195: 'ESP32 obstacle ring (parked, may be unplugged)',
+    250: 'this script',
+}
+
+
+def cmd_nodes(m, args):
+    """Every MAVLink talker on the bus, by system and component.
+
+    THE POINT OF THIS IS TODO 7. The UNO Q sits sealed inside the airframe with
+    no readable screen, so the probe sketch answers by TRANSMITTING a heartbeat
+    as component 191 and letting the Pixhawk relay its existence to here. A row
+    for comp 191 is the pass; its absence is the fail. The ESP32 at 195 already
+    proves the channel works.
+
+    Heartbeats are ~1 Hz per node, so give it a few seconds before believing an
+    absence. This listens without filtering by target, unlike everything else
+    in this file, precisely because the unknown node is the interesting one.
+    """
+    request_streams(m, args.baud)
+    print(f"listening {args.seconds:.0f}s for heartbeats from anyone ...")
+    print("(a node is only listed once it has actually been heard)\n")
+    seen = {}
+    end = time.time() + args.seconds
+    while time.time() < end:
+        hb = m.recv_match(type='HEARTBEAT', blocking=True, timeout=2)
+        if hb is None:
+            continue
+        key = (hb.get_srcSystem(), hb.get_srcComponent())
+        rec = seen.setdefault(key, {'n': 0, 'type': hb.type,
+                                    'autopilot': hb.autopilot})
+        rec['n'] += 1
+        if rec['n'] == 1:
+            name = KNOWN_COMPONENTS.get(key[1], 'UNKNOWN component')
+            try:
+                tname = mavutil.mavlink.enums['MAV_TYPE'][hb.type].name
+            except KeyError:
+                tname = f'MAV_TYPE {hb.type}'
+            print(f"  sys {key[0]:3d} comp {key[1]:3d}  {tname:<28} {name}")
+
+    print(f"\n{len(seen)} node(s) heard in {args.seconds:.0f}s:")
+    for (sysid, compid), rec in sorted(seen.items()):
+        print(f"  sys {sysid:3d} comp {compid:3d}  {rec['n']:4d} heartbeats  "
+              f"{KNOWN_COMPONENTS.get(compid, 'UNKNOWN')}")
+    if not any(c == 191 for _, c in seen):
+        print("\n  NO component 191: the UNO Q is not reaching the Pixhawk. "
+              "That is TODO 7 still open, and it is the blocker for autonomy.")
+    else:
+        print("\n  COMPONENT 191 PRESENT: the UNO Q's transmit path to the "
+              "Pixhawk WORKS. D0/D1 -> SERIAL5 is proven in the TX direction.")
 
 
 def cmd_battery(m, args):
@@ -139,7 +196,7 @@ def cmd_rng(m, args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('cmd', choices=['mode', 'battery', 'failsafe', 'gps',
-                                    'rng'])
+                                    'rng', 'nodes'])
     ap.add_argument('--conn', default=None,
                     help='serial device; omit to auto-pick when '
                          'exactly one is present')
@@ -151,7 +208,7 @@ def main():
 
     m, _, args.baud = connect(args.conn, args.baud)
     {'mode': cmd_mode, 'battery': cmd_battery, 'failsafe': cmd_failsafe,
-     'gps': cmd_gps, 'rng': cmd_rng}[args.cmd](m, args)
+     'gps': cmd_gps, 'rng': cmd_rng, 'nodes': cmd_nodes}[args.cmd](m, args)
 
 
 if __name__ == '__main__':

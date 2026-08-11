@@ -187,16 +187,18 @@ no basin test to run.
 
 **SATURDAY 2026-08-15 IS BOTH THE SHOOT DAY AND THE SUBMISSION DEADLINE**
 (user, 2026-08-11). The goal for that day is the FULL AUTONOMOUS LOOP on
-camera: survey, detect, drop, flown by the aircraft. There is no reshoot:
-flight, filming and upload all land on the 15th.
+camera: survey, detect, drop, flown by the aircraft. Flight, filming and
+upload all land on the 15th, but there is room for **2-3 attempts** (user,
+2026-08-11): a failure costs a pack recharge, a few hours, not the day.
 
 What that forces, and it is not optional: **the autonomy has to be proven
 before Saturday, not on Saturday.** The UNO Q <-> Pixhawk D0/D1 link has never
 worked, and it is the one thing the autonomous loop cannot do without. Prove it
-at home this week. If it is still unproven when you set up to record, shoot the
-piloted flight plus a ground AI demo instead and say plainly which parts are
-autonomous. A failed autonomous attempt mid-take is an unusable recording, and
-there is no second take.
+at home this week, because an attempt costs hours and you only get a few of
+them. If it is still unproven when you set up to record, shoot the piloted
+flight plus a ground AI demo and say plainly which parts are autonomous. A
+failed take is recoverable; arriving with the link still unproven is what is
+not, since debugging it in a field burns the attempts you came to use.
 
 Requirements that constrain everything: **5-10 min, ONE continuous unedited
 take, publicly viewable, opens with a Google search for the date on screen,
