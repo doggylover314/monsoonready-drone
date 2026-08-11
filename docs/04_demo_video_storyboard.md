@@ -1,7 +1,8 @@
 # Demo Video → Storyboard
 
-Target length **~3 minutes**. Footage freeze **2026-08-10**, five days before
-the deadline, so that editing never competes with flying.
+Target length **5-10 minutes**, ONE continuous unedited take. Shot on
+**2026-08-15**, the same day as the submission deadline, so there is no room
+for a reshoot: rehearse the running order before recording anything.
 
 The video is judged on presentation and is also the primary evidence for
 functionality. Every shot therefore has a job: it proves one specific claim

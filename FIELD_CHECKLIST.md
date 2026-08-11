@@ -1,12 +1,12 @@
-# Field checklist — session of Mon 2026-08-10
+# Field checklist
 
-MEASURED 2026-08-10 AND NO LONGER THE OBJECTIVE: endurance is 16.7 min to empty,
-13.3 min to a 20% reserve, at 28.8 A hover. Recovered from charger mAh over motor
-time, not from the log, whose amps were 3.68x high. Next session needs a NEW
-objective; pick one before driving anywhere.
+**NEXT SESSION'S OBJECTIVE: the FULL AUTONOMOUS LOOP, on camera, Saturday
+2026-08-15** - which is also the submission deadline. See the video plan at the
+bottom of this file.
 
-One pack. Objective: **a real endurance number**, plus prove the parts that
-have never been proven. Everything else is a bonus.
+ENDURANCE IS DONE, do not spend another session on it: 16.7 min to empty, 13.3
+min to a 20% reserve, at 28.8 A hover. Recovered from charger mAh over motor
+time, not from the log, whose amps read 3.68x high before the fix.
 
 Abort rule, memorised before you leave: **flip to STABILIZE, never disarm.**
 Disarm airborne only for an imminent person-strike or an unrecoverable flyaway.
@@ -183,14 +183,20 @@ no basin test to run.
 
 ---
 
-# Weekend video plan
+# Video plan - Saturday 2026-08-15
 
-**DATE CONFLICT, RESOLVE THIS BEFORE PLANNING ANYTHING ELSE:** today is Monday
-2026-08-10, which PROJECT_STATE records as the footage freeze (~Aug 10). The
-plan to shoot at the farm "on the weekend" puts the recording on the 15th-16th,
-five days the wrong side of that date. Either the freeze is softer than
-recorded, or the video has to be shot far sooner than the weekend. Check the
-actual submission deadline before committing to a weekend shoot.
+**SATURDAY 2026-08-15 IS BOTH THE SHOOT DAY AND THE SUBMISSION DEADLINE**
+(user, 2026-08-11). The goal for that day is the FULL AUTONOMOUS LOOP on
+camera: survey, detect, drop, flown by the aircraft. There is no reshoot:
+flight, filming and upload all land on the 15th.
+
+What that forces, and it is not optional: **the autonomy has to be proven
+before Saturday, not on Saturday.** The UNO Q <-> Pixhawk D0/D1 link has never
+worked, and it is the one thing the autonomous loop cannot do without. Prove it
+at home this week. If it is still unproven when you set up to record, shoot the
+piloted flight plus a ground AI demo instead and say plainly which parts are
+autonomous. A failed autonomous attempt mid-take is an unusable recording, and
+there is no second take.
 
 Requirements that constrain everything: **5-10 min, ONE continuous unedited
 take, publicly viewable, opens with a Google search for the date on screen,

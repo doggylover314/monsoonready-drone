@@ -21,8 +21,8 @@ replaces prior chat context. Git discipline: run git pull --rebase BEFORE readin
   run `date` before reasoning about anything time-dependent. Sessions span
   days, the injected date can be stale, and deadlines here are close enough
   that being two days out changes the advice. This was instituted on the day
-  it turned out to be the Aug 10 footage-freeze date while the assistant
-  still believed it was the 8th.
+  it turned out to be a hard cutoff day while the assistant still believed
+  it was two days earlier.
 
 ## Truth and accuracy rules
 

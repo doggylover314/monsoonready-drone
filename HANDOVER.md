@@ -26,13 +26,21 @@ BATT_AMP_OFFSET. Measured endurance 16.7 min on a full pack, 13.3 min to a 20%
 reserve, hover 28.8 A. Airframe healthy: log 39 PASSES, VibeZ median 7.4, zero
 clipping.
 
-THE FOOTAGE-FREEZE DATE CONFLICT IS ALSO RESOLVED (2026-08-11): the "~Aug 10
-freeze" was a self-imposed target, not the competition date, and is replaced by
-"the last flyable window before Aug 15". By this project's own pre-committed
-cutoff, the video is PLAN B: piloted flight plus a ground AI demo, because the
-UNO Q<->Pixhawk link was not proven by the recorded Friday deadline.
+THE GOAL IS SET (user, 2026-08-11): **Saturday 2026-08-15 is the shoot day AND
+the submission deadline, and the target is the FULL AUTONOMOUS LOOP on camera**
+- survey, detect, drop, flown by the aircraft. No slack: flight, filming and
+upload are all the same day, so anything provable earlier must be proved
+earlier.
 
-OPEN WORK, none of it started, in the order that serves the video:
+THE CRITICAL PATH IS THE UNO Q <-> PIXHAWK D0/D1 LINK (TODO 7). It has never
+worked and the autonomous loop cannot exist without it. Everything else on this
+list is secondary to getting it proven BEFORE Saturday. Fallback, only if it is
+still unproven when the camera is set up: shoot the piloted flight plus a ground
+AI demo and state plainly which parts are autonomous. A failed autonomous
+attempt mid-take is an unusable recording and there is no second take.
+
+OPEN WORK, none of it started, in the order that serves Saturday:
+- PROVE THE D0/D1 LINK. Nothing else unblocks the stated goal.
 - Shoot the video: 5-10 min, ONE continuous unedited take, opens with a Google
   search for the date on screen (so the shoot needs internet), covers
   functionality + assembly + components, Drive link set to anyone-with-the-link.
@@ -42,10 +50,9 @@ OPEN WORK, none of it started, in the order that serves the video:
   leave it open over a loaded hopper.
 - Hopper flow rate never measured: `./python tools/flow_test.py`. Until it is,
   the variable-dose seconds are proportional to nothing.
-- Camera FOV never measured (TODO 1).
 - Phone hotspot to the UNO Q never set up, so no in-flight detection recording.
-- UNO Q <-> Pixhawk D0/D1 link unproven (TODO 7); it blocks full autonomy and
-  is out of scope for this video under the Plan B call above.
+- Camera FOV never measured (TODO 1): the drop needs to know what ground area
+  a detection box covers, so autonomy depends on it.
 
 Ask before assuming anything else is still true.
 ```
