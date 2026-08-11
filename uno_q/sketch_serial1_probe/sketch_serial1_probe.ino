@@ -1,46 +1,57 @@
 /*
- * serial1_probe - does the UNO Q's STM32 actually give a sketch Serial1 (D0/D1)?
+ * serial1_probe - can a sketch on the UNO Q's STM32 hear the Pixhawk on D0/D1?
  *
  * WHY THIS EXISTS (TODO 7, the blocker for autonomous flight):
  * The UNO Q docs contradict each other. The user manual says D0/D1 are Serial1
  * on the JDIGITAL header, and ALSO says the router claims Serial1 and you must
  * not open it in your own code. The Arduino_RouterBridge README says the Bridge
  * uses a core-routed UART, "falling back to Serial1 if the core does not
- * provide it". Those cannot both be acted on, and no amount of reading settles
+ * provide it". Those cannot both be acted on and no amount of reading settles
  * it. Only the board settles it.
  *
- * THE TEST: physical loopback. Jumper D1 (TX) to D0 (RX), write a known byte
- * on Serial1, see whether it comes back. This needs NO extra parts, which is
- * the whole point: the board has one USB port, the splitter has one USB-A
- * socket, and the camera owns it.
+ * THIS IS A LISTEN-ONLY TEST AND THAT IS DELIBERATE. D0/D1 are already wired to
+ * the Pixhawk's SERIAL5 (TX5 -> D0, D1 -> RX5, per the SERIAL MAP). ArduPilot
+ * streams heartbeats on any MAVLink-configured serial port without being asked,
+ * so the data is already arriving and the sketch has to do nothing but read it.
  *
- * THE VERDICT IS ON THE LED, deliberately, so this test does not depend on a
- * serial monitor that may itself be routed through the thing under test:
- *   SOLID ON          = loopback works. Serial1 is ours. D0/D1 wiring plan LIVES.
- *   FAST BLINK (5Hz)  = Serial1 opened but nothing came back. Either the router
- *                       is holding the pins, or the jumper is not making contact.
- *                       RE-SEAT THE JUMPER BEFORE BELIEVING THIS.
- *   SLOW BLINK (1Hz)  = sketch is running but never reached the test. Should not
- *                       happen; means setup() did not complete.
+ * DO NOT LOOPBACK-JUMPER D1 TO D0 WHILE THE PIXHAWK IS CONNECTED. That ties the
+ * Pixhawk's TX5 output and the UNO Q's TX output onto one net: two push-pull
+ * drivers fighting whenever they disagree. An earlier version of this file told
+ * you to do exactly that, before it was known the pins were already wired.
+ * This version never transmits at all, so it cannot contend with TX5.
  *
- * WHAT A PASS DOES AND DOES NOT PROVE. It proves the UART peripheral is
- * reachable from sketch code and is not being held by the router. It does NOT
- * prove the Pixhawk link works: that needs the byte-shovel plus the real
- * SERIAL5 wiring, and is the next step, not this one.
+ * VERDICT IS ON THE LED, not a serial monitor, because the monitor may itself be
+ * routed through the peripheral under test:
+ *   SOLID ON         = MAVLink framing byte seen. Serial1 is ours, the wiring is
+ *                      good, the Pixhawk is talking, and the baud is right.
+ *                      The D0/D1 plan LIVES and the byte-shovel is next.
+ *   FAST BLINK (5Hz) = bytes ARE arriving but no MAVLink framing byte among them.
+ *                      The UART and the wire work; something else is off. Check
+ *                      SERIAL5_PROTOCOL (want 2 = MAVLink2) and SERIAL5_BAUD
+ *                      (want 115200) with tools/parameters.py get. Wrong baud
+ *                      reads as exactly this: real traffic, garbled framing.
+ *   SLOW BLINK (1Hz) = ZERO bytes in the whole window. Either the router is
+ *                      holding Serial1, or SERIAL5 is not configured, or TX5 is
+ *                      not landing on D0. Those are three different problems and
+ *                      this test cannot tell them apart; check the params first
+ *                      because that costs nothing.
  *
- * IF IT FAILS: the D0/D1 plan is dead and the fallback is a USB-serial adapter,
- * which on this build ALSO needs a hub downstream of the splitter because the
- * camera holds the only A socket. Two unverified parts. Know this before Saturday.
+ * WHAT A PASS DOES NOT PROVE: that the link is good enough to FLY on. That needs
+ * the byte-shovel and a soak against dropped/garbled frames. This proves the
+ * pins are usable, which is the question that has been blocking for two weeks.
  */
 
-static const unsigned long BAUD = 115200;
-static const uint8_t PROBE_BYTE = 0x5A;   // 0b01011010, alternating bits: a
-                                          // shorted or stuck-low line cannot
-                                          // fake this the way 0x00 or 0xFF can.
-static const unsigned long REPLY_TIMEOUT_MS = 200;
+static const unsigned long BAUD = 115200;   // must match SERIAL5_BAUD
+static const unsigned long LISTEN_MS = 3000;
 
-enum Verdict { RUNNING, LOOPED_BACK, NO_REPLY };
-static Verdict verdict = RUNNING;
+// MAVLink frame start bytes. v2 frames open with 0xFD, v1 with 0xFE. Accept
+// either: seeing v1 still proves the pins and the wire, and only means the
+// protocol setting wants a look.
+static const uint8_t MAVLINK_V2_MAGIC = 0xFD;
+static const uint8_t MAVLINK_V1_MAGIC = 0xFE;
+
+enum Verdict { NO_BYTES, BYTES_NO_FRAME, FRAMED };
+static Verdict verdict = NO_BYTES;
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -49,34 +60,32 @@ void setup() {
   Serial1.begin(BAUD);
   delay(200);                 // let the peripheral settle before trusting it
 
-  // Drain anything already sitting in the buffer, so a stale byte from boot
-  // noise cannot be mistaken for our own echo. This matters: SERIAL5 boot noise
-  // is a known thing on this project's other UART.
-  while (Serial1.available()) {
-    Serial1.read();
-  }
+  unsigned long deadline = millis() + LISTEN_MS;
+  bool sawAnyByte = false;
+  bool sawMagic = false;
 
-  Serial1.write(PROBE_BYTE);
-  Serial1.flush();            // block until the byte is actually clocked out
-
-  unsigned long deadline = millis() + REPLY_TIMEOUT_MS;
-  verdict = NO_REPLY;
+  // Listen only. Never write: TX5 is driving the other end of this pair.
   while (millis() < deadline) {
-    if (Serial1.available()) {
-      if (Serial1.read() == PROBE_BYTE) {
-        verdict = LOOPED_BACK;
+    while (Serial1.available()) {
+      uint8_t b = (uint8_t)Serial1.read();
+      sawAnyByte = true;
+      if (b == MAVLINK_V2_MAGIC || b == MAVLINK_V1_MAGIC) {
+        sawMagic = true;
       }
-      break;                  // one byte in, one byte out; anything else is a fail
     }
   }
+
+  if (sawMagic)        verdict = FRAMED;
+  else if (sawAnyByte) verdict = BYTES_NO_FRAME;
+  else                 verdict = NO_BYTES;
 }
 
 void loop() {
   switch (verdict) {
-    case LOOPED_BACK:
+    case FRAMED:
       digitalWrite(LED_BUILTIN, HIGH);
       break;
-    case NO_REPLY:
+    case BYTES_NO_FRAME:
       digitalWrite(LED_BUILTIN, HIGH); delay(100);
       digitalWrite(LED_BUILTIN, LOW);  delay(100);
       break;
