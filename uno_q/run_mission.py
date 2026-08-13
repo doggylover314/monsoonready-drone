@@ -116,8 +116,15 @@ def main():
                     help='AUX OUT 1 = ch9 (wired 2026-08-02); '
                          'SERVO9_FUNCTION=0 must be pushed or DO_SET_SERVO '
                          'is silently ignored')
-    ap.add_argument('--servo-closed-us', type=int, default=1000)
-    ap.add_argument('--servo-open-us', type=int, default=1900)
+    # ONE SOURCE OF TRUTH, and this is why. These were hard-coded 1000/1900
+    # while dropper.py had been reversed to 1600 closed / 1000 open, so
+    # run_mission's idea of "closed" WAS THE OPEN POSITION. Flying that empties
+    # the hopper on the ground the moment the servo is initialised. Same class
+    # of bug as wiring_check's hard-coded 1900/1000, found the same way.
+    ap.add_argument('--servo-closed-us', type=int,
+                    default=PixhawkServoDropper.DEFAULT_CLOSED_US)
+    ap.add_argument('--servo-open-us', type=int,
+                    default=PixhawkServoDropper.DEFAULT_OPEN_US)
     ap.add_argument('--det-file', default=DET_FILE_DEFAULT,
                     help='where detect_worker.py publishes results')
     ap.add_argument('--inline-detector', action='store_true',
