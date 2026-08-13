@@ -3,6 +3,16 @@ __pycache__/
 .venv/
 nohup.out
 
+# THE DEPLOYED MODEL IS TRACKED: models/best.onnx (9.4 MB).
+# It is NOT a regenerable artifact like the rest of this section. Reproducing
+# it needs the exact dataset plus ~12h of GPU, and until 2026-08-13 it existed
+# only on the owner's laptop and the board, so a reflash or a dead SSD would
+# have destroyed it two days before the deadline. It is also the ONE file the
+# board cannot obtain by git pull if it is ignored, which defeats the whole
+# point of the auto-sync service. 9.4 MB against a 31 MB repo is not a cost.
+# The VARIANTS below stay ignored: yolo26s (37 MB) and yolo26m (79 MB) were
+# rejected on measurement and genuinely are regenerable.
+
 # training artifacts (datasets are redownloadable; runs are reproducible)
 training/.venv/
 training/runs/

@@ -8,8 +8,8 @@
 #
 # WHAT IT DOES NOT DO, deliberately:
 #   * clone the repo      - the operator is handling sync separately
-#   * copy the ONNX models - they are gitignored (74 MB of them) and must come
-#                            from the laptop by scp. This script only CHECKS.
+#   * copy the ONNX model - as of 2026-08-13 models/best.onnx IS TRACKED, so a
+#                           git pull delivers it. No scp needed any more.
 #   * touch the Pixhawk   - nothing here transmits on any serial port.
 
 set -uo pipefail
@@ -68,12 +68,15 @@ ls /dev/ttyS* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null | sed 's/^/      /' \
 
 say "repo and models"
 [ -d "$REPO/.git" ] && good "repo at $REPO" || bad "no repo at $REPO (operator is syncing this separately)"
+# models/best.onnx is TRACKED as of 2026-08-13, so the repo copy is the
+# canonical one and arrives with the sync. A loose ~/best.onnx from before the
+# reflash may still exist and may be STALE; the repo copy wins.
 found_model=0
-for m in "$HOME/best.onnx" "$REPO/best.onnx"; do
+for m in "$REPO/models/best.onnx" "$HOME/best.onnx"; do
     [ -f "$m" ] && { good "model $m ($(du -h "$m" | cut -f1))"; found_model=1; }
 done
-[ "$found_model" -eq 0 ] && bad "NO best.onnx ANYWHERE. It is gitignored, so it cannot arrive by git pull.
-        From the LAPTOP:  scp training/exports/best.onnx arduino@<board>:~/"
+[ "$found_model" -eq 0 ] && bad "NO best.onnx. It is tracked now, so this means the
+        repo has not synced yet. Check the sync, then re-run this script."
 
 say "data directory"
 mkdir -p "$HOME/monsoonready_data" && good "$HOME/monsoonready_data"
