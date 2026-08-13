@@ -74,10 +74,12 @@ def main():
     print(f"listening {LISTEN_S:.0f}s on each of {len(ports)} port(s) "
           f"at {BAUDS} baud. Read-only, nothing is transmitted.\n")
     hits = []
+    unopenable = 0
     for port in ports:
         for baud in BAUDS:
             n, magic, sample = listen(port, baud)
             if n is None:
+                unopenable += 1
                 print(f"  {port:<16} {baud:>6}  cannot open: {sample}")
                 continue
             note = ''
@@ -91,6 +93,23 @@ def main():
                   f"{sample.hex(' ') if n else ''}{note}")
 
     print()
+    # A port that REFUSED TO OPEN proves nothing about MAVLink, and conflating
+    # the two is how this script lied on 2026-08-13: all four ttyS returned
+    # "Input/output error" on configure and it reported "NO MAVLINK ... that
+    # CONFIRMS the recorded claim", which was a conclusion drawn from a failure
+    # mode it had never distinguished. Silence is evidence; an unopenable port
+    # is the absence of evidence.
+    if unopenable and not hits:
+        print(f"INCONCLUSIVE. {unopenable} of {len(ports) * len(BAUDS)} "
+              f"attempts could not even OPEN the port.")
+        print("  These ttyS nodes exist in /dev but are not usable UARTs from "
+              "userspace: no hardware behind them, or not muxed to pins. That "
+              "says NOTHING about whether the Pixhawk is reachable, so it "
+              "neither confirms nor refutes the D0/D1-belongs-to-the-STM32 "
+              "claim.")
+        print("  It DOES close this shortcut: Linux cannot use these ports, so "
+              "the STM32 sketch route is the one that remains.")
+        return
     if hits:
         best = max(hits, key=lambda h: h[3])
         print("MAVLINK FOUND. The Linux side can reach the Pixhawk DIRECTLY:")
@@ -105,8 +124,7 @@ def main():
               f"print(m.recv_match(type='HEARTBEAT', blocking=True, "
               f"timeout=10))\"")
     else:
-        quiet = all(True for _ in ports)
-        print("NO MAVLINK on any Linux-side UART.")
+        print("NO MAVLINK on any Linux-side UART, and every port OPENED fine.")
         print("  That CONFIRMS the recorded claim that D0/D1 belong to the "
               "STM32 (USART1), not to Linux, so the Pixhawk is only reachable "
               "through a sketch on the MCU. The byte-shovel route is the real "
