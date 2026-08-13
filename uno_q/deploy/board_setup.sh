@@ -27,11 +27,22 @@ if [ ! -x "$VENV/bin/python" ]; then
     python3 -m venv "$VENV" 2>/dev/null || {
         echo "  venv module missing. On a Debian-ish image that is:"
         echo "     sudo apt-get install -y python3-venv"
-        echo "  If sudo is unavailable, try:  python3 -m pip install --user virtualenv"
         exit 1; }
     echo "  created $VENV"
 fi
-good "venv at $VENV"
+# A venv can exist WITH NO PIP IN IT. Debian-family images strip ensurepip out
+# of the stdlib, so `python3 -m venv` happily produces bin/python and no
+# bin/pip. Checking only for bin/python called that venv healthy and then died
+# on the first pip line (seen on the board 2026-08-13, Python 3.13.5).
+if [ ! -x "$VENV/bin/pip" ]; then
+    echo "  venv has no pip; bootstrapping"
+    "$VENV/bin/python" -m ensurepip --upgrade 2>/dev/null \
+      || curl -sS https://bootstrap.pypa.io/get-pip.py | "$VENV/bin/python" \
+      || { echo "  FATAL: could not get pip into $VENV."
+           echo "  Try:  sudo apt-get install -y python3-venv python3-pip"
+           exit 1; }
+fi
+[ -x "$VENV/bin/pip" ] && good "venv at $VENV (with pip)" || { echo "  FATAL: still no pip"; exit 1; }
 
 say "python packages"
 # pymavlink+pyserial = the Pixhawk link. numpy+opencv+onnxruntime = detection.
