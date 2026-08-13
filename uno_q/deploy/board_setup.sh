@@ -14,7 +14,9 @@
 
 set -uo pipefail
 VENV="$HOME/venv"
-REPO="${MONSOONREADY_REPO:-$HOME/monsoonready}"
+# Resolve the repo from THIS script's own location, so it is right
+# wherever the clone lives and needs no environment variable.
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 ok=0; warn=0
 
 say()  { printf '\n=== %s ===\n' "$*"; }
@@ -34,7 +36,7 @@ fi
 # of the stdlib, so `python3 -m venv` happily produces bin/python and no
 # bin/pip. Checking only for bin/python called that venv healthy and then died
 # on the first pip line (seen on the board 2026-08-13, Python 3.13.5).
-if [ ! -x "$VENV/bin/pip" ]; then
+if ! "$VENV/bin/python" -m pip --version >/dev/null 2>&1; then
     echo "  venv has no pip; bootstrapping"
     "$VENV/bin/python" -m ensurepip --upgrade 2>/dev/null \
       || curl -sS https://bootstrap.pypa.io/get-pip.py | "$VENV/bin/python" \
@@ -42,14 +44,16 @@ if [ ! -x "$VENV/bin/pip" ]; then
            echo "  Try:  sudo apt-get install -y python3-venv python3-pip"
            exit 1; }
 fi
-[ -x "$VENV/bin/pip" ] && good "venv at $VENV (with pip)" || { echo "  FATAL: still no pip"; exit 1; }
+"$VENV/bin/python" -m pip --version >/dev/null 2>&1 \
+  && good "venv at $VENV (pip $("$VENV/bin/python" -m pip --version | cut -d" " -f2))" \
+  || { echo "  FATAL: still no pip"; exit 1; }
 
 say "python packages"
 # pymavlink+pyserial = the Pixhawk link. numpy+opencv+onnxruntime = detection.
 # opencv-python-headless, not opencv-python: the board has no display and the
 # GUI build drags in X libraries that are not there.
-"$VENV/bin/pip" install --quiet --upgrade pip
-"$VENV/bin/pip" install --quiet \
+"$VENV/bin/python" -m pip install --quiet --upgrade pip
+"$VENV/bin/python" -m pip install --quiet \
     pymavlink pyserial numpy opencv-python-headless onnxruntime \
     || { echo "  pip install failed. Check the board has internet."; exit 1; }
 for mod in pymavlink serial numpy cv2 onnxruntime; do
