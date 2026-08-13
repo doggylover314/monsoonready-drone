@@ -64,7 +64,7 @@
 // mux readback, stuck-line check, and a sweep of bus speed/settle time to
 // separate "sensor absent" from "bus too fast for this wiring". Transmits
 // NOTHING to the Pixhawk. Set back to 0 to fly.
-#define RUN_I2C_DIAG 0
+#define RUN_I2C_DIAG 1
 
 // Fake-mode flight guard: while USE_FAKE_SENSORS is 1, MAVLink is only
 // transmitted if this pin is jumpered to GND (bench-only jumper). If a
