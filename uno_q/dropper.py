@@ -126,8 +126,8 @@ class PixhawkServoDropper(Dropper):
     # the throw is not 60 degrees, adjust DEG_PER_US rather than guessing new
     # pulse numbers, and if it turns the wrong way swap these two values.
     US_PER_DEG = 10.0
-    DEFAULT_CLOSED_US = 1600
-    DEFAULT_OPEN_US = 1000
+    DEFAULT_CLOSED_US = <closed>
+    DEFAULT_OPEN_US = <open>
 
     def __init__(self, io, channel=9, closed_us=DEFAULT_CLOSED_US,
                  open_us=DEFAULT_OPEN_US,
