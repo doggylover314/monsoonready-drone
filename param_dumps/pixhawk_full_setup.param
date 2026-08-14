@@ -147,7 +147,24 @@ BATT_LOW_VOLT,10.8        # 3.6 V/cell -> triggers low action
 BATT_CRT_VOLT,10.2        # 3.4 V/cell -> triggers critical action
 BATT_FS_LOW_ACT,2         # 2 = RTL (user-confirmed policy)
 BATT_FS_CRT_ACT,1         # 1 = Land
-# BATT_VOLT_MULT / BATT_AMP_PERVLT: calibrate in QGC Power setup against multimeter
+# mAh-based failsafes (added 2026-08-14, now that the current sensor is
+# CALIBRATED and coulomb counting means something). Triggers fire on mAh
+# REMAINING out of BATT_CAPACITY: low at 20% left (1600 of 8000, ~3.3 min of
+# hover at the measured ~479 mAh/min), critical at 10%. CAVEAT, same as the
+# percentage: the counter resets to "full" at every boot, so these only mean
+# anything on a flight that STARTED on a full pack. On a partial recharge the
+# mAh gauge reads optimistic and the VOLTAGE failsafes above are the layer
+# that actually protects.
+BATT_LOW_MAH,1600
+BATT_CRT_MAH,800
+# Sensor calibration, CAPTURED FROM THE BOARD 2026-08-14 (was QGC-only, so a
+# factory reset would have silently erased the 2026-08-13 current-sensor fix).
+# PERVLT 24 replaces the mis-set 90.6866 ("90A module" typed into the wrong
+# QGC field) that made log 37 read 105 A for a real 28.8 A hover. Derived from
+# charger-returned mAh vs counted mAh (3.68x) and sanity-checked against the
+# momentum-theory 22-34 A hover band. VOLT_MULT verified against multimeter.
+BATT_AMP_PERVLT,24
+BATT_VOLT_MULT,10.802477
 
 # --- RC failsafe: already configured to RTL (user-confirmed). Re-verify after
 #     rebuild with a bench TX-off test (props off): FS_THR_ENABLE, FS_THR_VALUE.

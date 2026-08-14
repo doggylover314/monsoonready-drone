@@ -1,18 +1,25 @@
-# Farm checklist — SATURDAY 2026-08-15: SHOOT + SUBMISSION DAY
+# Farm checklist — SATURDAY 2026-08-15: SHOOT DAY
 
-**VENUE IS A FARM, not the grass field: dirt surface, much bigger area.**
-Dirt changes things: prop wash throws dust into motors, the camera lens and
-the lidars, so takeoff happens from a mat; laptops need a surface and shade;
-monsoon dirt can mean mud. BOTH laptops are going (user, 2026-08-14): the
-Linux laptop is the primary (every tool is proven on it), the MacBook is the
-backup and second screen.
+**Tomorrow is the ONLY farm access; the submission upload is about a week
+later (user, 2026-08-14), from home wifi.** So tomorrow's job is the
+FOOTAGE, and the footage is unrepeatable. Back the video file up to a laptop
+AND to Drive the same evening — a phone lost or wiped in the following week
+must not be able to take the submission with it.
+
+**VENUE IS A FARM, not the grass field: dry dirt, much bigger area.** Prop
+wash on dirt is a dust cloud into motors, the B525 lens and the lidar ring,
+so takeoff happens from a weighted cloth sheet. There is a marketing office
+with mains power (charger between attempts), a verandah with tables, a water
+pump (tray refills), a kitchen (salt refills), and a farm first aid kit.
+BOTH laptops go: Linux laptop primary (every tool proven on it, native
+USB-A), MacBook backup.
 
 The goal: the FULL AUTONOMOUS LOOP (survey, detect, drop) on camera, one
-continuous take, uploaded and submitted the same day. 2-3 attempts exist; a
-failure costs a recharge, not the day. The one open blocker is Linux ->
-Pixhawk (byte-shovel over the Bridge); if it is not working by morning, shoot
-the piloted flight + ground AI demo and say on camera what is and is not
-autonomous. Honest beats overclaimed, and an overclaim judges catch is fatal.
+continuous take. ONE pack only, so each attempt costs a recharge at the
+marketing office; budget 2-3 attempts across the day. If the Linux ->
+Pixhawk link is not working by morning, shoot the piloted flight + ground AI
+demo and say on camera what is and is not autonomous. Honest beats
+overclaimed, and an overclaim judges catch is fatal.
 
 Abort rule, memorised before you leave: **flip to STABILIZE, never disarm.**
 Disarm airborne only for an imminent person-strike or an unrecoverable flyaway.
@@ -49,67 +56,57 @@ live, the ring params changed (PRX1_TYPE=2), and the gate got new endpoints
       CLOSED at boot, before arming, with nothing commanding it. That is
       SERVO9_TRIM doing its job; if it boots open anyway, say so.
 
-## TAKE — aircraft
+## PACK LIST — tick each item as it goes in the vehicle
 
-- [ ] The aircraft (closed: UNO Q, ESP32 ring, lidars, hopper all inside)
-- [ ] **GPS puck and RC receiver reconnected** (they were off for bench work)
-- [ ] Flight pack(s), FULL. If there is only one pack, the next item is what
-      makes attempts 2 and 3 exist:
-- [ ] **The charger + its power supply**, and a plan for where it plugs in
-      between attempts
-- [ ] Transmitter (check its battery)
-- [ ] **Hopper payload** (Bti granules, or the stand-in you have been bench
-      testing with) + a funnel or scoop + enough to reload for every attempt
+Status from the 2026-08-14 night audit is in brackets; PACKED still gets
+ticked when it physically enters the car, because "packed at home" and "in
+the vehicle" have different failure modes.
 
-## TAKE — ground station
+Aircraft:
+- [ ] The aircraft (UNO Q, ESP32 ring, lidars, hopper inside; no rattles —
+      shaken and confirmed; battery lives strapped inside it)
+- [ ] GPS puck + RC receiver ON it (reconnected, wiring check passed)
+- [ ] The pack — the only one — FULL (charging overnight/early morning)
+- [ ] Charger + its supply (mains at the marketing office between attempts)
+- [ ] Transmitter (charged) + 1 set spare AAs
+- [ ] Starter salt in a bag (top up from the farm kitchen as needed)
 
-- [ ] **BOTH laptops** + both chargers (Linux laptop primary; MacBook backup)
-- [ ] **USB-C to USB-A adapter/hub for the MacBook** (SiK radio and Pixhawk
-      cable are both USB-A; the Linux laptop has USB-A natively)
-- [ ] SiK telemetry radio
-- [ ] USB cable for the Pixhawk (log pull) + SD card reader (backup route)
-- [ ] Phone with hotspot and data: the board's internet (dashboard, and the
-      opening Google-search shot needs internet at the field)
+Ground station:
+- [ ] Linux laptop + charger (primary field machine)
+- [ ] MacBook + charger (backup)
+- [ ] USB-C to USB-A adapter (packed — MacBook's only route to the radio)
+- [ ] SiK telemetry radio (in the MacBook bag)
+- [ ] Known-good DATA USB cable for the Pixhawk (not a charge-only one)
+- [ ] SD card reader
+- [ ] Hotspot phone, charged, with data (board already joined the hotspot)
 
-## TAKE — the demo target
+Target:
+- [ ] The dark tray
+- [ ] A water can to carry pump water to the tray at the plot
 
-- [ ] **Dark tray, ~60 cm** — the guaranteed puddle. Detection over grass
-      needs a target that is certain to exist.
-- [ ] **More water than you think** (carry cans/bottles; the tray must read
-      as water from altitude, wind evaporates shallow fills)
+Filming:
+- [ ] Vivo X300 FE: charged, storage cleared for a 10+ min take
+- [ ] Printed/written shooting script (see VIDEO_SCRIPT.md) — one copy per
+      person
+- [ ] Power bank
+- [ ] Tripod OPTIONAL: handheld is fine for the walking take; a stand only
+      helps the two screen close-ups if hands get tired
 
-## TAKE — filming
-
-- [ ] The camera (or phone) you will film with: charged, empty enough for a
-      10+ minute continuous take, plus its tripod/gimbal if one exists
-- [ ] The running-order card (taped up)
-- [ ] Second phone or power bank as camera backup
-
-## TAKE — farm-specific (dirt, big, no furniture)
-
-- [ ] **Landing mat** (board / tarp / doormat): prop wash on dirt is a dust
-      cloud straight into the motors, the B525 lens and the lidar ring
-- [ ] **A surface for the laptops** (folding table, crate, or at minimum a
-      tarp) — two laptops do not sit in dirt
-- [ ] **Shade** (umbrella, canopy, or park the car to cast it): screens are
-      unreadable in direct sun and the video FILMS a screen twice
-- [ ] **Lens cloth** for the B525 — dust on the lens quietly kills detection
-- [ ] Footwear for mud (monsoon + dirt)
-- [ ] Confirm the farm's water source (tap/pump/well?) — decides how much
-      water you carry for the tray
-
-## TAKE — repairs and safety
-
-- [ ] **PLIERS** (permanent line: motor nuts cannot be tightened by hand,
-      and a nut backing off was crash #1)
-- [ ] Hex drivers, Loctite, spare props, spare prop nuts
-- [ ] Multimeter (pack voltage vs what the FC claims)
+Repairs and safety:
+- [ ] PLIERS (permanent line: a nut backing off was crash #1)
+- [ ] Hex drivers + Loctite
+- [ ] Every spare prop owned (few exist — fly conservative, no showing off)
+- [ ] Multimeter
 - [ ] Zip ties, electrical tape
-- [ ] First aid kit. Six props at hover RPM cut.
-- [ ] LiPo-safe bag for charged/hot packs
-- [ ] Headlamp or torch (attempts can run late)
-- [ ] Water and snacks for the humans, mosquito repellent (you are standing
-      next to engineered mosquito habitat all afternoon)
+- [ ] Cloth sheets (landing pad; weigh the corners with stones or the dust
+      cloud problem comes back with a flapping sheet on top)
+- [ ] Lens cloth (packed)
+- [ ] Torches (attempts can run late; farm has first aid already)
+- [ ] Human water + snacks + mosquito repellent
+
+At home, NOT in the car:
+- [ ] SD card seated in the Pixhawk (confirmed 2026-08-14, re-check at the
+      door anyway — it has nearly been lost to the reader before)
 
 ## AT THE SITE — order of operations
 
@@ -122,7 +119,8 @@ live, the ring params changed (PRX1_TYPE=2), and the gate got new endpoints
 - [ ] 4. Full check over the radio: `./python tools/wiring_check.py` —
       expect FC / GPS / COMPASS / TF-LUNA / ESP32 / RC all PASS.
 - [ ] 5. Hotspot up, board on it, dashboard loads on the phone.
-- [ ] 6. Load the hopper. Place and fill the tray where the survey will pass.
+- [ ] 6. Load the hopper (salt from the kitchen if the bag runs out). Place
+      the tray where the survey will pass, fill it from the pump.
 - [ ] 7. **REHEARSAL FLIGHT, unrecorded.** Fly exactly what the take will be.
       Land, pull the log (`./python tools/check_log.py <log>.BIN`), fix what
       it shows, recharge if needed.
@@ -152,8 +150,12 @@ descend-BESIDE is the design.
 
 Requirements: **5-10 min, ONE continuous unedited take, publicly viewable,
 opens with a Google search for the date on screen, shows functionality +
-assembly + components.** Two people, one camera. Upload + submission the same
-day — budget an hour at home on real wifi for the upload, not hotspot data.
+assembly + components.** Two people, one camera. Upload happens ~a week
+later from home wifi; TONIGHT'S job after the shoot is only to BACK UP the
+file (laptop + Drive) so no phone accident can lose it.
+
+**The full shooting script with lines to say is VIDEO_SCRIPT.md.** The
+running order below is the skeleton; the script is what you print.
 
 Running order (~8 min):
 
