@@ -1,4 +1,11 @@
-# Field checklist — SATURDAY 2026-08-15: SHOOT + SUBMISSION DAY
+# Farm checklist — SATURDAY 2026-08-15: SHOOT + SUBMISSION DAY
+
+**VENUE IS A FARM, not the grass field: dirt surface, much bigger area.**
+Dirt changes things: prop wash throws dust into motors, the camera lens and
+the lidars, so takeoff happens from a mat; laptops need a surface and shade;
+monsoon dirt can mean mud. BOTH laptops are going (user, 2026-08-14): the
+Linux laptop is the primary (every tool is proven on it), the MacBook is the
+backup and second screen.
 
 The goal: the FULL AUTONOMOUS LOOP (survey, detect, drop) on camera, one
 continuous take, uploaded and submitted the same day. 2-3 attempts exist; a
@@ -25,10 +32,9 @@ live, the ring params changed (PRX1_TYPE=2), and the gate got new endpoints
 - [ ] **Phone hotspot test**: hotspot on, UNO Q joins it, SSH in once, open
       https://drone.reysen.net and see the dashboard. Failure is free at home
       and unfixable at the field.
-- [ ] **MacBook ready**: repo pulled, `.venv` present (`./python
-      tools/wiring_check.py` complains about a missing serial device, not a
-      missing module), QGC opens, SiK radio appears as /dev/cu.* when plugged
-      in. The Linux laptop is NOT going; the MacBook is the field machine.
+- [ ] **Both laptops ready**: repo pulled on BOTH; Linux laptop is primary
+      (all tools proven there, native USB-A); MacBook is backup (`.venv`
+      works, QGC opens, SiK appears as /dev/cu.* when plugged in).
 - [ ] **Write the running-order card** (bottom of this file) and tape it
       somewhere the narrator can read it.
 - [ ] **Gate check with the new endpoints — PROPS OFF, hopper EMPTY**:
@@ -49,9 +55,9 @@ live, the ring params changed (PRX1_TYPE=2), and the gate got new endpoints
 
 ## TAKE — ground station
 
-- [ ] MacBook + **USB-C to USB-A adapter/hub** (SiK radio and Pixhawk cable
-      are both USB-A; no adapter = no telemetry, no checks, no log pull)
-- [ ] MacBook charger
+- [ ] **BOTH laptops** + both chargers (Linux laptop primary; MacBook backup)
+- [ ] **USB-C to USB-A adapter/hub for the MacBook** (SiK radio and Pixhawk
+      cable are both USB-A; the Linux laptop has USB-A natively)
 - [ ] SiK telemetry radio
 - [ ] USB cable for the Pixhawk (log pull) + SD card reader (backup route)
 - [ ] Phone with hotspot and data: the board's internet (dashboard, and the
@@ -70,6 +76,19 @@ live, the ring params changed (PRX1_TYPE=2), and the gate got new endpoints
       10+ minute continuous take, plus its tripod/gimbal if one exists
 - [ ] The running-order card (taped up)
 - [ ] Second phone or power bank as camera backup
+
+## TAKE — farm-specific (dirt, big, no furniture)
+
+- [ ] **Landing mat** (board / tarp / doormat): prop wash on dirt is a dust
+      cloud straight into the motors, the B525 lens and the lidar ring
+- [ ] **A surface for the laptops** (folding table, crate, or at minimum a
+      tarp) — two laptops do not sit in dirt
+- [ ] **Shade** (umbrella, canopy, or park the car to cast it): screens are
+      unreadable in direct sun and the video FILMS a screen twice
+- [ ] **Lens cloth** for the B525 — dust on the lens quietly kills detection
+- [ ] Footwear for mud (monsoon + dirt)
+- [ ] Confirm the farm's water source (tap/pump/well?) — decides how much
+      water you carry for the tray
 
 ## TAKE — repairs and safety
 
