@@ -81,7 +81,14 @@ PRX1_ORIENT,0
 PRX1_YAW_CORR,0
 
 # --- Avoidance (VL53L0X real-world range is short; margins sized to match) ---
-AVOID_ENABLE,7            # bit 2 (proximity) is the essential one
+# AVOID_ENABLE 7 -> 0 on 2026-08-14 23:30, THE NIGHT BEFORE THE SHOOT: ring
+# sectors died one per test while the drone sat sealed and powered (2 dead ->
+# 3 -> 4, plus the up sensor; real no-data in the stream, not radio loss),
+# so flight-control influence from a degrading sensor is a mission risk.
+# PRX1_TYPE STAYS 2: the ring still streams, the dashboard still shows it,
+# the video can show it honestly. To re-enable avoidance at the farm: set
+# AVOID_ENABLE=7 (no reboot needed for this one).
+AVOID_ENABLE,0            # 0 = ring data logged/shown but does NOT steer
 AVOID_MARGIN,1            # m stand-off in GPS modes; sensor max is ~1.2-2 m
 AVOID_BEHAVE,0            # 0 = slide
 AVOID_DIST_MAX,1.5        # m, non-GPS modes; must be < reliable sensor range
