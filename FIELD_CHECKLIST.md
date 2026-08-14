@@ -116,11 +116,33 @@ At home, NOT in the car:
 - [ ] 3. Power up, **do not arm for 2-5 min**:
       `./python tools/bench.py gps --seconds 300` until READY (10+ sats,
       HDOP < 1.5, 3D fix).
+- [ ] 3b. **FIRST laptop action: `./python tools/parameters.py push`** —
+      this DELIVERS AVOID_ENABLE=0, which never reached the board on Friday
+      night (the drone left for Raghav's before the push ran). Until this
+      runs, the degrading ring still steers the aircraft.
 - [ ] 4. Full check over the radio: `./python tools/wiring_check.py` —
       expect FC / GPS / COMPASS / TF-LUNA / ESP32 / RC all PASS.
+      **RC is a HARD GATE: with the TX on it must PASS before arming — an
+      RC failsafe mid-mission is an RTL straight through the take.**
+      RING/UP-SENSOR FAILs are expected and accepted (avoidance is off).
+- [ ] 4b. **Confirm comp 191 on the bus**: `./python tools/bench.py nodes`
+      while the pump runs (see mission start below) — the last box to tick
+      on the Linux->Pixhawk link.
 - [ ] 5. Hotspot up, board on it, dashboard loads on the phone.
 - [ ] 6. Load the hopper (salt from the kitchen if the bag runs out). Place
       the tray where the survey will pass, fill it from the pump.
+- [ ] 6b. **Mission start (BOARD over SSH, two terminals — the pump is a
+      server and gets its own):**
+      terminal 1: `~/venv/bin/python uno_q/mav_shovel_pump.py`
+      terminal 2, sanity first (read-only):
+      `~/venv/bin/python uno_q/test_mission_link.py`
+      then the mission itself:
+      `~/venv/bin/python uno_q/run_mission.py --conn udpin:127.0.0.1:14555
+      --model models/best.onnx --waypoints <file> --camera <N>`
+      Run both from ~/monsoonready-drone. `--model` MUST be passed (the
+      default points at a pre-reflash path). `--camera`: check with
+      `v4l2-ctl --list-devices` first; the default of 1 is unverified on
+      the reflashed image.
 - [ ] 7. **REHEARSAL FLIGHT, unrecorded.** Fly exactly what the take will be.
       Land, pull the log (`./python tools/check_log.py <log>.BIN`), fix what
       it shows, recharge if needed.
