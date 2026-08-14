@@ -64,7 +64,7 @@
 // mux readback, stuck-line check, and a sweep of bus speed/settle time to
 // separate "sensor absent" from "bus too fast for this wiring". Transmits
 // NOTHING to the Pixhawk. Set back to 0 to fly.
-#define RUN_I2C_DIAG 1
+#define RUN_I2C_DIAG 0
 
 // Fake-mode flight guard: while USE_FAKE_SENSORS is 1, MAVLink is only
 // transmitted if this pin is jumpered to GND (bench-only jumper). If a
@@ -118,9 +118,33 @@ static const uint8_t SECTOR_FOR_CHANNEL[NUM_RING_SENSORS] __attribute__((unused)
 // treats an unknown sector as NO INFORMATION, never as clear, so avoidance
 // simply has no opinion about the rear. Do NOT "fix" absent sectors by
 // sending max range: that would tell the autopilot the rear is proven clear.
+// 2026-08-14 DIAGNOSTIC, and it OVERTURNED the previous map. The earlier
+// {true,true,false,false,false,true} claimed channels 2,3,4 were empty because
+// three rear sensors had been unplugged. The bus says otherwise: a VL53L0X
+// answers at 0x29 on EVERY channel 0-5. All six are fitted.
+//   ch0  0deg    20/20 answers, 20/20 init, 20/20 read   SOLID
+//   ch1  60deg    8/20 answers                           INTERMITTENT
+//   ch2  120deg  20/20 answers,  0/20 init               present, will not init
+//   ch3  180deg  20/20 answers, 20/20 init, 20/20 read   SOLID
+//   ch4  240deg  20/20 answers, 20/20 init, 20/20 read   SOLID
+//   ch5  300deg  20/20 answers, 10/20 init               INTERMITTENT
+// MARKING THE FLAKY ONES FITTED IS THE SAFE CHOICE, not the optimistic one: a
+// fitted channel that fails reports SENSOR_MM_ERROR -> SECTOR_NO_DATA -> 65535
+// on the wire, and ArduPilot treats an unknown sector as NO INFORMATION. It
+// never reads as "clear". Marking them UNfitted would lose the readings they
+// do produce and gain nothing.
+// NOT A BUS-SPEED PROBLEM: the pass/fail pattern jumps around across all four
+// speed configs, which is the loose-contact / sagging-3V3 signature. Do not
+// "fix" this by lowering I2C_CLOCK_HZ; meter 3V3 at the failing sensor and
+// wiggle its connector.
 static const bool RING_SENSOR_FITTED[NUM_RING_SENSORS] __attribute__((unused)) =
-    {true, true, false, false, false, true};
-#define UP_SENSOR_FITTED 1   // channel 6
+    {true, true, true, true, true, true};
+// 0 as of 2026-08-14: ch6 answered 0/20 with SDA and SCL both idling HIGH, so
+// nothing is electrically on that channel even though the sensor is plugged in.
+// 0/N answers is a power/wire/dead-sensor fault, NOT marginal comms, so the
+// firmware must not probe it and must not call it a failure every cycle.
+// Set back to 1 the moment the wiring is fixed and the diag shows it answering.
+#define UP_SENSOR_FITTED 0   // channel 6: NOT on the bus, see above
 
 // -----------------------------------------------------------------------------
 // I2C  (ESP32 <-> TCA9548A <-> VL53L0X)
