@@ -1,248 +1,148 @@
-# Field checklist
+# Field checklist — SATURDAY 2026-08-15: SHOOT + SUBMISSION DAY
 
-**NEXT SESSION'S OBJECTIVE: the FULL AUTONOMOUS LOOP, on camera, Saturday
-2026-08-15** - which is also the submission deadline. See the video plan at the
-bottom of this file.
-
-ENDURANCE IS DONE, do not spend another session on it: 16.7 min to empty, 13.3
-min to a 20% reserve, at 28.8 A hover. Recovered from charger mAh over motor
-time, not from the log, whose amps read 3.68x high before the fix.
+The goal: the FULL AUTONOMOUS LOOP (survey, detect, drop) on camera, one
+continuous take, uploaded and submitted the same day. 2-3 attempts exist; a
+failure costs a recharge, not the day. The one open blocker is Linux ->
+Pixhawk (byte-shovel over the Bridge); if it is not working by morning, shoot
+the piloted flight + ground AI demo and say on camera what is and is not
+autonomous. Honest beats overclaimed, and an overclaim judges catch is fatal.
 
 Abort rule, memorised before you leave: **flip to STABILIZE, never disarm.**
 Disarm airborne only for an imminent person-strike or an unrecoverable flyaway.
 
+**REHEARSE BEFORE YOU RECORD.** Nothing has flown since the ESP32 ring went
+live, the ring params changed (PRX1_TYPE=2), and the gate got new endpoints
+(560/1760). The first flight of the day is a REHEARSAL, not the take.
+
 ---
 
-## BEFORE YOU LEAVE (at the bench, ~20 min)
+## TONIGHT, AT HOME
 
-- [ ] **1. Gate travel — PROPS OFF, hopper EMPTY.** The gate moves (confirmed
-      2026-08-10) but opened the WRONG WAY, because wiring_check had its own
-      hard-coded 1900/1000 and ignored the dropper's values. Fixed: it now
-      reads them from `dropper.py`, so the banner should read
-      `closed 1600us -> open 1000us, about 60 deg counter-clockwise`.
-      `./python tools/wiring_check.py --wiggle`
-      **Watch the gate.** If the throw is not ~60 deg, tune without editing
-      code: `--servo-open-us` / `--servo-closed-us`. If it still turns the
-      wrong way, swap those two numbers, then tell me so the defaults in
-      `dropper.py` are corrected. An ACCEPTED ack proves only that the command
-      arrived; your eyes prove the direction.
-- [ ] **2. Salt flow test — still on the bench.** Load the hopper, trigger the
-      gate, catch the salt, weigh it, time it. Write down **grams per second**.
-      This is now load-bearing, not optional: the dropper does VARIABLE doses
-      (gate held open longer for a bigger puddle, 0.3-3.0 s), and without a
-      flow rate those seconds are proportional to nothing. Measure it at two
-      dwells if you can, e.g. 0.5 s and 2 s, so you know whether flow is
-      actually linear in time or whether the gate takes a moment to get going.
-      `./python tools/flow_test.py` drives the gate and does the arithmetic:
-      it reports g/s and, more usefully, the opening lag, i.e. how much of a
-      short dose delivers nothing. **NOT needed for today's flight** — this
-      only matters before dosing is claimed to work in grams.
-- [ ] **3. Phone hotspot to the UNO Q.** Not set up yet, and without it there
-      is no in-flight detection recording. Do it now, on your home wifi, where
-      failure is free. Turn the hotspot on, join the board to it, note the IP
-      from the phone's connected-devices list, and SSH in once to prove it.
-- [ ] **4. Pack a tray and water.** It just rained but the field is grass. A
-      dark tray of water roughly 60 cm across is visible from 3-5 m and gives
-      the camera something real to detect. Bring more water than you think.
-- [ ] **5. Charge state**: note the pack's resting voltage before you go, so
-      the endurance figure has a starting point.
+- [ ] **Charge everything**: flight pack(s), transmitter, MacBook, both
+      phones, the camera you will film with. A power bank for the field.
+- [ ] **SD CARD SEATED IN THE PIXHAWK** (standing item, nearly forgotten
+      2026-08-10 because it was still in the reader). No card, no log.
+- [ ] **Phone hotspot test**: hotspot on, UNO Q joins it, SSH in once, open
+      https://drone.reysen.net and see the dashboard. Failure is free at home
+      and unfixable at the field.
+- [ ] **MacBook ready**: repo pulled, `.venv` present (`./python
+      tools/wiring_check.py` complains about a missing serial device, not a
+      missing module), QGC opens, SiK radio appears as /dev/cu.* when plugged
+      in. The Linux laptop is NOT going; the MacBook is the field machine.
+- [ ] **Write the running-order card** (bottom of this file) and tape it
+      somewhere the narrator can read it.
+- [ ] **Gate check with the new endpoints — PROPS OFF, hopper EMPTY**:
+      `./python tools/wiring_check.py --wiggle` and watch the gate: closed
+      560, open 1760, correct direction, full throw. Your eyes are the test.
 
-## RAGHAV — DO THIS AT HOME, IT ALL NEEDS INTERNET
+## TAKE — aircraft
 
-- [ ] **Pull the repo first.** The pull DELETES `.venv-tools` (a virtualenv
-      that should never have been committed, untracked 2026-08-10), so his
-      python environment disappears with it. Recreate it under the name every
-      machine now uses:
-      `python3 -m venv .venv && ./pip install pymavlink pyserial`
-      Then prove it: `./python tools/wiring_check.py` should complain about a
-      missing serial device, NOT about a missing module.
-- [ ] **QGC for macOS** installed and opened once.
-- [ ] **Serial driver for the SiK radio.** macOS may need a CP210x or FTDI
-      driver depending on the radio's chip, which is not recorded anywhere in
-      this project. Plug the radio in at home and check it appears as a
-      `/dev/cu.usbserial*` or `/dev/cu.SLAB_USBtoUART*`. Finding out in a
-      field, with no internet, is how the session gets wasted.
-- [ ] **PRIVATE.md** from PRIVATE.sample.md with the board's current IP, and
-      `ssh-copy-id` to the UNO Q: the 2026-07-28 reflash wiped authorized_keys
-      and changed both the hostname and the tailnet IP, so his old access is
-      dead.
+- [ ] The aircraft (closed: UNO Q, ESP32 ring, lidars, hopper all inside)
+- [ ] **GPS puck and RC receiver reconnected** (they were off for bench work)
+- [ ] Flight pack(s), FULL. If there is only one pack, the next item is what
+      makes attempts 2 and 3 exist:
+- [ ] **The charger + its power supply**, and a plan for where it plugs in
+      between attempts
+- [ ] Transmitter (check its battery)
+- [ ] **Hopper payload** (Bti granules, or the stand-in you have been bench
+      testing with) + a funnel or scoop + enough to reload for every attempt
 
-## TAKE
+## TAKE — ground station
 
-**The owner's Linux laptop is NOT going to the field. Every field command runs
-on RAGHAV'S MACBOOK**, so anything not installed on the MacBook does not exist
-once you leave. Confirm before driving: repo pulled, `.venv` recreated
-(the pull deletes `.venv-tools`), QGC installed, SiK serial driver present.
+- [ ] MacBook + **USB-C to USB-A adapter/hub** (SiK radio and Pixhawk cable
+      are both USB-A; no adapter = no telemetry, no checks, no log pull)
+- [ ] MacBook charger
+- [ ] SiK telemetry radio
+- [ ] USB cable for the Pixhawk (log pull) + SD card reader (backup route)
+- [ ] Phone with hotspot and data: the board's internet (dashboard, and the
+      opening Google-search shot needs internet at the field)
 
-Cannot fly without:
-- Aircraft, **fully charged 3S 8000 pack**, TX (check TX battery)
-- **MacBook + USB-C to USB-A adapter or hub** - the Air has no USB-A and BOTH
-  the SiK radio and the Pixhawk cable are USB-A. No adapter, no telemetry, no
-  checks, no log pull.
-- MacBook charger, SiK radio, USB cable for the Pixhawk
+## TAKE — the demo target
 
-Cannot get the measurement without:
-- **Stopwatch** (phone) - this is the endurance instrument now, not the log
-- **Headlamp or phone torch** - an evening session ends in the dark
-- Notebook and pen for stopwatch times and voltages
+- [ ] **Dark tray, ~60 cm** — the guaranteed puddle. Detection over grass
+      needs a target that is certain to exist.
+- [ ] **More water than you think** (carry cans/bottles; the tray must read
+      as water from altitude, wind evaporates shallow fills)
 
-Nearly-free insurance:
-- **PLIERS** (user, 2026-08-10, learned at the field): motor nuts cannot be
-  tightened properly by hand, and a nut backing off in flight was crash #1.
-  This is a permanent line on the list, not a one-off.
-- **Loctite + hex drivers**, spare props, spare prop nuts
-- **Multimeter** - the only way to check pack voltage against what the FC reports
-- **THE SD CARD ITSELF, IN THE AIRCRAFT** (user, 2026-08-10, nearly forgotten
-  because it was still in the reader after the last log pull). No card, no
-  log, and the log is the only record of what the flight actually did. Check
-  it is seated in the Pixhawk BEFORE leaving, every single time.
-- SD card reader, in case the log comes off the card
-- First aid kit. Six props at hover RPM cut.
+## TAKE — filming
 
-Leave at home: salt and the hopper test (bench job), the obstacle ring
-(parked), anything for the motor test (the aircraft flies, that is settled),
-and **the tray and water** - user was right to cut these 2026-08-10. They only
-ever existed to give the CAMERA something to detect, and detection needs the
-UNO Q worker plus the hotspot, neither of which is set up. On an
-endurance-only session they are dead weight. They come back the day the
-detection demo is flown.
+- [ ] The camera (or phone) you will film with: charged, empty enough for a
+      10+ minute continuous take, plus its tripod/gimbal if one exists
+- [ ] The running-order card (taped up)
+- [ ] Second phone or power bank as camera backup
 
-**THE UNO Q STILL FLIES, IT JUST NEEDS NO SETUP.** Fitted is not the same as
-configured: it powers off the same rail and boots with the aircraft, so it
-costs nothing to carry and its mass and current draw are part of the flight
-weight the endurance number must be measured at. Do not SSH in, do not start
-the worker.
+## TAKE — repairs and safety
 
-## AT THE SITE — pre-arm
+- [ ] **PLIERS** (permanent line: motor nuts cannot be tightened by hand,
+      and a nut backing off was crash #1)
+- [ ] Hex drivers, Loctite, spare props, spare prop nuts
+- [ ] Multimeter (pack voltage vs what the FC claims)
+- [ ] Zip ties, electrical tape
+- [ ] First aid kit. Six props at hover RPM cut.
+- [ ] LiPo-safe bag for charged/hot packs
+- [ ] Headlamp or torch (attempts can run late)
+- [ ] Water and snacks for the humans, mosquito repellent (you are standing
+      next to engineered mosquito habitat all afternoon)
 
-- [ ] **5b. TRANSMITTER ON before you run anything.** Every bench run so far
-      has reported `FAIL RC ... receiver ABSENT/UNHEALTHY`, which is the check
-      doing its job with the TX switched off. It must read PASS before you arm.
-- [ ] **6. Prop nuts by hand, every one.** C1 was a nut backing off.
-- [ ] **7. Power up, DO NOT ARM for 2-5 minutes.**
-      `./python tools/bench.py gps --seconds 300`
-      Wait for `READY` (10+ sats, HDOP < 1.5, 3D fix). Indoors on 2026-08-10 it
-      already reached fix 3 with 8 sats, so outdoors this should come quickly.
-- [ ] **8. Full wiring check over the radio.**
-      `./python tools/wiring_check.py`
-      Expect FC / GPS / COMPASS / TF-LUNA / RC / SiK PASS. The rangefinder
-      reading below 0.20 m on the legs is now reported as expected, not FAIL.
-- [ ] **9. Start the detection worker** (only if step 3 worked):
-      `~/venv/bin/python ~/uno_q/detect_worker.py --model ~/best.onnx --camera 2 --save-dir ~/field_$(date +%H%M)`
-      Put the tray of water where the aircraft will hover over it.
+## AT THE SITE — order of operations
 
-## THE ENDURANCE FLIGHT (the one that matters)
-
-Fly **one continuous hover** rather than several hops: interrupted flights
-make the mAh-per-minute figure meaningless.
-
-- [ ] **10.** Take off in **Stabilize**, climb to about 2 m, settle.
-- [ ] **11.** Switch to **AltHold** and hold station over the tray. Start a
-      stopwatch. Note the time at each of: first low-battery warning, and any
-      change in how it flies.
-      **THE STOPWATCH IS NOW THE ENDURANCE MEASUREMENT, NOT THE LOG.** As of
-      2026-08-10 the logged current is proven non-physical (BATT_AMP_PERVLT=17
-      on a 3.3 V input cannot report more than 56 A, yet log 37 holds 105 A),
-      so mAh-consumed and burn rate are garbage. Minutes on a stopwatch from a
-      FULL pack to the first low-voltage warning is a real number that needs no
-      working current sensor, and it is the number to quote. If the pack is not
-      full, you are not getting an endurance figure today, only a flight.
-- [ ] **12. Land as soon as the low-battery warning sounds.** Do not fly to
-      the failsafe deliberately — you already know it triggers RTL and climbs
-      to 15 m, and a LiPo taken below ~3.3 V per cell resting is damaged.
-- [ ] **13.** Disarm. Note the stopwatch time and the pack's resting voltage
-      after a couple of minutes.
-
-## AFTER LANDING, BEFORE ANY SECOND FLIGHT
-
-- [ ] **14.** Pull the log **by USB cable or SD card** — never over the radio,
-      a `.bin` at a few kB/s takes hours.
-      `./python tools/check_log.py <log>.BIN`
-      Exit code is the verdict now: 0 cleared, 1 a gate failed, 2 unjudgeable.
-      Read the **burn rate** line: that is your real endurance.
-- [ ] **15.** Compare the log's consumed mAh against what the charger puts
-      back in. This is the only independent check on the current sensor, and
-      it decides whether ~105 A is real or `BATT_AMP_PERVLT` is mis-scaled.
-- [ ] **16.** Pull the detection frames if the worker ran:
-      `scp -r arduino@<hotspot-ip>:~/field_* /tmp/`
-
-## KNOWN-GOOD AS OF 2026-08-10 (do not re-debug these)
-
-FC, GPS driver, compass, TF-Luna, and the SiK link all PASS. The aircraft has
-flown. The obstacle ring is parked and unplugged by choice. TF-Luna over water
-is settled as a permanent no, so descend-BESIDE is the only design and there is
-no basin test to run.
+- [ ] 1. **Transmitter ON before anything.** RC FAIL with the TX off is the
+      check working, not a fault.
+- [ ] 2. **Prop nuts with the pliers, every one.**
+- [ ] 3. Power up, **do not arm for 2-5 min**:
+      `./python tools/bench.py gps --seconds 300` until READY (10+ sats,
+      HDOP < 1.5, 3D fix).
+- [ ] 4. Full check over the radio: `./python tools/wiring_check.py` —
+      expect FC / GPS / COMPASS / TF-LUNA / ESP32 / RC all PASS.
+- [ ] 5. Hotspot up, board on it, dashboard loads on the phone.
+- [ ] 6. Load the hopper. Place and fill the tray where the survey will pass.
+- [ ] 7. **REHEARSAL FLIGHT, unrecorded.** Fly exactly what the take will be.
+      Land, pull the log (`./python tools/check_log.py <log>.BIN`), fix what
+      it shows, recharge if needed.
+- [ ] 8. Reset everything to its mark, reload the hopper, refill the tray,
+      THEN record.
 
 ## STOP AND GO HOME IF
 
-- Any accelerometer clipping rise (flight 37 had +16, watch whether it grows)
-- VibeZ median ≥ 15 on any IMU
-- Any EKF variance message, or a `Crash: Disarming` while genuinely airborne
+- Any accelerometer clipping rise, or VibeZ median >= 15 on any IMU
+- Any EKF variance message, or `Crash: Disarming` while genuinely airborne
 - Learned hover throttle above 0.5 with the payload fitted
 - Anything about the sound or the feel that you cannot explain
 
+## KNOWN-GOOD — do not re-debug at the field
+
+FC, GPS driver, compass, TF-Luna, SiK link: PASS (2026-08-02 wiring check).
+UNO Q -> Pixhawk over D0/D1: comp 191 heard, TX direction proven 2026-08-13.
+ESP32 ring: comp 195 heard 2026-08-14 after the TX/RX swap was fixed; ch0/1/
+3/4 solid, ch5 intermittent, ch2 dead chip (known, accepted). Endurance is
+CLOSED: 16.7 min to empty, 13.3 min to 20% reserve at 28.8 A true hover; if
+the day needs a number, use that one. TF-Luna over water is a permanent no;
+descend-BESIDE is the design.
+
 ---
 
-# Video plan - Saturday 2026-08-15
+# Video plan — the take itself
 
-**SATURDAY 2026-08-15 IS BOTH THE SHOOT DAY AND THE SUBMISSION DEADLINE**
-(user, 2026-08-11). The goal for that day is the FULL AUTONOMOUS LOOP on
-camera: survey, detect, drop, flown by the aircraft. Flight, filming and
-upload all land on the 15th, but there is room for **2-3 attempts** (user,
-2026-08-11): a failure costs a pack recharge, a few hours, not the day.
+Requirements: **5-10 min, ONE continuous unedited take, publicly viewable,
+opens with a Google search for the date on screen, shows functionality +
+assembly + components.** Two people, one camera. Upload + submission the same
+day — budget an hour at home on real wifi for the upload, not hotspot data.
 
-What that forces, and it is not optional: **the autonomy has to be proven
-before Saturday, not on Saturday.** The UNO Q <-> Pixhawk D0/D1 link has never
-worked, and it is the one thing the autonomous loop cannot do without. Prove it
-at home this week, because an attempt costs hours and you only get a few of
-them. If it is still unproven when you set up to record, shoot the piloted
-flight plus a ground AI demo and say plainly which parts are autonomous. A
-failed take is recoverable; arriving with the link still unproven is what is
-not, since debugging it in a field burns the attempts you came to use.
+Running order (~8 min):
 
-Requirements that constrain everything: **5-10 min, ONE continuous unedited
-take, publicly viewable, opens with a Google search for the date on screen,
-must show functionality + assembly + components.** Two people, one camera.
-AI demo on a laptop screen on the ground.
+1. **0:00-0:30 — Date proof.** Camera on a screen, Google "today's date",
+   result visible. Project name and who you are while it is on screen.
+2. **0:30-2:00 — Components.** Walk the airframe: Pixhawk, GPS mast, SiK,
+   UNO Q + B525 camera, TF-Luna, ESP32 ring, hopper + MG90 gate, battery.
+3. **2:00-3:00 — Assembly evidence.** Plate layout, wiring bay, splice work;
+   what was made vs bought.
+4. **3:00-4:00 — The AI, on the MacBook.** Detector live over the tray or
+   over saved field frames, boxes on real puddles. Say the model, dataset
+   size, and on-board inference time. Have it ALREADY RUNNING before 0:00.
+5. **4:00-6:30 — The flight.** Pre-arm, take off, the survey, the detect,
+   the drop over the tray. Camera never stops.
+6. **6:30-8:00 — Result and honesty.** The treated target, the dashboard
+   map, then state plainly what was autonomous and what was piloted.
 
-**The single-take problem**: you cannot stop, so the running order has to be
-physically walkable and every prop must already be in place. Rehearse the
-walk without recording first.
-
-Suggested running order (roughly 8 min):
-
-1. **0:00-0:30 — Date proof.** Camera on the laptop screen, Google "today's
-   date", show the result. Say the project name and who you are while it is on
-   screen. Get this right; it is a disqualification criterion.
-2. **0:30-2:00 — Components, on the bench.** Camera operator walks the
-   airframe with the pilot narrating: Pixhawk, GPS mast, SiK radio, the UNO Q
-   and B525 camera underneath, TF-Luna, the hopper and MG90 gate, the battery.
-   Pick each up where possible. This is the "components used" requirement.
-3. **2:00-3:00 — Assembly evidence.** You cannot rebuild it on camera, so show
-   the build: the plate layout, the wiring bay, the splice work, and say what
-   was made versus bought.
-4. **3:00-4:00 — The AI, on the laptop.** Camera on the screen: run the
-   detector over the saved field frames or live over the tray, showing boxes
-   drawn on real puddles. Say the model, the dataset size, and the board's
-   inference time (511 ms on the UNO Q). **Have this already running and
-   tested before you start recording** — a laptop waking up on camera is a
-   minute of dead air you cannot cut.
-5. **4:00-6:30 — The flight.** Walk to the aircraft, pre-arm, take off, hover,
-   demonstrate control, then the drop over the tray. Camera operator keeps the
-   aircraft in frame and does not stop recording.
-6. **6:30-8:00 — Result and honesty.** Show the treated target, then back to
-   the laptop for the base-station map if it is running. Close by stating
-   plainly what is autonomous today and what is piloted. **Judges reward a
-   clear-eyed limitation more than an overclaim, and an overclaim they catch
-   is fatal.**
-
-**Autonomy decision**: the full autonomous loop needs the UNO Q talking to the
-Pixhawk, which is still blocked. You chose to test D0/D1 on the board first —
-do that at home, not at the farm, and set a hard cutoff: if the link is not
-proven by Friday night, shoot the piloted version. A piloted flight plus a
-convincing ground AI demo is a complete, honest submission. A failed
-autonomous attempt mid-take is an unusable recording.
-
-**Two things to prepare that cost nothing**: a charged spare pack staged where
-the pilot can reach it without leaving frame, and a written running order taped
-where the narrator can see it. Single takes fail on forgetting, not on flying.
+Stage a charged spare pack (if one exists) where the pilot can reach it
+without leaving frame. Single takes fail on forgetting, not on flying.
