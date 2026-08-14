@@ -132,17 +132,23 @@ At home, NOT in the car:
 - [ ] 6. Load the hopper (salt from the kitchen if the bag runs out). Place
       the tray where the survey will pass, fill it from the pump.
 - [ ] 6b. **Mission start (BOARD over SSH, two terminals — the pump is a
-      server and gets its own):**
+      server and gets its own). All from ~/monsoonready-drone, `git pull`
+      first.**
       terminal 1: `~/venv/bin/python uno_q/mav_shovel_pump.py`
       terminal 2, sanity first (read-only):
       `~/venv/bin/python uno_q/test_mission_link.py`
-      then the mission itself:
+- [ ] 6c. **Make the survey (no waypoint file exists — it is made HERE):**
+      carry the aircraft to the corner of the plot where the survey should
+      START, point its NOSE along the row direction, then (terminal 2, with
+      3D fix): `~/venv/bin/python uno_q/make_waypoints.py --out wp_farm.txt`
+      Default = 3 rows x 20 m, 5 m apart, starting at the aircraft,
+      extending dead ahead. Put the tray under the MIDDLE row.
+- [ ] 6d. **Fly it** (terminal 2):
       `~/venv/bin/python uno_q/run_mission.py --conn udpin:127.0.0.1:14555
-      --model models/best.onnx --waypoints <file> --camera <N>`
-      Run both from ~/monsoonready-drone. `--model` MUST be passed (the
-      default points at a pre-reflash path). `--camera`: check with
-      `v4l2-ctl --list-devices` first; the default of 1 is unverified on
-      the reflashed image.
+      --model models/best.onnx --waypoints wp_farm.txt --camera <N>`
+      `--model` MUST be passed (the default is a stale pre-reflash path).
+      `--camera <N>`: check with `v4l2-ctl --list-devices` first; the
+      default of 1 is unverified on the reflashed image.
 - [ ] 7. **REHEARSAL FLIGHT, unrecorded.** Fly exactly what the take will be.
       Land, pull the log (`./python tools/check_log.py <log>.BIN`), fix what
       it shows, recharge if needed.
