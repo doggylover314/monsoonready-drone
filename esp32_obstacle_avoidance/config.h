@@ -122,12 +122,20 @@ static const uint8_t SECTOR_FOR_CHANNEL[NUM_RING_SENSORS] __attribute__((unused)
 // {true,true,false,false,false,true} claimed channels 2,3,4 were empty because
 // three rear sensors had been unplugged. The bus says otherwise: a VL53L0X
 // answers at 0x29 on EVERY channel 0-5. All six are fitted.
-//   ch0  0deg    20/20 answers, 20/20 init, 20/20 read   SOLID
-//   ch1  60deg    8/20 answers                           INTERMITTENT
-//   ch2  120deg  20/20 answers,  0/20 init               present, will not init
-//   ch3  180deg  20/20 answers, 20/20 init, 20/20 read   SOLID
-//   ch4  240deg  20/20 answers, 20/20 init, 20/20 read   SOLID
-//   ch5  300deg  20/20 answers, 10/20 init               INTERMITTENT
+// RE-RUN after the up sensor's POWER was reconnected (2026-08-14). That single
+// fix cured ch6 AND ch1, which had looked like an independent fault:
+//   ch0  0deg    20/20 / 20/20 / 20/20   SOLID
+//   ch1  60deg   20/20 / 20/20 / 20/20   SOLID (was 8/20 before the ch6 fix)
+//   ch2  120deg  20/20 answers, 0/20 init at ALL FOUR bus speeds -> DEAD CHIP
+//   ch3  180deg  20/20 / 20/20 / 20/20   SOLID
+//   ch4  240deg  20/20 / 20/20 / 20/20   SOLID
+//   ch5  300deg  20/20 answers, 15/20 init  INTERMITTENT (reseat connector)
+//   ch6  up      20/20 / 20/20 / 20/20   SOLID
+// ch2 IS THE CHIP, NOT THE WIRING: a device that ACKs its address every time
+// but never completes init, identically at 400k/100k/50k, has no timing
+// component left to blame. Replace the sensor or fly with a blind 120 sector.
+// THE 3V3-SAG THEORY IS REFUTED: user metered 3.35 V stable AT EVERY SENSOR,
+// and the topology is a star from a soldered hub, not a daisy chain.
 // MARKING THE FLAKY ONES FITTED IS THE SAFE CHOICE, not the optimistic one: a
 // fitted channel that fails reports SENSOR_MM_ERROR -> SECTOR_NO_DATA -> 65535
 // on the wire, and ArduPilot treats an unknown sector as NO INFORMATION. It
@@ -139,12 +147,11 @@ static const uint8_t SECTOR_FOR_CHANNEL[NUM_RING_SENSORS] __attribute__((unused)
 // wiggle its connector.
 static const bool RING_SENSOR_FITTED[NUM_RING_SENSORS] __attribute__((unused)) =
     {true, true, true, true, true, true};
-// 0 as of 2026-08-14: ch6 answered 0/20 with SDA and SCL both idling HIGH, so
-// nothing is electrically on that channel even though the sensor is plugged in.
-// 0/N answers is a power/wire/dead-sensor fault, NOT marginal comms, so the
-// firmware must not probe it and must not call it a failure every cycle.
-// Set back to 1 the moment the wiring is fixed and the diag shows it answering.
-#define UP_SENSOR_FITTED 0   // channel 6: NOT on the bus, see above
+// Back to 1 on 2026-08-14: ch6 had simply been DISCONNECTED FROM POWER. Once
+// reconnected it reads 20/20 at every speed. Reconnecting it also fixed ch1,
+// so an unpowered device on a shared 3V3 net was disturbing more than its own
+// channel: check power before suspecting the bus.
+#define UP_SENSOR_FITTED 1   // channel 6: 20/20 after its power was reconnected
 
 // -----------------------------------------------------------------------------
 // I2C  (ESP32 <-> TCA9548A <-> VL53L0X)
