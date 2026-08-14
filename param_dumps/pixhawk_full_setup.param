@@ -64,18 +64,19 @@ RNGFND2_TYPE,10           # 10 = MAVLink
 RNGFND2_ORIENT,24         # 24 = up
 
 # --- Proximity ring: ESP32 OBSTACLE_DISTANCE ---
-# PRX1_TYPE ASSERTS 0 = NO PROXIMITY SENSOR (2026-08-08). The obstacle ring is
-# parked and the ESP32 is unplugged, and PRX1_TYPE=2 makes that module an
-# ARMING DEPENDENCY, so leaving it at 2 blocks every arm attempt.
-# TWO MISTAKES LED HERE, both worth not repeating:
+# PRX1_TYPE = 2 as of 2026-08-14: the refit condition is MET. comp 195 was
+# heard on the bus (bench.py nodes, 5 heartbeats/20s) after the TX/RX swap at
+# TELEM1 was fixed, so the ESP32 is fitted AND transmitting. PRX1_TYPE makes
+# the ring an ARMING DEPENDENCY: if the ESP32 ever comes back out, set this
+# to 0 EXPLICITLY (history below is why a comment-out is not enough).
+# TWO MISTAKES from the 2026-08-08 parking, both worth not repeating:
 #   1. It was set to 0 by hand and then this file was pushed, which put it
 #      straight back to 2. A param file always beats a one-off command.
 #   2. It was then COMMENTED OUT, which stopped the file re-writing 2 but
 #      could not clear the 2 already on the board: a param file only asserts
 #      what it CONTAINS. Anything that must be OFF has to state its off value
 #      explicitly, or the file cannot bring a board to a known state.
-# Set back to 2 when the ESP32 is refitted AND transmitting.
-PRX1_TYPE,0               # 0 = none; 2 = MAVLink (ring refitted)
+PRX1_TYPE,2               # 2 = MAVLink (ring live 2026-08-14); 0 = none
 PRX1_ORIENT,0
 PRX1_YAW_CORR,0
 
@@ -92,15 +93,26 @@ AVOID_BACKUP_DZ,0.1
 #     SERVO1-8, AUX1-6 are SERVO9-14; user wired it to AUX1 on 2026-08-02,
 #     superseding the provisional AUX6/ch14 assignment). FUNCTION 0 frees the
 #     pin from the motor map so MAV_CMD_DO_SET_SERVO drives it; without this
-#     the command is silently ignored. MIN/MAX must bracket the dropper pulses
-#     (closed 1000 / open 1900 defaults in uno_q/dropper.py).
+#     the command is silently ignored.
+#     TRAVEL measured by eye 2026-08-14 (tools/servo_jog.py): closed 560us,
+#     open 1760us. MIN moved 800 -> 500 because the measured CLOSED pulse sat
+#     BELOW the old MIN, and ArduPilot may clamp a commanded output to the
+#     channel's MIN/MAX: with MIN 800 the gate could stop 240us short of
+#     closed and dribble payload. MAX tightened 2200 -> 1800: nothing valid
+#     lives above open+40us, so a typo cannot slam the linkage.
+#     TRIM = the closed pulse. servo_jog deliberately leaves the gate where
+#     it last was (found OPEN on the bench 2026-08-14); trim-at-closed means
+#     any state in which ArduPilot emits trim on this disabled output parks
+#     the gate SHUT instead of at 1500us, which is 80% of the way to open.
+#     VERIFY at next battery boot: gate must sit CLOSED before arming.
 #     NOTE: SERVO14_FUNCTION/MIN/MAX were pushed to the board on 2026-08-02
 #     before the channel was known. They are harmless (FUNCTION 0 = the output
 #     is simply not driven by anything) and are left alone rather than
 #     "cleaned up", since ch14 drives nothing either way. ---
 SERVO9_FUNCTION,0
-SERVO9_MIN,800
-SERVO9_MAX,2200
+SERVO9_MIN,500
+SERVO9_MAX,1800
+SERVO9_TRIM,560
 
 # --- Guided safety (UNO Q command link watchdog) ---
 GUID_TIMEOUT,3            # s without new commands -> stop and hover. VERIFY name

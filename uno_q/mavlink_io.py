@@ -15,11 +15,14 @@ from pymavlink import mavutil
 # ArduPilot rejects guided setpoints older than a few seconds; resend at 5Hz.
 SETPOINT_RESEND_S = 0.2
 
-# Pulse widths outside this are refused. Wider than any sane gate position,
-# narrow enough to catch a typo before it reaches a servo. Shared with
-# dropper.py so the construction-time check and the send-time check agree.
-PWM_MIN_US = 800
-PWM_MAX_US = 2200
+# Pulse widths outside this are refused. Brackets the gate's MEASURED travel
+# (closed 560us, open 1760us, servo_jog by eye 2026-08-14) with margin on both
+# sides, narrow enough to catch a typo before it reaches a servo. Shared with
+# dropper.py so the construction-time check and the send-time check agree, and
+# SERVO9_MIN/_MAX on the board must bracket the same range
+# (param_dumps/pixhawk_full_setup.param sets 500/1800).
+PWM_MIN_US = 500
+PWM_MAX_US = 1800
 
 # POSITION_TARGET_TYPEMASK: use position only / velocity only.
 MASK_POSITION_ONLY = 0x0DF8  # ignore vel+accel+yaw+yaw_rate

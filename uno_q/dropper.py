@@ -114,20 +114,21 @@ class PixhawkServoDropper(Dropper):
         thrown into the state machine mid-descent is a runaway.
     """
 
-    # GATE TRAVEL, measured on the bench 2026-08-10 and then REVERSED at the
-    # user's instruction. Observation: 1000us -> 1900us (900us) swung the horn
-    # 90 degrees CLOCKWISE, which implies roughly 10us per degree ON THIS
-    # SERVO (a ratio, not a datasheet figure: MG90 travel per microsecond
-    # varies by unit, so treat it as calibration, not spec). The gate must
-    # instead open 60 degrees COUNTER-CLOCKWISE, so open has to sit BELOW
-    # closed in pulse width, 60 * 10 = 600us below it.
-    #   closed 1600us  ->  open 1000us   = 600us = ~60 deg CCW
-    # Both stay inside the 800-2200us guard. VERIFY BY EYE on the bench: if
-    # the throw is not 60 degrees, adjust DEG_PER_US rather than guessing new
-    # pulse numbers, and if it turns the wrong way swap these two values.
+    # GATE TRAVEL, measured BY EYE with tools/servo_jog.py on the bench
+    # 2026-08-14 (user-read marks; aircraft was closed up the same evening):
+    #   closed 560us  ->  open 1760us
+    # This SUPERSEDES the 2026-08-10 numbers (closed 1600 / open 1000): the
+    # servo was remounted, so the old reversal story no longer describes the
+    # hardware. US_PER_DEG 10.0 is kept as calibration from the 2026-08-10
+    # observation that 900us swung ~90 deg on this unit.
+    # 560 sits BELOW the old 800us software guard, which is why PWM_MIN_US in
+    # mavlink_io.py moved to 500. The board must agree: SERVO9_MIN <= 560 or
+    # ArduPilot may clamp the close short and the gate never fully shuts
+    # (param_dumps/pixhawk_full_setup.param sets MIN 500 / MAX 1800 / TRIM
+    # 560 = closed, so a trim-emitting output parks the gate SHUT).
     US_PER_DEG = 10.0
-    DEFAULT_CLOSED_US = <closed>
-    DEFAULT_OPEN_US = <open>
+    DEFAULT_CLOSED_US = 560
+    DEFAULT_OPEN_US = 1760
 
     def __init__(self, io, channel=9, closed_us=DEFAULT_CLOSED_US,
                  open_us=DEFAULT_OPEN_US,
