@@ -70,6 +70,11 @@ answer delivered confidently is worse than no answer. In every response:
    file, not just to stdout. The dashboard specifically must log every request,
    every launch attempt, every failure reason. `tools/` does not need logging
    (it is interactive and its output is read live).
+   LOGS ARE NEVER OVERWRITTEN OR TRUNCATED (user, 2026-08-15). Always append,
+   never `w` mode, never a fresh file per run. The ONLY exception: once a log
+   file exceeds 100 MB, drop the OLDEST lines and only as many as are needed to
+   get back under the limit. No size-based rollover into .1/.2 files, no
+   wholesale wipe. Losing old runs is how a failure becomes undiagnosable.
 2. PROGRAM ONLY WHAT IS ASKED, WHEN IT IS ASKED. No unrequested features, no
    "while I was in there" fixes, no proactive rewrites. Before writing any
    program, ASK AS MANY QUESTIONS AS POSSIBLE and write it exactly the way the
