@@ -460,3 +460,11 @@ STILL UNKNOWN AND NEEDED: `~/detect_worker.log`, which holds the actual cv2 erro
 - uptime 39 min at 17:34 = booted ~16:55, after the three failed launches. Camera now healthy: arduino in video group, no holder (fuser empty), v4l2-ctl one-frame grab OK, cv2 open+read OK. Whatever wedged /dev/video0 at the farm (holder process vs UVC/USB state vs launch environment) is unproven and can recur at the field shoot.
 - The Aug 15 11:25 /dev/video* timestamps are NOT proof of no-reboot: likely stamped by the pre-NTP boot clock (board sat on the internet-less MR3020 LAN, saved clock stale). Probable explanation, not verified.
 - User ordered verbose logging (design questions first, per SCOPE RULES 2), plus detect_worker self-diagnosis on camera failure pending answers. Questions sent 2026-08-15 evening.
+
+### 2026-08-15 night: USB-hub architecture decided; logging spec locked
+- Farm camera wedge, leading theory per user answers: the camera USB plug loosened by flight vibration (not touched by hand, no leftover processes, no other camera programs ran, dashboard was started by manual nohup). Unproven; the reboot cleared it.
+- DECISION (user): a USB-A hub now hangs off the UNO Q's single USB-A, carrying BOTH the camera and the Pixhawk's USB. The Pixhawk link moves to direct USB (pymavlink on /dev/serial/by-id path); the whole shovel chain (sketch_mav_shovel, router_client, mav_shovel_pump, SERIAL5 wire) is REMOVED once the USB test passes. Tests issued: by-id listing, solo heartbeat, camera 600-frame baseline, then both simultaneously.
+- SERIAL5 (confirmed shovel port, param line 52) goes free: recommendation given = disable it, leave empty.
+- Logging spec (user answers): every program in uno_q/ (esp32 folder meaning pending clarification, no filesystem there); logs live in ~/logs/; each program owns its file, append-only; IST wall clock + seconds-since-boot on every line; NO per-request HTTP logging on the dashboard; mission logs 1 Hz telemetry + every command/ack/state transition; >100 MB trimmed oldest-first at program start only.
+- DECISION (user): dashboard goes LIGHT MODE (dark unreadable in sun glare), stays simple.
+- Photo-on-demand camera mode under consideration; questions out (trigger source, survey coverage, reopen-risk warning given).
