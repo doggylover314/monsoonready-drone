@@ -124,7 +124,9 @@ def main():
     ap.add_argument('--survey-alt', type=float, default=15.0)
     ap.add_argument('--drop-alt', type=float, default=3.0)
     ap.add_argument('--conf', type=float, default=0.5)
-    ap.add_argument('--camera', type=int, default=1)
+    # 0, confirmed on the board at the farm 2026-08-15 (the B525 is the
+    # only USB video device on the reflashed image).
+    ap.add_argument('--camera', type=int, default=0)
     ap.add_argument('--frame-w', type=int, default=1280)
     ap.add_argument('--frame-h', type=int, default=720)
     # Defaults to the MEASURED value in camera_geom (56.2 deg, tape measure at

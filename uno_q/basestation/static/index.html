@@ -161,6 +161,37 @@
   .tile .v.good { color: var(--good); }
   .tile .v.bad { color: var(--critical); }
 
+  /* ---------- flight control ---------- */
+  #ctlOff { color: var(--muted); }
+  .ctlRow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .ctlRow + .ctlRow { margin-top: 9px; }
+  .big {
+    font: 650 15px/1 system-ui, sans-serif; padding: 11px 20px;
+    border-radius: 9px; border: 1px solid var(--border);
+    background: var(--page); color: var(--ink); cursor: pointer;
+  }
+  .big:disabled { opacity: 0.4; cursor: not-allowed; }
+  .big.go { background: var(--good); border-color: var(--good); color: #fff; }
+  .big.stop { background: var(--critical); border-color: var(--critical); color: #fff; }
+  .big.armed { animation: flash 0.9s ease-in-out infinite; }
+  @keyframes flash { 50% { filter: brightness(1.45); } }
+  #ctlState { font-weight: 650; }
+  #ctlState.run { color: var(--good); }
+  #ctlNote { color: var(--ink-2); font-size: 12.5px; }
+  #ctlErr { color: var(--critical); font-size: 12.5px; }
+  #ctlLog {
+    margin-top: 9px; background: var(--page); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 9px; font: 11.5px/1.4 ui-monospace,
+    SFMono-Regular, Menlo, monospace; color: var(--ink-2);
+    white-space: pre-wrap; max-height: 150px; overflow: auto;
+  }
+  .pill {
+    font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--ink-2);
+  }
+  .pill.on { color: var(--good); border-color: var(--good); }
+  .pill.off { color: var(--muted); }
+
   /* ---------- profile + detections + events ---------- */
   #prof { width: 100%; height: 100%; display: block; }
   #detList { font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -236,6 +267,28 @@
     <div id="st-trans"></div>
   </div>
 
+  <div class="pad" id="body-control">
+    <div id="ctlOff">Flight control is off. Start the base station with
+      <code>--enable-control</code> to fly from here.</div>
+    <div id="ctlOn" style="display:none">
+      <div class="ctlRow">
+        <span id="ctlState">–</span>
+        <span class="pill" id="ctlPump">pump ?</span>
+        <span class="pill" id="ctlWp">waypoints ?</span>
+        <span class="pill" id="ctlDrop">gate ?</span>
+      </div>
+      <div class="ctlRow">
+        <button class="big" id="btnPump">Start pump</button>
+        <button class="big" id="btnArm">Arm controls</button>
+        <button class="big go" id="btnGo" disabled>START MISSION</button>
+        <button class="big stop" id="btnStop" disabled>STOP (RTL)</button>
+      </div>
+      <div class="ctlRow"><span id="ctlNote"></span></div>
+      <div class="ctlRow"><span id="ctlErr"></span></div>
+      <div id="ctlLog"></div>
+    </div>
+  </div>
+
   <div class="pad" id="body-totals">
     <div class="tiles">
       <div class="tile"><div class="v" id="s-flights">&ndash;</div><div class="k">Flights</div></div>
@@ -278,17 +331,21 @@ const fmtD = t => new Date(t * 1000).toLocaleDateString();
    localStorage and "Reset layout" restores DEFAULTS.
    ===================================================================== */
 const DEFAULTS = {
-  order: ['map', 'status', 'totals', 'profile', 'detections', 'events'],
+  order: ['map', 'status', 'control', 'totals', 'profile', 'detections', 'events'],
   panels: {
     map:        { title: 'Site map',        sub: 'detections & treatments', w: 8, h: 6, on: true },
     status:     { title: 'Mission status',  sub: 'live',                    w: 4, h: 3, on: true },
+    control:    { title: 'Flight control',  sub: 'launch & abort',          w: 4, h: 5, on: true },
     totals:     { title: 'Season totals',   sub: 'all data in scope',       w: 4, h: 3, on: true },
-    profile:    { title: 'Altitude profile',sub: 'EKF alt + rangefinder',   w: 6, h: 3, on: true },
-    detections: { title: 'Latest detections', sub: 'newest first',          w: 6, h: 3, on: true },
+    profile:    { title: 'Altitude profile',sub: 'EKF alt + rangefinder',   w: 5, h: 3, on: true },
+    detections: { title: 'Latest detections', sub: 'newest first',          w: 3, h: 3, on: true },
     events:     { title: 'Event log',       sub: 'everything but fixes',    w: 12, h: 4, on: true },
   },
 };
-const LS_KEY = 'mr-layout-v1';
+/* v2: adding the control panel changes the default set, and a v1 save would
+   pin the old order and hide the new panel. Bumping the key retires those
+   saves rather than half-merging them. */
+const LS_KEY = 'mr-layout-v2';
 
 function loadLayout() {
   let saved = null;
@@ -702,6 +759,110 @@ function profile() {
   c.fillStyle = '#e8b23c'; c.fillText('·· rng', L + 46, T + 10);
 }
 
+/* =====================================================================
+   FLIGHT CONTROL. Two-step on purpose: "Arm controls" unlocks START for
+   8 seconds, so no single stray click can launch an aircraft. STOP is
+   never gated - an abort must always be one click.
+   ===================================================================== */
+const ctl = {
+  enabled: false, armed: false, armTimer: null, running: false,
+  // Preconditions from the last /api/control poll. setArmed MUST consult
+  // these: arming alone used to enable START even with the pump down, so a
+  // click during the take produced a red server error instead of a button
+  // that was simply not offered. Found in the 2026-08-15 laptop test.
+  canFly: false,
+};
+
+function goEnabled() {
+  return ctl.armed && ctl.canFly && !ctl.running;
+}
+
+function setArmed(on) {
+  ctl.armed = on && ctl.canFly && !ctl.running;
+  clearTimeout(ctl.armTimer);
+  const go = $('btnGo'), arm = $('btnArm');
+  go.disabled = !goEnabled();
+  go.classList.toggle('armed', goEnabled());
+  arm.textContent = ctl.armed ? 'Armed – click START' : 'Arm controls';
+  if (!ctl.armed && on) {
+    $('ctlErr').textContent = ctl.running
+      ? 'a mission is already running'
+      : 'cannot arm: the pump must be up and a waypoint file must exist';
+  } else if (ctl.armed) {
+    $('ctlErr').textContent = '';   // arming worked; drop any stale complaint
+  }
+  if (ctl.armed) ctl.armTimer = setTimeout(() => setArmed(false), 8000);
+}
+
+async function ctlPost(path, body) {
+  $('ctlErr').textContent = '';
+  try {
+    const r = await fetch(path, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body || {}),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false)
+      $('ctlErr').textContent = j.error || ('HTTP ' + r.status);
+    return j;
+  } catch (e) {
+    $('ctlErr').textContent = String(e);
+    return {};
+  }
+}
+
+async function ctlRefresh() {
+  let c;
+  try { c = await getJSON('/api/control'); } catch { return; }
+  ctl.enabled = !!c.enabled;
+  $('ctlOff').style.display = ctl.enabled ? 'none' : '';
+  $('ctlOn').style.display = ctl.enabled ? '' : 'none';
+  if (!ctl.enabled) return;
+  ctl.running = !!c.mission_running;
+
+  const st = $('ctlState');
+  st.textContent = ctl.running
+    ? `MISSION RUNNING (pid ${c.mission_pids.join(', ')})` : 'idle';
+  st.className = ctl.running ? 'run' : '';
+
+  const pill = (el, ok, text) => {
+    el.textContent = text;
+    el.className = 'pill ' + (ok ? 'on' : 'off');
+  };
+  pill($('ctlPump'), c.pump_running, c.pump_running ? 'pump up' : 'pump DOWN');
+  pill($('ctlWp'), c.waypoints_exist,
+       c.waypoints_exist ? c.waypoints.split('/').pop() : 'no waypoints');
+  pill($('ctlDrop'), !c.no_drop, c.no_drop ? 'gate DISABLED' : 'gate live');
+
+  ctl.canFly = !!c.pump_running && !!c.waypoints_exist;
+  $('btnPump').disabled = c.pump_running;
+  $('btnStop').disabled = !ctl.running;
+  // Re-derive through setArmed so the button state and the armed flag can
+  // never disagree (they did before: arming ignored these preconditions).
+  setArmed(ctl.armed);
+
+  $('ctlNote').textContent =
+    `${c.conn}  ·  camera ${c.camera}  ·  ${c.waypoints}`;
+  const log = $('ctlLog');
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  log.textContent = (c.log || '(no mission log yet)')
+    + (c.pump_log ? '\n--- pump ---\n' + c.pump_log : '');
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+$('btnPump').addEventListener('click', async () => {
+  await ctlPost('/api/control/pump'); ctlRefresh();
+});
+$('btnArm').addEventListener('click', () => setArmed(!ctl.armed));
+$('btnGo').addEventListener('click', async () => {
+  setArmed(false);
+  await ctlPost('/api/control/start');
+  ctlRefresh();
+});
+$('btnStop').addEventListener('click', async () => {
+  await ctlPost('/api/control/stop'); ctlRefresh();
+});
+
 /* ---------- projection (equirectangular, meters, north-up) ---------- */
 const proj = {
   ok: false, lat0: 0, mLon: 1,
@@ -1021,6 +1182,7 @@ setInterval(() => {
    the clock interval below. */
 setInterval(async () => {
   if (document.hidden) return;
+  ctlRefresh();          // flight control state + log tail, every tick
   try {
     const evs = await getJSON('/api/events/' + state.selected);
     const j = JSON.stringify(evs);
@@ -1044,6 +1206,7 @@ setInterval(async () => {   // new flight appearing while we're open
 }, 15000);
 
 loadSite().then(reload);
+ctlRefresh();
 </script>
 </body>
 </html>

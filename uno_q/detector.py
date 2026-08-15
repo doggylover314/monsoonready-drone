@@ -217,7 +217,7 @@ class OnnxDetector(_RowResolver):
     SITL (defaults to the B525 via OpenCV V4L2 at MJPG 1280x720).
     """
 
-    def __init__(self, model_path, camera=1, conf=0.5, interval_s=1.0,
+    def __init__(self, model_path, camera=0, conf=0.5, interval_s=1.0,
                  skip_radius_m=8.0, frame_source=None, log=print,
                  geom=None, mount_yaw_deg=0.0):
         import numpy as np

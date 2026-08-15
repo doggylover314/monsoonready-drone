@@ -75,7 +75,7 @@ def write_atomic(path, payload):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--model', required=True)
-    ap.add_argument('--camera', type=int, default=1)
+    ap.add_argument('--camera', type=int, default=0)  # B525, farm 2026-08-15
     ap.add_argument('--conf', type=float, default=0.5)
     ap.add_argument('--out', default=DEFAULT_OUT)
     ap.add_argument('--save-dir', default=None,
