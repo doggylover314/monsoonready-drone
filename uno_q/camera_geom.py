@@ -36,9 +36,14 @@ computed from it inherits its error proportionally.
 
 import math
 
-# Placeholder ONLY. Replace with the calibrate_fov() result for this camera.
-# Marked so a grep for VERIFY finds it.
-DEFAULT_HFOV_DEG = 60.0  # VERIFY: measure, do not trust
+# MEASURED, no longer a placeholder. 2026-08-15 at the farm, wall method with
+# a tape measure (uno_q/calibrate_camera.py): 0.950 m of wall visible at
+# 0.890 m => 2*atan(0.475/0.890) = 56.18 deg, at the mission's own 1280x720.
+# Consequences that follow from this number, recorded so they are not
+# recomputed: footprint at 15 m is 16.0 x 9.0 m; a 0.6 m target at 15 m is
+# only ~24 px in the model's 640 input, which is why the farm target is a
+# metres-wide wet patch and not the tray.
+DEFAULT_HFOV_DEG = 56.2
 
 
 class CameraGeometry:

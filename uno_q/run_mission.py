@@ -16,14 +16,14 @@ state machine that was proven in simulation is the one that flies.
 
     setsid nohup ~/venv/bin/python uno_q/run_mission.py \
         --conn udpin:127.0.0.1:14555 \
-        --waypoints wp_farm.txt --hfov-deg <MEASURED> \
+        --waypoints wp_farm.txt \
         > ~/mission.log 2>&1 &
 
---hfov-deg IS NOT OPTIONAL IN PRACTICE. Omit it and detector._locate falls
-through to the nadir assumption and reports every puddle at the AIRCRAFT'S
-own position, so the drop lands where the aircraft was standing when it saw
-the water. Measure it with uno_q/calibrate_camera.py; the 58.2 that used to
-sit in this example was never a measurement and must not be quoted as one.
+--hfov-deg now DEFAULTS to the measured 56.2 deg (camera_geom, tape measure
+2026-08-15), so it no longer has to be passed and no flight can silently
+fall back to the nadir assumption. Re-measure with
+uno_q/calibrate_camera.py if the camera or its housing ever changes, and
+update camera_geom.DEFAULT_HFOV_DEG, not a command line.
 
 LAUNCH IT DETACHED, exactly like that. `setsid` puts the runner in its own
 session so closing the ssh connection does not deliver SIGHUP to an aircraft
@@ -71,7 +71,7 @@ import subprocess
 import sys
 import time
 
-from camera_geom import CameraGeometry
+from camera_geom import DEFAULT_HFOV_DEG, CameraGeometry
 from detect_worker import DEFAULT_OUT as DET_FILE_DEFAULT
 from detector import FileDetector, OnnxDetector
 from dropper import LogDropper, PixhawkServoDropper
@@ -127,9 +127,13 @@ def main():
     ap.add_argument('--camera', type=int, default=1)
     ap.add_argument('--frame-w', type=int, default=1280)
     ap.add_argument('--frame-h', type=int, default=720)
-    ap.add_argument('--hfov-deg', type=float, default=None,
-                    help='MEASURED horizontal FOV (camera_geom.calibrate_fov). '
-                         'Omit to keep the nadir assumption.')
+    # Defaults to the MEASURED value in camera_geom (56.2 deg, tape measure at
+    # the farm 2026-08-15), so geometry is ALWAYS on and no flight can
+    # accidentally fall back to the nadir assumption by forgetting a flag.
+    # Pass --hfov-deg 0 to deliberately disable geometry.
+    ap.add_argument('--hfov-deg', type=float, default=DEFAULT_HFOV_DEG,
+                    help=f'MEASURED horizontal FOV, default {DEFAULT_HFOV_DEG} '
+                         f'(camera_geom.DEFAULT_HFOV_DEG). 0 = nadir only.')
     ap.add_argument('--mount-yaw-deg', type=float, default=0.0)
     ap.add_argument('--servo-channel', type=int, default=9,
                     help='AUX OUT 1 = ch9 (wired 2026-08-02); '

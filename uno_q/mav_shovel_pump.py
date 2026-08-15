@@ -43,7 +43,19 @@ def main():
         sys.exit(f"cannot open the router socket: {exc}")
 
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp.bind(PUMP_ADDR)
+    try:
+        udp.bind(PUMP_ADDR)
+    except OSError as exc:
+        # Almost always "a pump is already running", which is FINE - the
+        # existing one is doing the job. Said plainly because the raw
+        # traceback (exit 1 behind setsid nohup, output in a log nobody has
+        # opened yet) looks exactly like the link having failed.
+        sys.exit(f"cannot bind {PUMP_ADDR[0]}:{PUMP_ADDR[1]} ({exc}).\n"
+                 f"A pump is probably ALREADY RUNNING, which is fine - do not "
+                 f"start a second one. Check with:  pgrep -af "
+                 f"mav_shovel_pump.py\n"
+                 f"To replace it:  pkill -f mav_shovel_pump.py  then start "
+                 f"again.")
     udp.setblocking(False)
 
     print(f"pumping: router <-> udp {MISSION_ADDR[0]}:{MISSION_ADDR[1]} "

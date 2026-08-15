@@ -15,6 +15,10 @@ from pymavlink import mavutil
 # ArduPilot rejects guided setpoints older than a few seconds; resend at 5Hz.
 SETPOINT_RESEND_S = 0.2
 
+# Our own heartbeat rate as component 191. 1 Hz is the MAVLink convention and
+# is what makes `tools/bench.py nodes` able to see the UNO Q at all.
+HEARTBEAT_PERIOD_S = 1.0
+
 # Pulse widths outside this are refused. Brackets the gate's MEASURED travel
 # (closed 560us, open 1760us, servo_jog by eye 2026-08-14) with margin on both
 # sides, narrow enough to catch a typo before it reaches a servo. Shared with
@@ -63,6 +67,7 @@ class MavIO:
         self.tel = Telemetry()
         self._mode_names = {}   # custom_mode -> name, filled after heartbeat
         self._last_setpoint_t = 0.0
+        self._last_hb_t = 0.0
 
     # ---------- connection ----------
 
@@ -131,7 +136,29 @@ class MavIO:
     # ---------- pump ----------
 
     def step(self, max_wait=0.02):
-        """Receive+dispatch at most one message; call in a tight loop."""
+        """Receive+dispatch at most one message; call in a tight loop.
+
+        Also emits our own 1 Hz heartbeat as component 191. WHY IT IS HERE:
+        the probe sketch used to heartbeat from firmware, so `bench.py nodes`
+        could see the UNO Q on the bus. sketch_mav_shovel replaced it and
+        only FORWARDS bytes, and MavIO previously sent commands but never a
+        heartbeat, so comp 191 vanished from the bus and the nodes check read
+        as "the UNO Q is not reaching the Pixhawk" while the link was in fact
+        working perfectly (2026-08-15 at the farm: the same session's
+        SET_MESSAGE_INTERVAL was ACKed, which is proof of the TX path).
+        Announcing ourselves is also simply correct MAVLink citizenship for a
+        companion computer.
+        """
+        now = time.monotonic()
+        if now - self._last_hb_t >= HEARTBEAT_PERIOD_S:
+            self._last_hb_t = now
+            try:
+                self.conn.mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                    mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0,
+                    mavutil.mavlink.MAV_STATE_ACTIVE)
+            except Exception:                             # noqa: BLE001
+                pass    # a dead link is the pump's problem, never a crash here
         msg = self.conn.recv_match(blocking=True, timeout=max_wait)
         if msg is not None:
             self._on_msg(msg)

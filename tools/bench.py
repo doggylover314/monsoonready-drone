@@ -114,8 +114,22 @@ def cmd_nodes(m, args):
         print(f"  sys {sysid:3d} comp {compid:3d}  {rec['n']:4d} heartbeats  "
               f"{KNOWN_COMPONENTS.get(compid, 'UNKNOWN')}")
     if not any(c == 191 for _, c in seen):
-        print("\n  NO component 191: the UNO Q is not reaching the Pixhawk. "
-              "That is TODO 7 still open, and it is the blocker for autonomy.")
+        # NOT a link failure on its own, and saying so cost real time at the
+        # farm on 2026-08-15. Nothing on the UNO Q heartbeats unless a python
+        # process using MavIO is RUNNING: the old probe sketch did it from
+        # firmware, sketch_mav_shovel only forwards bytes. So an idle board
+        # is silent by design.
+        print("\n  no component 191 heard. THIS ALONE DOES NOT MEAN THE LINK "
+              "IS BROKEN.\n"
+              "  Nothing on the UNO Q heartbeats unless a MavIO process is "
+              "running (the\n"
+              "  shovel sketch only forwards bytes; the old probe sketch used "
+              "to beat by\n"
+              "  itself). Start the pump plus test_mission_link (or the "
+              "mission) on the\n"
+              "  board and re-run this. The real proof of the TX direction is "
+              "that\n"
+              "  test_mission_link gets its SET_MESSAGE_INTERVAL ACKed.")
     else:
         print("\n  COMPONENT 191 PRESENT: the UNO Q's transmit path to the "
               "Pixhawk WORKS. D0/D1 -> SERIAL5 is proven in the TX direction.")
