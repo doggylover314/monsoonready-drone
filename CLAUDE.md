@@ -89,6 +89,10 @@ answer delivered confidently is worse than no answer. In every response:
    no planning documents, no state-of-the-world reports, unless the user asks
    for them. (The STATE-FIRST rule below still applies: recording facts and
    rules in PROJECT_STATE.md / CLAUDE.md is bookkeeping, not initiative.)
+6. NOTHING RUNS AUTOMATICALLY ON THE BOARD (user, 2026-08-16). No systemd
+   services, no timers, no cron jobs, no watchers, for this project, ever.
+   The user starts every program by hand. The auto-sync units, board_sync.sh,
+   and the git-pull cron were all deleted under this rule.
 
 WHY: the 2026-08-15 farm run failed completely. The dashboard could not arm the
 aircraft, and the day was spent on assistant-generated procedure instead of on

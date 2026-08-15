@@ -468,3 +468,21 @@ STILL UNKNOWN AND NEEDED: `~/detect_worker.log`, which holds the actual cv2 erro
 - Logging spec (user answers): every program in uno_q/ (esp32 folder meaning pending clarification, no filesystem there); logs live in ~/logs/; each program owns its file, append-only; IST wall clock + seconds-since-boot on every line; NO per-request HTTP logging on the dashboard; mission logs 1 Hz telemetry + every command/ack/state transition; >100 MB trimmed oldest-first at program start only.
 - DECISION (user): dashboard goes LIGHT MODE (dark unreadable in sun glare), stays simple.
 - Photo-on-demand camera mode under consideration; questions out (trigger source, survey coverage, reopen-risk warning given).
+
+## 2026-08-16 (past midnight after the farm day)
+
+### FARM CAMERA ROOT CAUSE, now the leading explanation with direct evidence
+V4L2 INDEX SHUFFLING. Tonight the user replugged the camera and the Qualcomm Venus codec devices took /dev/video0+1 while the camera landed on video2+3; cv2.VideoCapture(0) then failed with EXACTLY the farm error ("can't open camera by index"), because index 0 was suddenly the video ENCODER. Which driver gets video0 is a boot/enumeration race. Farm mechanism: plug loosened by vibration (user's theory), camera re-enumerated mid-day, lost the race, all three launches opened the codec instead of the camera. Not provable retroactively (no farm dmesg), but reproduced end to end tonight. FIX (to be coded): open the camera BY NAME via /dev/v4l/by-id, never by bare index.
+- dmesg tonight: clean. No over-current, no disconnect storm; hub + camera (1-1.1, at boot+15s) + Pixhawk ACM (1-1.2, boot+69s) all enumerate fine. One unexplained line "usb_vbus: disabling" at boot+33s, noted, not chased.
+- PIXHAWK OVER USB THROUGH THE HUB: PROVEN. Hexarotor heartbeat solo and 8/8 heartbeats under attempted camera load. /dev/serial/by-id/usb-ArduPilot_Pixhawk1-bdshot_...-if00.
+- Board clock runs ~6 h behind real time (no NTP sync, no RTC battery). Fix commands + NTP explanation given. Logging code will stamp Asia/Kolkata wall time explicitly PLUS seconds-since-boot on every line.
+- STILL PENDING before shovel deletion: camera streaming (index 2 right now) SIMULTANEOUS with Pixhawk heartbeats through the hub. Then: delete shovel chain, user pulls D0/D1 and SERIAL5 wires (SERIAL4 TF-Luna untouched), SERIAL5_PROTOCOL to -1.
+
+### Decisions locked tonight (user)
+- Test-everything button on the dashboard: tests EVERY component EXCEPT motors and servo (camera grab+save, Pixhawk heartbeat, GPS fix, battery voltage, ring proximity freshness, TF-Luna range, disk space, log writability), 30 s TOTAL budget, logs successes and failures, errors shown on the dashboard.
+- Mission preflight still HARD-REFUSES to fly if the camera gives no frame; now with detailed error lines (errno, holder process, "camera missing from USB, check the plug" when the node is gone).
+- Photo pipeline (replaces continuous video processing): camera stays OPEN; capture is inference-paced with a 1-deep queue (frame N+2 is captured the moment N+1 enters processing). No photos while no mission is running. Every auto photo saved to ~/monsoonready_data/photos/, 10 GB cap, oldest deleted first. Capture at the camera's maximum resolution (B525: 1280x720, approximately, verify on board) and letterbox to the model's 640 input as always; full-res files are future training data.
+- Dashboard photo button: capture saved to ~/monsoonready_data/manual_photos/ (separate folder), displayed on the dashboard, NOT processed by the detector.
+- Dashboard: light mode DEFAULT with a dark toggle (glare). Panel layout stored SERVER-SIDE so both laptops see the same layout across reboots/refreshes.
+- basestation app.py RENAMED dashboard.py, log ~/logs/dashboard.log (logs named after their script).
+- AUTOMATION DELETED (rule now in CLAUDE.md SCOPE RULES 6): repo-side monsoonready-sync.service, monsoonready-sync.user.service, board_sync.sh removed and deploy/README.md rewritten manual-only; board-side removal commands issued (user units, system units, crontab entries, git-pull-script.sh, linger).
