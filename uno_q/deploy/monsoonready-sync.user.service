@@ -27,8 +27,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/monsoonready
-ExecStart=%h/monsoonready/uno_q/deploy/board_sync.sh
+WorkingDirectory=%h/monsoonready-drone
+ExecStart=%h/monsoonready-drone/uno_q/deploy/board_sync.sh
 
 # The script exits 0 on purpose when it pulls a new version of ITSELF, so
 # always-restart is what makes self-update work rather than a failure policy.

@@ -32,6 +32,8 @@ POLL_S = 0.02
 STATS_EVERY_S = 10.0
 # Raw-byte cap per mav_write call; the sketch's decode buffer is 768.
 WRITE_CHUNK = 512
+# Consecutive mav_read failures tolerated before declaring the shovel dead.
+MAX_FAILS = 20
 
 
 def main():
@@ -48,13 +50,25 @@ def main():
           f"(mission side) / {PUMP_ADDR[1]} (pump side)")
     up = down = 0
     next_stats = time.monotonic() + STATS_EVERY_S
+    # A single RPC hiccup must not kill the pump: the aircraft may be
+    # airborne and this process is its only link. Only a sustained run of
+    # failures means the shovel is really gone. (Even then the Pixhawk's
+    # GUID_TIMEOUT=3 stops and holds it, which is the designed backstop.)
+    fails = 0
 
     while True:
         # Pixhawk -> mission
         try:
             b64 = rc.call("mav_read")
+            fails = 0
         except RouterError as exc:
-            sys.exit(f"mav_read failed ({exc}); is the shovel sketch up?")
+            fails += 1
+            print(f"  mav_read failed ({fails}/{MAX_FAILS}): {exc}")
+            if fails >= MAX_FAILS:
+                sys.exit("shovel unreachable; PILOT: take the aircraft on "
+                         "the mode switch")
+            time.sleep(0.1)
+            continue
         data = base64.b64decode(b64) if b64 else b""
         if data:
             udp.sendto(data, MISSION_ADDR)
@@ -71,7 +85,9 @@ def main():
                 try:
                     rc.call("mav_write", base64.b64encode(chunk).decode())
                 except RouterError as exc:
-                    sys.exit(f"mav_write failed ({exc})")
+                    # Dropping one outbound frame is survivable; MAVLink
+                    # setpoints are resent continuously by design.
+                    print(f"  mav_write dropped a frame: {exc}")
             up += len(pkt)
 
         now = time.monotonic()

@@ -14,9 +14,9 @@ Wires the real parts together, where sitl_test.py wires the fake ones:
 Everything else, above all mission.py, is identical. That is the point: the
 state machine that was proven in simulation is the one that flies.
 
-    setsid nohup ~/venv/bin/python ~/uno_q/run_mission.py \
-        --conn /dev/ttyUSB0 --model ~/uno_q/best.onnx \
-        --waypoints waypoints.txt --hfov-deg 58.2 \
+    setsid nohup ~/venv/bin/python uno_q/run_mission.py \
+        --conn udpin:127.0.0.1:14555 \
+        --waypoints wp_farm.txt --hfov-deg 58.2 \
         > ~/mission.log 2>&1 &
 
 LAUNCH IT DETACHED, exactly like that. `setsid` puts the runner in its own
@@ -24,10 +24,13 @@ session so closing the ssh connection does not deliver SIGHUP to an aircraft
 in the middle of a descent. This is the primary defence; the signal handling
 below is the backstop for when it was forgotten.
 
---conn: no Linux tty for the Pixhawk exists on the board yet (PROJECT_STATE
-TODO 12: whether D0/D1 is usable is unresolved and must be tested on the
-board). There is deliberately no default, so this fails at the argument
-parser rather than by silently opening the wrong device.
+--conn: the aircraft has NO Linux tty to the Pixhawk (all four /dev/ttyS*
+refuse to configure, established 2026-08-13). The link is Linux -> unix
+socket -> arduino-router -> STM32 (sketch_mav_shovel) -> Serial1 -> SERIAL5,
+and mav_shovel_pump.py presents that as plain UDP, so --conn is
+udpin:127.0.0.1:14555 AND THE PUMP MUST ALREADY BE RUNNING. There is
+deliberately no default, so this fails at the argument parser rather than by
+silently opening the wrong device.
 
 Waypoint file: one "lat,lon" per line, blank lines and #comments ignored.
 
@@ -70,6 +73,12 @@ from mavlink_io import MavIO
 from mission import Mission, MissionConfig
 from missionlog import MissionLog
 
+# <repo>/models/best.onnx, found relative to this file so it is correct on the
+# laptop, on the board, and in any future checkout location.
+DEFAULT_MODEL = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'models', 'best.onnx')
+
 
 def read_waypoints(path):
     wps = []
@@ -95,11 +104,15 @@ def read_waypoints(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--conn', required=True,
-                    help='serial device (e.g. /dev/ttyUSB0) or SITL tcp: '
-                         'string. No default on purpose: the board has no '
-                         'confirmed Pixhawk tty yet, see PROJECT_STATE TODO 12')
+                    help='ON THE AIRCRAFT: udpin:127.0.0.1:14555, with '
+                         'mav_shovel_pump.py running in another terminal. '
+                         'SITL: tcp:127.0.0.1:5760. No default on purpose.')
     ap.add_argument('--baud', type=int, default=115200)
-    ap.add_argument('--model', default='~/uno_q/best.onnx')
+    # Resolved from THIS FILE's location, not from $HOME. The old default was
+    # ~/uno_q/best.onnx, a path that stopped existing when the board was
+    # reflashed on 2026-08-13; models/best.onnx has been tracked in git since,
+    # so the checkout always carries it wherever the checkout happens to be.
+    ap.add_argument('--model', default=DEFAULT_MODEL)
     ap.add_argument('--waypoints', required=True)
     ap.add_argument('--data-dir', default='~/monsoonready_data')
     ap.add_argument('--survey-alt', type=float, default=15.0)
@@ -312,8 +325,9 @@ def _emergency_rtl(io, mode, attempts=3):
     because the link died, this cannot work and says so rather than hanging."""
     for i in range(1, attempts + 1):
         try:
-            io.set_mode(mode)
-            print(f"[run] emergency {mode} commanded (attempt {i})")
+            confirmed = io.set_mode(mode)
+            print(f"[run] emergency {mode} commanded (attempt {i})"
+                  + ("" if confirmed else ", NOT confirmed by heartbeat"))
             return True
         except Exception as exc:                       # noqa: BLE001
             print(f"[run] emergency {mode} attempt {i} failed: {exc}")

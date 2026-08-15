@@ -44,6 +44,27 @@ live, the ring params changed (PRX1_TYPE=2), and the gate got new endpoints
       works, QGC opens, SiK appears as /dev/cu.* when plugged in).
 - [ ] **Write the running-order card** (bottom of this file) and tape it
       somewhere the narrator can read it.
+- [ ] **MEASURE THE CAMERA FOV. 10 minutes, and it decides whether the drop
+      lands on the target or several metres from it.** Nobody has ever
+      measured it, so `--hfov-deg` has never been passed, so every detection
+      so far would resolve to NADIR: the mission flies to where the aircraft
+      was standing when it saw the water, not to the water. At 15 m that
+      error can be half a camera footprint.
+      Point the camera square at a wall a measured distance away, mark where
+      the left and right edges of the picture fall, measure between the
+      marks, then:
+      `./python uno_q/calibrate_camera.py --distance 2.0 --width <measured>`
+      Write the number it prints on the checklist and **pass `--hfov-deg
+      <that number>` on every run_mission command.**
+- [ ] **Make the target BIG, not tray-sized. The arithmetic decides this,
+      not taste.** A target spans `target_m / footprint_m * 640` pixels in
+      the model's input, and YOLO is unreliable below roughly 40 px. A 0.6 m
+      tray at 15 m comes out around 13-25 px depending on the true FOV,
+      which is a coin flip at best. The farm has a water pump and dirt: wet
+      a patch **2-3 m across** and the same sum gives 80-150 px, plus it
+      looks far more like the training data (real water on ground) than a
+      plastic tray does. Keep the tray as a backup target.
+      `calibrate_camera.py` prints this pixel figure once the FOV is known.
 - [ ] **Push params FIRST, then gate check — PROPS OFF, hopper EMPTY**:
       `./python tools/parameters.py push` (delivers SERVO9 MIN 500 / MAX
       1800 / TRIM 560 and PRX1_TYPE=2), then
@@ -128,7 +149,20 @@ At home, NOT in the car:
 - [ ] 4b. **Confirm comp 191 on the bus**: `./python tools/bench.py nodes`
       while the pump runs (see mission start below) — the last box to tick
       on the Linux->Pixhawk link.
+- [ ] 4c. **POWER-CYCLE THE AIRCRAFT SHORTLY BEFORE THE TAKE, and check the
+      ring afterwards.** The ESP32 probes each lidar channel exactly ONCE at
+      boot and latches a failed channel dead for the entire session; there is
+      no retry. That is why the sector count only ever fell last night (2 dead
+      -> 3 -> 4) across a board that stayed powered for hours: those were
+      RUNTIME read timeouts on a hot, sealed frame, and nothing re-initialises
+      them while the power stays on. A cold boot re-runs init and may well
+      bring channels back. It costs 30 seconds and it is the only lever left
+      without opening the airframe.
 - [ ] 5. Hotspot up, board on it, dashboard loads on the phone.
+- [ ] 5b. **Dashboard needs flask on the board.** If it errors with
+      ModuleNotFoundError: `~/venv/bin/pip install flask msgpack`
+      (board_setup.sh now installs both, but the board was set up before
+      that fix landed).
 - [ ] 6. Load the hopper (salt from the kitchen if the bag runs out). Place
       the tray where the survey will pass, fill it from the pump.
 - [ ] 6b. **Mission start (BOARD over SSH, two terminals — the pump is a
@@ -145,10 +179,14 @@ At home, NOT in the car:
       extending dead ahead. Put the tray under the MIDDLE row.
 - [ ] 6d. **Fly it** (terminal 2):
       `~/venv/bin/python uno_q/run_mission.py --conn udpin:127.0.0.1:14555
-      --model models/best.onnx --waypoints wp_farm.txt --camera <N>`
-      `--model` MUST be passed (the default is a stale pre-reflash path).
+      --waypoints wp_farm.txt --hfov-deg <measured> --camera <N>`
+      `--model` now defaults to the repo's own models/best.onnx, so it no
+      longer has to be passed. **`--hfov-deg` DOES**: without it every
+      detection resolves to nadir (see the FOV item above).
       `--camera <N>`: check with `v4l2-ctl --list-devices` first; the
       default of 1 is unverified on the reflashed image.
+      Add `--no-drop` for the rehearsal if you want the full loop flown
+      with nothing to clean up.
 - [ ] 7. **REHEARSAL FLIGHT, unrecorded.** Fly exactly what the take will be.
       Land, pull the log (`./python tools/check_log.py <log>.BIN`), fix what
       it shows, recharge if needed.

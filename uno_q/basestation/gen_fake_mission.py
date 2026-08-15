@@ -89,7 +89,7 @@ def treat(log, clock, pos, puddle, conf):
     walk(log, clock, pos, puddle, SURVEY_ALT, 'APPROACH')
     log.state('APPROACH', 'DESCEND', '')
     vertical(log, clock, puddle, SURVEY_ALT, DROP_ALT, 0.5, 'DESCEND')
-    log.drop(lat, lon, 2.96)
+    log.drop(lat, lon, 2.96, dwell_s=1.2, area_m2=3.0)
     log.state('DESCEND', 'DROP', 'rng=2.96m')
     clock.tick(2)
     log.state('DROP', 'CLIMB', 'treated')

@@ -53,10 +53,14 @@ say "python packages"
 # opencv-python-headless, not opencv-python: the board has no display and the
 # GUI build drags in X libraries that are not there.
 "$VENV/bin/python" -m pip install --quiet --upgrade pip
+# flask = the base station dashboard, which the mission auto-launches and
+# which is FILMED in the demo video; msgpack = the Linux half of the MAVLink
+# byte-shovel (router_client.py). Both were missing here and had to be
+# installed by hand after the 2026-08-13 reflash (review 2026-08-15).
 "$VENV/bin/python" -m pip install --quiet \
-    pymavlink pyserial numpy opencv-python-headless onnxruntime \
+    pymavlink pyserial numpy opencv-python-headless onnxruntime flask msgpack \
     || { echo "  pip install failed. Check the board has internet."; exit 1; }
-for mod in pymavlink serial numpy cv2 onnxruntime; do
+for mod in pymavlink serial numpy cv2 onnxruntime flask msgpack; do
     if "$VENV/bin/python" -c "import $mod" 2>/dev/null; then
         v=$("$VENV/bin/python" -c "import $mod;print(getattr($mod,'__version__','?'))" 2>/dev/null)
         good "$mod $v"
@@ -78,8 +82,16 @@ else
 fi
 
 say "serial ports (the Pixhawk link lives on one of these, or on none)"
-ls /dev/ttyS* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null | sed 's/^/      /' \
-    || bad "no serial devices at all"
+# NOT `ls a* b* | sed || bad`: with pipefail set, ls exits nonzero when ANY
+# glob fails to match even though it printed the ones that did, so the board's
+# normal state (ttyS0-3 present, no ttyUSB/ttyACM) printed the devices AND
+# claimed there were none, inflating the failure count.
+serial_found=$(ls -d /dev/ttyS* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true)
+if [ -n "$serial_found" ]; then
+    printf '%s\n' "$serial_found" | sed 's/^/      /'
+else
+    bad "no serial devices at all"
+fi
 
 say "repo and models"
 [ -d "$REPO/.git" ] && good "repo at $REPO" || bad "no repo at $REPO (operator is syncing this separately)"

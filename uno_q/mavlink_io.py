@@ -67,11 +67,53 @@ class MavIO:
     # ---------- connection ----------
 
     def wait_ready(self, timeout=60):
-        """Heartbeat + mode map. Raises on timeout."""
-        hb = self.conn.wait_heartbeat(timeout=timeout)
+        """Heartbeat FROM THE AUTOPILOT + mode map. Raises on timeout.
+
+        IT MUST BE COMPONENT 1'S HEARTBEAT, not merely the first heartbeat.
+        The ESP32 obstacle ring is component 195 on the same vehicle, beats
+        at about the same 1 Hz, and ArduPilot forwards it to us over
+        SERIAL5, so roughly half of all connections see it first. pymavlink
+        only locks target_system onto a heartbeat it judges to be a
+        VEHICLE, and MAV_TYPE_ONBOARD_CONTROLLER is explicitly excluded
+        (mavutil.probably_vehicle_heartbeat), so an ESP32-first connection
+        leaves target_system at 0 -- whose default mav_type is 1, FIXED
+        WING. mode_mapping() then hands back the PLANE map, and every mode
+        name in this project silently means something else:
+            GUIDED -> 15, which is AUTOTUNE on Copter
+            RTL    -> 11, which is DRIFT on Copter
+            custom_mode 4 reads back as "ACRO", so Mission's pilot-override
+            test sees a non-GUIDED mode and stands down instantly.
+        Reproduced 2026-08-15 by feeding both heartbeat orderings through
+        pymavlink; the plane map has 26 entries, the copter map 27. This
+        could not appear before 2026-08-14 because the ring was silent, and
+        it cannot appear in SITL, which has no second component.
+        """
+        deadline = time.monotonic() + timeout
+        hb = None
+        while time.monotonic() < deadline:
+            msg = self.conn.recv_match(type='HEARTBEAT', blocking=True,
+                                       timeout=1.0)
+            if (msg is not None and msg.get_srcComponent()
+                    == mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1):
+                hb = msg
+                break
         if hb is None:
-            raise TimeoutError("no heartbeat from flight controller")
-        self._mode_names = {v: k for k, v in self.conn.mode_mapping().items()}
+            raise TimeoutError(
+                f"no heartbeat from the AUTOPILOT (component 1) in "
+                f"{timeout}s. Other components on the bus do not count; if "
+                f"the ring (195) is audible but the autopilot is not, the "
+                f"Pixhawk end of the link is the fault.")
+        # Force the lock if pymavlink declined it (it declines for every
+        # non-vehicle heartbeat, and a corrupt frame can lock it to 0).
+        if self.conn.target_system != hb.get_srcSystem():
+            self.conn.target_system = hb.get_srcSystem()
+        mapping = self.conn.mode_mapping()
+        if not mapping or 'GUIDED' not in mapping:
+            raise RuntimeError(
+                f"no usable mode map for target_system "
+                f"{self.conn.target_system}; refusing to fly with mode "
+                f"names that may mean the wrong modes")
+        self._mode_names = {v: k for k, v in mapping.items()}
         self._on_msg(hb)
 
     def request_stream(self, msg_id, hz):
@@ -157,12 +199,40 @@ class MavIO:
             time.sleep(0.5)
         raise TimeoutError(f"command {cmd}: no ACCEPTED ack")
 
-    def set_mode(self, name):
-        mode_id = self.conn.mode_mapping()[name]
+    def set_mode(self, name, confirm_s=5.0):
+        """Change mode and WAIT for the heartbeat to say so. Returns bool.
+
+        The COMMAND_ACK proves the autopilot accepted the command; it does
+        not prove tel.mode has caught up, because tel.mode only moves on a
+        HEARTBEAT and those arrive at 1 Hz. Every command here ACKs in tens
+        of milliseconds, so a caller that inspects tel.mode straight after
+        set_mode reads the PREVIOUS mode for up to a second. Mission's
+        pilot-override test does exactly that on its first loop iteration,
+        and would stand down before the survey ever started.
+
+        Returns False if the mode was accepted but never confirmed, so the
+        caller can decide; it does not raise, because at mission end an
+        unconfirmed RTL is still an accepted RTL.
+        """
+        mapping = self._mode_names or {}
+        if name not in set(mapping.values()):
+            # _mode_names is the reverse map built in wait_ready from a
+            # verified autopilot heartbeat. Trusting it rather than calling
+            # mode_mapping() again keeps every mode lookup on the one map
+            # that was checked.
+            raise ValueError(f"mode {name!r} is not in this vehicle's mode "
+                             f"map; wait_ready must run first")
+        mode_id = next(k for k, v in mapping.items() if v == name)
         self.command_ack(
             mavutil.mavlink.MAV_CMD_DO_SET_MODE,
             p1=mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
             p2=mode_id)
+        deadline = time.monotonic() + confirm_s
+        while time.monotonic() < deadline:
+            self.step()
+            if self.tel.mode == name:
+                return True
+        return False
 
     def arm(self):
         # Generous retries: covers EKF settle time after SITL boot.

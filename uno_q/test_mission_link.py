@@ -29,9 +29,9 @@ def main():
     io = MavIO(CONN)
     try:
         io.wait_ready(timeout=20)
-    except TimeoutError:
-        sys.exit("NO HEARTBEAT through the pump in 20s: is "
-                 "mav_shovel_pump.py running in the other terminal?")
+    except (TimeoutError, RuntimeError) as exc:
+        sys.exit(f"{exc}\n(if nothing at all arrived: is "
+                 f"mav_shovel_pump.py running in the other terminal?)")
     print("heartbeat received: RECEIVE direction live at MAVLink level")
 
     # setup_streams sends SET_MESSAGE_INTERVAL commands and waits for their

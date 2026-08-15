@@ -68,7 +68,15 @@ class Site:
         self.drops = 0          # gate cycles that actually actuated
         self.failed_drops = 0   # attempted but the gate never opened
         self.aborts = 0
-        self.last_t = 0.0
+        # None, not 0.0. Epoch zero is a REAL timestamp to the arithmetic in
+        # score(): a site whose every event lacked a "t" kept last_t = 0.0,
+        # giving age_days ~20000 and recency = 0.5**(20000/14), which
+        # underflows to exactly 0.0 and zeroes the whole score. Such a site
+        # sorted below one that had never been seen at all, which is the
+        # opposite of what this tool is for. stamp() treats missing times as
+        # absent (its own docstring says so); this makes the initial value
+        # agree with that. Found in review 2026-08-15.
+        self.last_t = None
         self.first_t = float('inf')
 
     def absorb(self, lat, lon, mission_id, t):
@@ -86,20 +94,28 @@ class Site:
         undated event into a 20000-day span."""
         if t is None:
             return
-        self.last_t = max(self.last_t, t)
+        self.last_t = t if self.last_t is None else max(self.last_t, t)
         self.first_t = min(self.first_t, t)
 
     @property
     def span_days(self):
-        if self.first_t == float('inf') or self.last_t <= self.first_t:
+        if (self.first_t == float('inf') or self.last_t is None
+                or self.last_t <= self.first_t):
             return 0.0
         return (self.last_t - self.first_t) / 86400.0
 
     def score(self, now, half_life_days=HALF_LIFE_DAYS):
         if half_life_days <= 0:
             raise ValueError(f"half_life_days must be > 0, got {half_life_days}")
-        age_days = max(0.0, (now - self.last_t) / 86400.0)
-        recency = math.pow(0.5, age_days / half_life_days)
+        # An undated site is not an ancient one. With no usable timestamp
+        # anywhere, recency is simply not evidence, so it drops out of the
+        # product (weight 1.0) and the site is ranked on flights and
+        # treatment gap alone.
+        if self.last_t is None:
+            recency = 1.0
+        else:
+            age_days = max(0.0, (now - self.last_t) / 86400.0)
+            recency = math.pow(0.5, age_days / half_life_days)
         # Only a drop that actually actuated counts as treatment. A gate that
         # failed leaves the site untreated, so it must keep full priority.
         gap = 0.5 if self.drops > 0 else 1.0

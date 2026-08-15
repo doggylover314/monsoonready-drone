@@ -10,8 +10,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=arduino
-WorkingDirectory=/home/arduino/monsoonready
-ExecStart=/home/arduino/monsoonready/uno_q/deploy/board_sync.sh
+WorkingDirectory=/home/arduino/monsoonready-drone
+ExecStart=/home/arduino/monsoonready-drone/uno_q/deploy/board_sync.sh
 
 # The script exits 0 on purpose when it pulls a new version of ITSELF, so
 # always-restart is what makes self-update work rather than a failure policy.
@@ -29,7 +29,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
-ReadWritePaths=/home/arduino/monsoonready
+ReadWritePaths=/home/arduino/monsoonready-drone
 
 [Install]
 WantedBy=multi-user.target

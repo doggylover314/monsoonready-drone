@@ -21,7 +21,14 @@
 
 set -uo pipefail
 
-REPO="${MONSOONREADY_REPO:-$HOME/monsoonready}"
+# Resolve the repo from THIS SCRIPT'S OWN LOCATION, exactly as board_setup.sh
+# does, so it is right wherever the clone lives. The old default was
+# $HOME/monsoonready, which STOPPED EXISTING when the board was reflashed on
+# 2026-08-13: the clone is now ~/monsoonready-drone, so every one of the three
+# deploy routes was pointing at a directory that is not there and the sync had
+# silently been dead ever since (found in review 2026-08-15). The env var is
+# still honoured if someone sets it, but nothing needs to.
+REPO="${MONSOONREADY_REPO:-$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)}"
 INTERVAL="${MONSOONREADY_SYNC_INTERVAL:-10}"
 SELF="$(readlink -f "$0")"
 

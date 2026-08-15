@@ -1,4 +1,21 @@
 /*
+ * ============================================================================
+ *  SUPERSEDED. DO NOT FLASH THIS FOR A MISSION.
+ *
+ *  The flying firmware is ../sketch_mav_shovel/. This probe answers only the
+ *  question it was built for (2026-08-13: is Serial1 ours? YES) and it does
+ *  NOT provide mav_read / mav_write / mav_stats, so with this sketch on the
+ *  STM32 the Linux side cannot reach the Pixhawk at all: mav_shovel_pump.py
+ *  and run_mission.py will both fail to find their RPC methods, and the whole
+ *  autonomy chain is dead with no obvious cause.
+ *
+ *  Keep it: it is the minimal test to re-run after any core upgrade, since it
+ *  transmits a heartbeat with no dependency on the Bridge whatsoever.
+ *  Just never fly it.  (Warning added in review 2026-08-15: this folder was
+ *  worked on for weeks and the shovel was written the night before the shoot,
+ *  so reaching for the familiar name is the easy mistake.)
+ * ============================================================================
+ *
  * serial1_probe - can a sketch on the UNO Q's STM32 talk to the Pixhawk on D0/D1?
  *
  * WHY THIS EXISTS (TODO 7, the blocker for autonomous flight):

@@ -95,23 +95,28 @@ static size_t b64decode(const String &s, uint8_t *out, size_t maxlen) {
 // Return up to 768 raw bytes (1024 b64 chars) of Pixhawk output per call.
 // Sized well under any router message limit; the pump polls fast enough
 // that the ring never holds more than a poll interval of traffic anyway.
+// STATIC, not stack. Both run on the Bridge's single update thread, which
+// serialises RPC requests, so one shared buffer each is safe; putting 768
+// bytes on that thread's stack instead risks overrunning a stack whose size
+// the library chooses (UPDATE_THREAD_STACK_SIZE) and which we do not control.
+static uint8_t rd_buf[768];
+static uint8_t wr_buf[768];
+
 String mav_read() {
-    uint8_t tmp[768];
     size_t n = 0;
     k_mutex_lock(&ring_mtx, K_FOREVER);
-    while (n < sizeof(tmp) && ring_tail != ring_head) {
-        tmp[n++] = ring[ring_tail];
+    while (n < sizeof(rd_buf) && ring_tail != ring_head) {
+        rd_buf[n++] = ring[ring_tail];
         ring_tail = (ring_tail + 1) % sizeof(ring);
     }
     k_mutex_unlock(&ring_mtx);
-    return b64encode(tmp, n);
+    return b64encode(rd_buf, n);
 }
 
 // Write base64-decoded bytes to the Pixhawk. Returns raw bytes written.
 int mav_write(String b64) {
-    uint8_t buf[768];
-    size_t n = b64decode(b64, buf, sizeof(buf));
-    size_t w = Serial1.write(buf, n);
+    size_t n = b64decode(b64, wr_buf, sizeof(wr_buf));
+    size_t w = Serial1.write(wr_buf, n);
     tx_total += w;
     return (int)w;
 }

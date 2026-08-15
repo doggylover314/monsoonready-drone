@@ -116,6 +116,12 @@ class Mission:
         self._rng_acquired = False # ground return seen during current descent
         self._t_dropped = None     # monotonic time the gate finished cycling
         self._drop_ok = True       # did the last gate actuation report success
+        # The pilot-override test may only fire once GUIDED has actually
+        # been OBSERVED in a heartbeat. tel.mode carries the pre-takeoff
+        # mode until the next 1 Hz heartbeat lands, so an ungated test reads
+        # a stale STABILIZE on the first loop pass and stands down before
+        # the survey begins. Belt and braces with set_mode's own confirm.
+        self._seen_guided = False
         # Test hook (dropout drill): below this rel_alt, pretend the
         # rangefinder went silent. None = disabled.
         self.rng_suppress_below_m = None
@@ -158,7 +164,11 @@ class Mission:
         cfg = self.cfg
         io = self.io
         self.rec.mission_start(cfg)
-        io.set_mode('GUIDED')
+        if io.set_mode('GUIDED'):
+            self._seen_guided = True
+        else:
+            self.log("[mission] GUIDED was accepted but never confirmed by a "
+                     "heartbeat; the override check stays disarmed until it is")
         io.arm()
         io.takeoff(cfg.survey_alt_m)
         self._set('TAKEOFF')
@@ -168,9 +178,15 @@ class Mission:
             tel = io.tel
             self.rec.fix(tel, self.state)  # throttled inside the recorder
 
-            # Pilot override: someone flipped the mode from under us.
-            if (self.state != 'IDLE' and tel.mode is not None
-                    and tel.mode != 'GUIDED'):
+            if tel.mode == 'GUIDED':
+                self._seen_guided = True
+
+            # Pilot override: someone flipped the mode from under us. Only
+            # meaningful once GUIDED has been seen at least once (see
+            # _seen_guided); before that a non-GUIDED reading is stale
+            # telemetry, not a pilot.
+            if (self.state != 'IDLE' and self._seen_guided
+                    and tel.mode is not None and tel.mode != 'GUIDED'):
                 self._set('STANDDOWN', f"mode={tel.mode}, pilot has aircraft")
                 break
 
@@ -186,8 +202,11 @@ class Mission:
             getattr(self, '_st_' + self.state.lower())()
 
         if self.state in ('DONE', 'STOPPED'):
-            io.set_mode(cfg.end_mode)
-            self.log(f"[mission] {self.state.lower()}, {cfg.end_mode} set")
+            confirmed = io.set_mode(cfg.end_mode)
+            self.log(f"[mission] {self.state.lower()}, {cfg.end_mode} "
+                     + ("confirmed" if confirmed
+                        else "ACCEPTED but NOT confirmed by heartbeat, WATCH "
+                             "THE AIRCRAFT and be ready on the sticks"))
         # Count SUCCESSFUL gate cycles, not attempts: "drops: 3" on a judged
         # dashboard has to mean three puddles got Bti.
         self.rec.mission_end(

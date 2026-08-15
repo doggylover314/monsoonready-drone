@@ -69,6 +69,9 @@ def main():
         out = sess.run(None, {iname: x})[0]
         times.append(time.perf_counter() - t0)
     ms = [t * 1000 for t in times]
+    if not ms:
+        print("--runs 0: nothing timed.")
+        return
     print(f"latency over {args.runs} runs: median {statistics.median(ms):.0f}ms"
           f"  mean {statistics.mean(ms):.0f}ms  min {min(ms):.0f}ms"
           f"  max {max(ms):.0f}ms  -> {1000 / statistics.median(ms):.2f} fps")
@@ -84,7 +87,9 @@ def main():
         if args.save:
             cv2.rectangle(img, (int(ox1), int(oy1)), (int(ox2), int(oy2)),
                           (0, 200, 0), 2)
-            cv2.putText(img, f"{conf:.2f}", (int(ox1), int(oy1) - 6),
+            # max(14, ...) so a detection near the top edge still shows its
+            # confidence instead of drawing the text off-canvas.
+            cv2.putText(img, f"{conf:.2f}", (int(ox1), max(14, int(oy1) - 6)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 0), 2)
     if args.save:
         cv2.imwrite(args.save, img)

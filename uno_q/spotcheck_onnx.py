@@ -85,6 +85,14 @@ def main():
             f.write(json.dumps(r) + '\n')
 
     # grid montage: 6 columns of 320x240 thumbnails
+    if not annotated:
+        # cv2.imwrite throws on a zero-height array, and ms[len(ms)//2] two
+        # lines later would IndexError anyway. Say WHY nothing was found:
+        # the usual cause is a directory of .bmp/.webp, which the extension
+        # filter above skips silently.
+        print(f"no images matched in {args.dir} (looking for "
+              f".jpg/.jpeg/.png). Nothing to spot-check.")
+        return
     cols, tw, th = 6, 320, 240
     rows = (len(annotated) + cols - 1) // cols
     grid = np.full((rows * th, cols * tw, 3), 30, dtype=np.uint8)

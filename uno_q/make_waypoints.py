@@ -70,8 +70,9 @@ def main():
     io = MavIO(args.conn)
     try:
         io.wait_ready(timeout=20)
-    except TimeoutError:
-        sys.exit("no heartbeat: start mav_shovel_pump.py first")
+    except (TimeoutError, RuntimeError) as exc:
+        sys.exit(f"{exc}\n(if nothing arrived at all: start "
+                 f"mav_shovel_pump.py first)")
     io.setup_streams()
 
     print("waiting for a real position fix ...")
