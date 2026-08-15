@@ -20,9 +20,9 @@ this on trust:
      not support Zephyr (verified 2026-07-31). Using the STM32 means writing
      a board-specific PWM implementation.
   3. And getting a command to that implementation means the Linux->STM32
-     Bridge, which is TODO 12 and BLOCKED: the UNO Q docs contradict
-     themselves about whether Serial1 (D0/D1) is free or claimed by the
-     router, and it is not resolvable without bench time on the board.
+     Bridge. That is no longer blocked (the shovel works as of 2026-08-14),
+     but it is still two pieces of firmware that do not exist, against zero
+     new code for the Pixhawk route.
   4. The Pixhawk, meanwhile, already has hardware PWM outputs built for
      exactly this, already powered, already wired, already talking MAVLink to
      us, and with MAIN 1-6 taken by the six motors an AUX output is free. The

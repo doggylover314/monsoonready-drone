@@ -8,7 +8,7 @@ Wires the real parts together, where sitl_test.py wires the fake ones:
                                  output (camera + ONNX in their own process;
                                  --inline-detector restores in-loop inference)
     LogDropper (prints)          PixhawkServoDropper (moves the gate)
-    tcp:127.0.0.1:5760           /dev/ttyXXX at 115200 (SERIAL4/5)
+    tcp:127.0.0.1:5760           udpin:127.0.0.1:14555 (the shovel pump)
     no base station              basestation_cmd set, launched on DONE
 
 Everything else, above all mission.py, is identical. That is the point: the
