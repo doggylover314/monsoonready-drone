@@ -21,6 +21,7 @@
     --det-dot:   #86b6ef;
     --track:     #898781;
     --site-dim:  0.40;
+    --cell:      86px;   /* grid row height; panel heights are multiples */
   }
   * { box-sizing: border-box; }
   body {
@@ -28,39 +29,84 @@
     font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   header {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px;
-    padding: 14px 20px 0;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+    padding: 10px 16px;
   }
   header h1 { font-size: 18px; margin: 0; }
   header .sub { color: var(--ink-2); font-size: 13px; }
-  .bar {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
-    padding: 10px 20px;
-  }
-  .bar label { color: var(--ink-2); user-select: none; cursor: pointer; }
-  .bar input[type=checkbox] { accent-color: var(--det-dot); vertical-align: -2px; }
+  header .spacer { flex: 1; }
+  #clock { font-variant-numeric: tabular-nums; color: var(--ink-2); }
   select, button {
     font: inherit; color: var(--ink); background: var(--surface);
     border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
   }
   button { cursor: pointer; }
-  .tiles {
-    display: flex; flex-wrap: wrap; gap: 10px; padding: 0 20px 10px;
+  label { color: var(--ink-2); user-select: none; cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--det-dot); vertical-align: -2px; }
+
+  /* ---------- panel menu ---------- */
+  #panelMenuWrap { position: relative; }
+  #panelMenu {
+    display: none; position: absolute; right: 0; top: calc(100% + 6px);
+    z-index: 40; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px; min-width: 190px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.4);
   }
-  .tile {
+  #panelMenu.open { display: block; }
+  #panelMenu label { display: block; padding: 3px 0; }
+  #panelMenu hr { border: 0; border-top: 1px solid var(--grid); margin: 8px 0; }
+
+  /* ---------- tiling grid ----------
+     12-column grid; every panel carries col/row spans in data attributes,
+     mirrored into inline grid styles by layout(). Order in the DOM is the
+     layout order; drag-and-drop reorders the DOM and saves. */
+  #grid {
+    display: grid; gap: 10px; padding: 0 16px 24px;
+    grid-template-columns: repeat(12, 1fr);
+    grid-auto-rows: var(--cell);
+    grid-auto-flow: dense;
+  }
+  .panel {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; padding: 10px 16px; min-width: 108px;
+    border-radius: 12px; display: flex; flex-direction: column;
+    min-width: 0; min-height: 0; position: relative; overflow: hidden;
   }
-  .tile .v { font-size: 26px; font-weight: 650; }
-  .tile .k { color: var(--ink-2); font-size: 12px; }
-  .tile .v.good { color: var(--good); }
-  .tile .v.bad { color: var(--critical); }
-  #wrap { position: relative; margin: 0 20px; }
-  #map {
-    width: 100%; height: 62vh; min-height: 340px; display: block;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 12px;
+  .panel.dragging { opacity: 0.45; }
+  .panel.dropTarget { outline: 2px dashed var(--det-dot); outline-offset: -2px; }
+  .ph {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 7px 10px 6px 12px; border-bottom: 1px solid var(--grid);
+    cursor: grab; user-select: none; flex: none;
   }
+  .ph:active { cursor: grabbing; }
+  .ph .t { font-weight: 650; font-size: 13px; letter-spacing: .2px; }
+  .ph .sub { color: var(--muted); font-size: 11.5px; }
+  .ph .x {
+    margin-left: auto; border: 0; background: none; color: var(--muted);
+    font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 6px;
+  }
+  .ph .x:hover { color: var(--ink); background: var(--grid); }
+  .pb { flex: 1; min-height: 0; position: relative; }
+  .rs {
+    position: absolute; right: 0; bottom: 0; width: 18px; height: 18px;
+    cursor: nwse-resize; z-index: 6; touch-action: none;
+  }
+  .rs::after {
+    content: ''; position: absolute; right: 4px; bottom: 4px;
+    width: 8px; height: 8px;
+    border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+    border-radius: 1px;
+  }
+  @media (max-width: 900px) {
+    /* phones stack; moving/resizing is a desktop affordance */
+    #grid { grid-template-columns: 1fr; }
+    .panel { grid-column: 1 / -1 !important; }
+    .rs { display: none; }
+  }
+
+  /* ---------- map panel ---------- */
+  #map { width: 100%; height: 100%; display: block; }
+  #wrap { position: absolute; inset: 0; }
   #tip {
     position: absolute; display: none; pointer-events: none; z-index: 5;
     background: var(--surface); color: var(--ink);
@@ -69,105 +115,361 @@
     padding: 6px 9px; font-size: 12.5px; max-width: 260px;
   }
   #tip .t { color: var(--ink-2); }
-  .legend {
-    display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
-    padding: 8px 20px 4px; color: var(--ink-2); font-size: 12.5px;
-  }
-  .legend .chip { display: inline-flex; align-items: center; gap: 6px; }
-  .legend svg { display: block; }
-  details { margin: 8px 20px 24px; }
-  summary { cursor: pointer; color: var(--ink-2); }
-  table {
-    border-collapse: collapse; margin-top: 8px; width: 100%;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; overflow: hidden; font-size: 13px;
-  }
-  th, td {
-    text-align: left; padding: 5px 10px;
-    border-bottom: 1px solid var(--grid);
-    font-variant-numeric: tabular-nums;
-  }
-  th { color: var(--ink-2); font-weight: 600; }
   #empty {
     position: absolute; inset: 0; display: none; place-items: center;
     color: var(--muted); font-size: 15px;
   }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center;
+    padding: 6px 12px; color: var(--ink-2); font-size: 12px;
+    border-top: 1px solid var(--grid); flex: none;
+  }
+  .legend .chip { display: inline-flex; align-items: center; gap: 5px; }
+  .legend svg { display: block; }
+
+  /* ---------- status panel ---------- */
+  #st-state {
+    font-size: clamp(26px, 4.2vw, 44px); font-weight: 750;
+    letter-spacing: .5px; line-height: 1.1;
+  }
+  #st-state.live::after {
+    content: ''; display: inline-block; width: 12px; height: 12px;
+    margin-left: 12px; border-radius: 50%; background: var(--good);
+    animation: pulse 1.2s ease-in-out infinite; vertical-align: 6px;
+  }
+  @keyframes pulse { 50% { opacity: 0.25; } }
+  .st-grid {
+    display: grid; grid-template-columns: repeat(3, auto); gap: 4px 22px;
+    margin-top: 10px; font-variant-numeric: tabular-nums;
+  }
+  .st-grid .v { font-size: 20px; font-weight: 650; }
+  .st-grid .k { color: var(--ink-2); font-size: 11.5px; }
+  #st-trans { margin-top: 10px; font-size: 12.5px; color: var(--ink-2);
+    font-variant-numeric: tabular-nums; overflow: hidden; }
+  #st-trans div { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+  #st-mid { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  .pad { padding: 10px 14px; overflow: auto; height: 100%; }
+
+  /* ---------- totals panel ---------- */
+  .tiles { display: flex; flex-wrap: wrap; gap: 10px; }
+  .tile {
+    background: var(--page); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 14px; min-width: 96px; flex: 1;
+  }
+  .tile .v { font-size: 24px; font-weight: 650; }
+  .tile .k { color: var(--ink-2); font-size: 11.5px; white-space: nowrap; }
+  .tile .v.good { color: var(--good); }
+  .tile .v.bad { color: var(--critical); }
+
+  /* ---------- profile + detections + events ---------- */
+  #prof { width: 100%; height: 100%; display: block; }
+  #detList { font-size: 13px; font-variant-numeric: tabular-nums; }
+  #detList .row {
+    display: flex; gap: 10px; padding: 4px 2px;
+    border-bottom: 1px solid var(--grid); align-items: baseline;
+  }
+  #detList .row:first-child { color: var(--ink); }
+  #detList .c { color: var(--det-dot); min-width: 66px; }
+  #detList .a { color: var(--ink-2); margin-left: auto; }
+  #detList .none { color: var(--muted); padding: 8px 2px; }
+  table {
+    border-collapse: collapse; width: 100%; font-size: 13px;
+  }
+  th, td {
+    text-align: left; padding: 4px 10px;
+    border-bottom: 1px solid var(--grid);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  th { color: var(--ink-2); font-weight: 600; position: sticky; top: 0;
+       background: var(--surface); }
 </style>
 </head>
 <body>
 <header>
   <h1>MonsoonReady base station</h1>
-  <span class="sub">standing-water candidates &middot; site history across flights</span>
+  <span class="sub">standing-water candidates &middot; live mission view</span>
+  <span class="spacer"></span>
+  <select id="flight"></select>
+  <button id="refresh" title="Reload data">&#10227;</button>
+  <span class="sub" id="updated"></span>
+  <div id="panelMenuWrap">
+    <button id="panelBtn">Panels &#9662;</button>
+    <div id="panelMenu"></div>
+  </div>
+  <span id="clock"></span>
 </header>
 
-<div class="bar">
-  <select id="flight"></select>
-  <label><input type="checkbox" id="ly-heat" checked> Heatmap</label>
-  <label><input type="checkbox" id="ly-det" checked> Detections</label>
-  <label><input type="checkbox" id="ly-drop" checked> Treated</label>
-  <label><input type="checkbox" id="ly-abort" checked> Aborts</label>
-  <label><input type="checkbox" id="ly-track" checked> Flight track</label>
-  <label id="ly-site-label" style="display:none">
-    <input type="checkbox" id="ly-site" checked> Site image</label>
-  <button id="refresh" title="Reload data">&#10227; Refresh</button>
-  <span class="sub" id="updated"></span>
-</div>
+<div id="grid"></div>
 
-<div class="tiles">
-  <div class="tile"><div class="v" id="s-flights">–</div><div class="k">Flights</div></div>
-  <div class="tile"><div class="v" id="s-det">–</div><div class="k">Detections</div></div>
-  <div class="tile"><div class="v good" id="s-drop">–</div><div class="k">Treated (drops)</div></div>
-  <div class="tile"><div class="v bad" id="s-abort">–</div><div class="k">Aborts</div></div>
-  <div class="tile"><div class="v" id="s-pers">–</div><div class="k">Recurring sites</div></div>
-</div>
+<!-- Panel bodies live in a hidden nursery until placed by buildPanels(). -->
+<div id="nursery" style="display:none">
 
-<div id="wrap">
-  <canvas id="map"></canvas>
-  <div id="tip"></div>
-  <div id="empty">No mission data yet</div>
-</div>
+  <div class="pb" id="body-map">
+    <div id="wrap">
+      <canvas id="map"></canvas>
+      <div id="tip"></div>
+      <div id="empty">No mission data yet</div>
+    </div>
+  </div>
+  <div class="legend" id="legend-map">
+    <span class="chip"><svg width="46" height="10"><defs>
+      <linearGradient id="hg"><stop offset="0" stop-color="#cde2fb"/>
+      <stop offset=".5" stop-color="#3987e5"/><stop offset="1" stop-color="#0d366b"/>
+      </linearGradient></defs><rect width="46" height="10" rx="3" fill="url(#hg)"/></svg>
+      density</span>
+    <span class="chip"><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="var(--det-dot)"/></svg> detection</span>
+    <span class="chip"><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#0ca30c"/><path d="M4 7.4l2 2 4-4.5" stroke="#fff" stroke-width="1.8" fill="none"/></svg> treated</span>
+    <span class="chip"><svg width="14" height="14"><path d="M3 3l8 8M11 3l-8 8" stroke="#d03b3b" stroke-width="2.4"/></svg> abort</span>
+    <span class="chip"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="var(--track)" stroke-width="2"/></svg> track</span>
+    <span class="chip"><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="3 2.5"/></svg> recurring &ge;2 flights</span>
+    <span class="chip" style="margin-left:auto">scroll = zoom &middot; drag = pan &middot; dbl-click = reset</span>
+  </div>
 
-<div class="legend">
-  <span class="chip"><svg width="46" height="10"><defs>
-    <linearGradient id="hg"><stop offset="0" stop-color="#cde2fb"/>
-    <stop offset=".5" stop-color="#3987e5"/><stop offset="1" stop-color="#0d366b"/>
-    </linearGradient></defs><rect width="46" height="10" rx="3" fill="url(#hg)"/></svg>
-    detection density</span>
-  <span class="chip"><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="var(--det-dot)"/></svg> detection</span>
-  <span class="chip"><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#0ca30c"/><path d="M4 7.4l2 2 4-4.5" stroke="#fff" stroke-width="1.8" fill="none"/></svg> treated (drop)</span>
-  <span class="chip"><svg width="14" height="14"><path d="M3 3l8 8M11 3l-8 8" stroke="#d03b3b" stroke-width="2.4"/></svg> abort (climbed away)</span>
-  <span class="chip"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="var(--track)" stroke-width="2"/></svg> flight track</span>
-  <span class="chip"><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="3 2.5"/></svg> recurring (&ge;2 flights)</span>
-  <span class="chip" style="margin-left:auto">scroll = zoom &middot; drag = pan &middot; double-click = reset</span>
-</div>
+  <div class="pad" id="body-status">
+    <div id="st-state">&ndash;</div>
+    <div id="st-mid"></div>
+    <div class="st-grid">
+      <div><div class="v" id="st-elapsed">&ndash;</div><div class="k">elapsed</div></div>
+      <div><div class="v" id="st-det">&ndash;</div><div class="k">detections</div></div>
+      <div><div class="v" id="st-drop" style="color:var(--good)">&ndash;</div><div class="k">treated</div></div>
+    </div>
+    <div id="st-trans"></div>
+  </div>
 
-<details id="tableBox">
-  <summary>Event table</summary>
-  <table>
-    <thead><tr><th>Time</th><th>Flight</th><th>Event</th><th>Lat</th><th>Lon</th><th>Detail</th></tr></thead>
-    <tbody id="rows"></tbody>
-  </table>
-</details>
+  <div class="pad" id="body-totals">
+    <div class="tiles">
+      <div class="tile"><div class="v" id="s-flights">&ndash;</div><div class="k">Flights</div></div>
+      <div class="tile"><div class="v" id="s-det">&ndash;</div><div class="k">Detections</div></div>
+      <div class="tile"><div class="v good" id="s-drop">&ndash;</div><div class="k">Treated (drops)</div></div>
+      <div class="tile"><div class="v bad" id="s-abort">&ndash;</div><div class="k">Aborts</div></div>
+      <div class="tile"><div class="v" id="s-pers">&ndash;</div><div class="k">Recurring sites</div></div>
+    </div>
+  </div>
+
+  <div class="pb" id="body-profile"><canvas id="prof"></canvas></div>
+
+  <div class="pad" id="body-detections"><div id="detList"></div></div>
+
+  <div class="pb" id="body-events" style="overflow:auto">
+    <table>
+      <thead><tr><th>Time</th><th>Flight</th><th>Event</th><th>Lat</th><th>Lon</th><th>Detail</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+</div>
 
 <script>
 'use strict';
 /* Heat ramp: sequential blue, light->dark (validated reference palette). */
 const RAMP = ['#cde2fb','#9ec5f4','#6da7ec','#3987e5','#256abf','#1c5cab','#104281','#0d366b'];
-/* Vocabulary and thresholds are uno_q/predict.py's; keep them in step.
-   RECURRING = seen on >=2 flights. PERSISTENT is stricter (>=3 flights
-   spanning >=7 days) and is predict.py's call to make, not the map's. */
+/* Vocabulary and thresholds are uno_q/predict.py's; keep them in step. */
 const PERSIST_RADIUS_M = 5, RECURRING_MIN_FLIGHTS = 2, BLOB_RADIUS_M = 8;
 
 const $ = id => document.getElementById(id);
-const canvas = $('map'), ctx = canvas.getContext('2d');
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmtT = t => new Date(t * 1000).toLocaleString([], {hour12: false});
+const fmtHM = t => new Date(t * 1000).toLocaleTimeString([], {hour12: false});
+const fmtD = t => new Date(t * 1000).toLocaleDateString();
+
+/* =====================================================================
+   TILING LAYOUT. Panels: id -> {title, sub, w (1-12 cols), h (rows), on}.
+   DOM order inside #grid is the layout order. Everything persists to
+   localStorage and "Reset layout" restores DEFAULTS.
+   ===================================================================== */
+const DEFAULTS = {
+  order: ['map', 'status', 'totals', 'profile', 'detections', 'events'],
+  panels: {
+    map:        { title: 'Site map',        sub: 'detections & treatments', w: 8, h: 6, on: true },
+    status:     { title: 'Mission status',  sub: 'live',                    w: 4, h: 3, on: true },
+    totals:     { title: 'Season totals',   sub: 'all data in scope',       w: 4, h: 3, on: true },
+    profile:    { title: 'Altitude profile',sub: 'EKF alt + rangefinder',   w: 6, h: 3, on: true },
+    detections: { title: 'Latest detections', sub: 'newest first',          w: 6, h: 3, on: true },
+    events:     { title: 'Event log',       sub: 'everything but fixes',    w: 12, h: 4, on: true },
+  },
+};
+const LS_KEY = 'mr-layout-v1';
+
+function loadLayout() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(LS_KEY)); } catch {}
+  const lay = structuredClone(DEFAULTS);
+  if (saved && saved.panels) {
+    for (const id of Object.keys(lay.panels))
+      if (saved.panels[id]) Object.assign(lay.panels[id], saved.panels[id]);
+    // keep saved order, then append any panel ids added since the save
+    const known = saved.order?.filter(id => lay.panels[id]) ?? [];
+    lay.order = [...known, ...lay.order.filter(id => !known.includes(id))];
+  }
+  return lay;
+}
+const layoutState = loadLayout();
+
+function saveLayout() {
+  const slim = { order: layoutState.order, panels: {} };
+  for (const [id, p] of Object.entries(layoutState.panels))
+    slim.panels[id] = { w: p.w, h: p.h, on: p.on };
+  localStorage.setItem(LS_KEY, JSON.stringify(slim));
+}
+
+function buildPanels() {
+  const grid = $('grid');
+  for (const id of layoutState.order) {
+    const p = layoutState.panels[id];
+    const el = document.createElement('section');
+    el.className = 'panel'; el.dataset.id = id;
+    const ph = document.createElement('div');
+    ph.className = 'ph';
+    ph.innerHTML = `<span class="t">${p.title}</span><span class="sub">${p.sub}</span>`;
+    const x = document.createElement('button');
+    x.className = 'x'; x.textContent = '×'; x.title = 'Hide panel (Panels menu restores it)';
+    x.addEventListener('click', ev => { ev.stopPropagation(); setPanelOn(id, false); });
+    ph.appendChild(x);
+    el.appendChild(ph);
+    el.appendChild($('body-' + id));               // adopt from the nursery
+    const extra = $('legend-' + id);
+    if (extra) el.appendChild(extra);
+    const rs = document.createElement('div');
+    rs.className = 'rs'; rs.title = 'Drag to resize';
+    el.appendChild(rs);
+    grid.appendChild(el);
+    wireDrag(el, ph);
+    wireResize(el, rs);
+  }
+  // map layer toggles live in the map panel's header, after the title
+  const mapPh = document.querySelector('.panel[data-id=map] .ph');
+  const lay = document.createElement('span');
+  lay.style.cssText = 'display:inline-flex;gap:10px;flex-wrap:wrap;font-size:12px;margin-left:6px';
+  lay.innerHTML = `
+    <label><input type="checkbox" id="ly-heat" checked> heat</label>
+    <label><input type="checkbox" id="ly-det" checked> det</label>
+    <label><input type="checkbox" id="ly-drop" checked> drops</label>
+    <label><input type="checkbox" id="ly-abort" checked> aborts</label>
+    <label><input type="checkbox" id="ly-track" checked> track</label>
+    <label id="ly-site-label" style="display:none"><input type="checkbox" id="ly-site" checked> site</label>`;
+  mapPh.insertBefore(lay, mapPh.querySelector('.x'));
+  applyLayout();
+  buildPanelMenu();
+}
+
+function applyLayout() {
+  for (const el of document.querySelectorAll('.panel')) {
+    const p = layoutState.panels[el.dataset.id];
+    el.style.display = p.on ? '' : 'none';
+    el.style.gridColumn = `span ${Math.min(12, Math.max(2, p.w))}`;
+    el.style.gridRow = `span ${Math.max(2, p.h)}`;
+  }
+}
+
+function setPanelOn(id, on) {
+  layoutState.panels[id].on = on;
+  saveLayout(); applyLayout(); buildPanelMenu();
+  if (on) requestAnimationFrame(() => { render(); profile(); });
+}
+
+function buildPanelMenu() {
+  const m = $('panelMenu'); m.innerHTML = '';
+  for (const id of layoutState.order) {
+    const p = layoutState.panels[id];
+    const lab = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = p.on;
+    cb.addEventListener('change', () => setPanelOn(id, cb.checked));
+    lab.appendChild(cb); lab.append(' ' + p.title);
+    m.appendChild(lab);
+  }
+  m.appendChild(document.createElement('hr'));
+  const rst = document.createElement('button');
+  rst.textContent = 'Reset layout';
+  rst.addEventListener('click', () => {
+    localStorage.removeItem(LS_KEY);
+    location.reload();
+  });
+  m.appendChild(rst);
+}
+
+$('panelBtn').addEventListener('click', ev => {
+  ev.stopPropagation(); $('panelMenu').classList.toggle('open');
+});
+document.addEventListener('click', ev => {
+  if (!ev.target.closest('#panelMenuWrap')) $('panelMenu').classList.remove('open');
+});
+
+/* ---- move: drag a panel by its header, drop on another panel ---- */
+let dragId = null;
+function wireDrag(el, ph) {
+  ph.draggable = true;
+  ph.addEventListener('dragstart', ev => {
+    dragId = el.dataset.id;
+    el.classList.add('dragging');
+    ev.dataTransfer.effectAllowed = 'move';
+    try { ev.dataTransfer.setData('text/plain', dragId); } catch {}
+  });
+  ph.addEventListener('dragend', () => {
+    el.classList.remove('dragging');
+    document.querySelectorAll('.panel.dropTarget')
+      .forEach(t => t.classList.remove('dropTarget'));
+    dragId = null;
+  });
+  el.addEventListener('dragover', ev => {
+    if (!dragId || dragId === el.dataset.id) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'move';
+    el.classList.add('dropTarget');
+  });
+  el.addEventListener('dragleave', () => el.classList.remove('dropTarget'));
+  el.addEventListener('drop', ev => {
+    ev.preventDefault();
+    el.classList.remove('dropTarget');
+    if (!dragId || dragId === el.dataset.id) return;
+    const grid = $('grid');
+    const from = document.querySelector(`.panel[data-id=${dragId}]`);
+    const kids = [...grid.children];
+    // insert BEFORE the target if dragging forward, AFTER if backward,
+    // which matches where the eye expects the panel to land
+    if (kids.indexOf(from) < kids.indexOf(el)) el.after(from);
+    else el.before(from);
+    layoutState.order = [...grid.children].map(c => c.dataset.id);
+    saveLayout();
+    requestAnimationFrame(() => { render(); profile(); });
+  });
+}
+
+/* ---- resize: drag the corner handle; spans snap to grid cells ---- */
+function wireResize(el, rs) {
+  rs.addEventListener('pointerdown', ev => {
+    ev.preventDefault(); ev.stopPropagation();
+    rs.setPointerCapture(ev.pointerId);
+    const p = layoutState.panels[el.dataset.id];
+    const grid = $('grid');
+    const colW = (grid.clientWidth - 32 - 11 * 10) / 12 + 10;  // incl gap
+    const rowH = parseFloat(css('--cell')) + 10;
+    const startW = p.w, startH = p.h, x0 = ev.clientX, y0 = ev.clientY;
+    const move = e => {
+      p.w = Math.min(12, Math.max(2, startW + Math.round((e.clientX - x0) / colW)));
+      p.h = Math.max(2, startH + Math.round((e.clientY - y0) / rowH));
+      applyLayout();
+    };
+    const up = () => {
+      rs.removeEventListener('pointermove', move);
+      rs.removeEventListener('pointerup', up);
+      saveLayout();
+      requestAnimationFrame(() => { render(); profile(); });
+    };
+    rs.addEventListener('pointermove', move);
+    rs.addEventListener('pointerup', up);
+  });
+}
+
+/* =====================================================================
+   DATA
+   ===================================================================== */
+const canvasEl = () => $('map');
 const state = {
   missions: [], events: [], selected: 'all',
   siteMeta: null, siteImg: null, hits: [], lastMissionsJson: '',
+  lastEventsJson: '',
 };
-
-const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-const fmtT = t => new Date(t * 1000).toLocaleString([], {hour12: false});
-const fmtD = t => new Date(t * 1000).toLocaleDateString();
 
 async function getJSON(url) {
   const r = await fetch(url);
@@ -189,8 +491,7 @@ async function loadMissions() {
   state.missions = await getJSON('/api/missions');
   const sel = $('flight'), prev = sel.value || 'all';
   sel.innerHTML = '';
-  const optAll = new Option(`All flights (${state.missions.length})`, 'all');
-  sel.add(optAll);
+  sel.add(new Option(`All flights (${state.missions.length})`, 'all'));
   for (const m of state.missions)
     sel.add(new Option(`${fmtD(m.t_start)}  ${m.id}  (${m.final})`, m.id));
   sel.value = [...sel.options].some(o => o.value === prev) ? prev : 'all';
@@ -203,15 +504,23 @@ async function loadEvents() {
 }
 
 async function reload() {
-  // render() before stats(): stats needs the projection render() fits.
-  await loadMissions(); await loadEvents(); render(); stats(); table();
+  await loadMissions(); await loadEvents();
+  render(); stats(); table(); status(); detList(); profile();
 }
 
-/* ---------- derived data ---------- */
+/* ---------- derived ---------- */
 const of = kind => state.events.filter(e => e.e === kind);
 
+/* The status panel follows the NEWEST mission when "all" is selected: that
+   is the live one during the take. */
+function statusMissionId() {
+  if (state.selected !== 'all') return state.selected;
+  return state.missions.length ? state.missions[state.missions.length - 1].id : null;
+}
+const ofMission = (kind, mid) =>
+  state.events.filter(e => e.e === kind && e.mission === mid);
+
 function clusters() {
-  // Greedy 2D clustering of detections; recurring = distinct flights >= 2.
   const cs = [];
   for (const d of of('detection')) {
     const p = proj.m(d.lat, d.lon);
@@ -239,10 +548,76 @@ function stats() {
   $('s-pers').textContent = (proj.ok && state.selected === 'all') ? clusters().length : '–';
 }
 
+const STATE_COLORS = {
+  SURVEY: 'var(--det-dot)', APPROACH: 'var(--det-dot)',
+  DESCEND: '#e8b23c', DROP: 'var(--good)', CLIMB: '#e8b23c',
+  ABORT_CLIMB: 'var(--critical)', STANDDOWN: 'var(--critical)',
+  DONE: 'var(--good)', TAKEOFF: 'var(--ink)', STOPPED: 'var(--muted)',
+};
+
+function status() {
+  const mid = statusMissionId();
+  const stEl = $('st-state');
+  if (!mid) { stEl.textContent = '–'; return; }
+  const trans = ofMission('state', mid);
+  const ends = ofMission('mission_end', mid);
+  const fixes = ofMission('fix', mid);
+  const live = !ends.length;
+  const cur = ends.length ? ends[ends.length - 1].final
+    : trans.length ? trans[trans.length - 1].to : 'STARTING';
+  stEl.textContent = cur;
+  stEl.className = live ? 'live' : '';
+  stEl.style.color = STATE_COLORS[cur] || 'var(--ink)';
+  $('st-mid').textContent = 'flight ' + mid + (live ? ' · in progress' : ' · ended');
+
+  const all = state.events.filter(e => e.mission === mid);
+  const t0 = all.length ? all[0].t : null;
+  const t1 = live ? Date.now() / 1000 : (all.length ? all[all.length - 1].t : null);
+  $('st-elapsed').textContent = (t0 != null && t1 != null)
+    ? new Date(Math.max(0, t1 - t0) * 1000).toISOString().substr(14, 5) : '–';
+  $('st-det').textContent = ofMission('detection', mid).length;
+  $('st-drop').textContent =
+    ofMission('drop', mid).filter(d => d.ok !== false).length;
+
+  const tr = $('st-trans'); tr.innerHTML = '';
+  for (const s of trans.slice(-4).reverse()) {
+    const d = document.createElement('div');
+    d.textContent = `${fmtHM(s.t)}  ${s.from} → ${s.to}` +
+      (s.note ? `  (${s.note})` : '');
+    tr.appendChild(d);
+  }
+  if (!trans.length && fixes.length) {
+    const d = document.createElement('div');
+    d.textContent = fixes.length + ' position fixes logged';
+    tr.appendChild(d);
+  }
+}
+
+function detList() {
+  const box = $('detList'); box.innerHTML = '';
+  const dets = of('detection').slice(-12).reverse();
+  if (!dets.length) {
+    box.innerHTML = '<div class="none">No detections yet</div>';
+    return;
+  }
+  for (const d of dets) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const conf = document.createElement('span');
+    conf.className = 'c'; conf.textContent = 'conf ' + (d.conf?.toFixed(2) ?? '?');
+    const at = document.createElement('span');
+    at.textContent = `${d.lat?.toFixed(6)}, ${d.lon?.toFixed(6)}`;
+    const t = document.createElement('span');
+    t.className = 'a'; t.textContent = fmtHM(d.t);
+    row.append(conf, at, t);
+    box.appendChild(row);
+  }
+}
+
 function table() {
   const rows = $('rows'); rows.innerHTML = '';
   const num = v => v == null ? '' : v.toFixed(7);
-  for (const e of state.events) {
+  for (const e of [...state.events].reverse()) {
     if (e.e === 'fix') continue;
     const detail = e.e === 'abort' ? e.reason
       : e.e === 'drop' ? `rng ${e.rng?.toFixed(2)} m` +
@@ -261,13 +636,79 @@ function table() {
   }
 }
 
+/* ---------- altitude profile (status mission's fixes) ---------- */
+function profile() {
+  const cv = $('prof');
+  if (!cv || !cv.isConnected || cv.clientWidth === 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, h);
+  const mid = statusMissionId();
+  const fixes = mid ? ofMission('fix', mid).filter(f => f.alt != null) : [];
+  c.font = '11px system-ui, sans-serif';
+  if (fixes.length < 2) {
+    c.fillStyle = css('--muted');
+    c.textAlign = 'center';
+    c.fillText('waiting for flight data', w / 2, h / 2);
+    c.textAlign = 'left';
+    return;
+  }
+  const t0 = fixes[0].t, t1 = fixes[fixes.length - 1].t || t0 + 1;
+  const amax = Math.max(5, ...fixes.map(f => f.alt));
+  const L = 34, R = 8, T = 10, B = 18;
+  const X = t => L + (t - t0) / Math.max(1, t1 - t0) * (w - L - R);
+  const Y = a => T + (1 - a / amax) * (h - T - B);
+  // gridlines at nice altitudes
+  c.strokeStyle = css('--grid'); c.lineWidth = 1;
+  c.fillStyle = css('--muted');
+  const step = amax > 12 ? 5 : 2;
+  for (let a = 0; a <= amax; a += step) {
+    c.beginPath(); c.moveTo(L, Y(a)); c.lineTo(w - R, Y(a)); c.stroke();
+    c.fillText(a + ' m', 4, Y(a) + 4);
+  }
+  // drop + abort markers as vertical ticks
+  for (const d of (mid ? ofMission('drop', mid) : [])) {
+    c.strokeStyle = d.ok !== false ? css('--good') : css('--critical');
+    c.lineWidth = 2;
+    c.beginPath(); c.moveTo(X(d.t), T); c.lineTo(X(d.t), h - B); c.stroke();
+  }
+  for (const a of (mid ? ofMission('abort', mid) : [])) {
+    c.strokeStyle = css('--critical'); c.lineWidth = 1.2;
+    c.setLineDash([3, 3]);
+    c.beginPath(); c.moveTo(X(a.t), T); c.lineTo(X(a.t), h - B); c.stroke();
+    c.setLineDash([]);
+  }
+  // rangefinder (dots: it is only valid low)
+  c.fillStyle = '#e8b23c';
+  for (const f of fixes) if (f.rng != null) {
+    c.beginPath(); c.arc(X(f.t), Y(f.rng), 1.6, 0, 7); c.fill();
+  }
+  // EKF altitude line
+  c.strokeStyle = css('--det-dot'); c.lineWidth = 2;
+  c.lineJoin = c.lineCap = 'round';
+  c.beginPath();
+  fixes.forEach((f, i) => i ? c.lineTo(X(f.t), Y(f.alt)) : c.moveTo(X(f.t), Y(f.alt)));
+  c.stroke();
+  // time axis: start and end
+  c.fillStyle = css('--muted');
+  c.fillText(fmtHM(t0), L, h - 5);
+  c.textAlign = 'right'; c.fillText(fmtHM(t1), w - R, h - 5);
+  c.textAlign = 'left';
+  // legend
+  c.fillStyle = css('--det-dot'); c.fillText('— alt', L + 6, T + 10);
+  c.fillStyle = '#e8b23c'; c.fillText('·· rng', L + 46, T + 10);
+}
+
 /* ---------- projection (equirectangular, meters, north-up) ---------- */
 const proj = {
   ok: false, lat0: 0, mLon: 1,
-  m(lat, lon) {  // geographic -> local meters (x east, y north)
+  m(lat, lon) {
     return {x: (lon - this.lon0) * this.mLon, y: (lat - this.lat0) * 111320};
   },
-  px(lat, lon) { // geographic -> canvas px
+  px(lat, lon) {
     const p = this.m(lat, lon);
     return {x: this.ox + p.x * this.s, y: this.oy - p.y * this.s};
   },
@@ -288,22 +729,21 @@ const proj = {
   },
 };
 
-/* ---------- view transform (zoom/pan on top of the base fit) ----------
-   Applied by scaling the fitted projection: px' = px*k + t. Folding k,t
-   into proj.s/ox/oy after fit() keeps every consumer of proj (markers,
-   heatmap blob radius, cluster rings, scale bar) consistent for free. */
+/* view transform (zoom/pan) folded into proj after fit() */
 const view = { k: 1, tx: 0, ty: 0 };
-
 function applyView() {
   proj.s *= view.k;
   proj.ox = proj.ox * view.k + view.tx;
   proj.oy = proj.oy * view.k + view.ty;
 }
 
-/* ---------- rendering ---------- */
-function layer(id) { return $(id).checked; }
+/* ---------- map rendering ---------- */
+function layer(id) { const el = $(id); return el ? el.checked : true; }
 
 function render() {
+  const canvas = canvasEl();
+  if (!canvas || canvas.clientWidth === 0) return;
+  const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth, h = canvas.clientHeight;
   canvas.width = w * dpr; canvas.height = h * dpr;
@@ -331,7 +771,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  if (layer('ly-heat')) heatmap(w, h);
+  if (layer('ly-heat')) heatmap(ctx, w, h);
 
   if (layer('ly-track')) {
     ctx.strokeStyle = css('--track'); ctx.lineWidth = 2;
@@ -347,22 +787,25 @@ function render() {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+    // live aircraft position: last fix of the newest mission
+    const mid = statusMissionId();
+    const fx = mid ? ofMission('fix', mid) : [];
+    if (fx.length && !ofMission('mission_end', mid).length) {
+      const p = proj.px(fx[fx.length - 1].lat, fx[fx.length - 1].lon);
+      ctx.fillStyle = css('--ink');
+      ctx.strokeStyle = css('--page'); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, 7); ctx.fill(); ctx.stroke();
+      state.hits.push({...p, r: 10, html: `<b>Aircraft</b> latest fix`});
+    }
   }
 
-  /* ok === false means the gate was commanded but never actuated, so the
-     site is NOT treated. Drawn hollow and red rather than hidden: a failed
-     drop is evidence, and it is exactly the thing a judge should be able to
-     see on the map. (Logs written before 2026-08-01 have no ok field; absent
-     means it worked, which is what the runner assumed at the time.) */
+  /* ok === false: gate commanded but never actuated -> hollow red, visible.
+     A failed drop is evidence a judge should see. */
   if (layer('ly-drop')) for (const d of of('drop')) {
     const p = proj.px(d.lat, d.lon), ok = d.ok !== false;
-    /* Radius encodes the DOSE, not the puddle: 8 px at the minimum dose up to
-       14 px at the 3 s maximum. Drops logged before 2026-08-10 have no
-       dwell_s and draw at the old fixed size, so an old flight is not
-       silently rendered as a minimum dose. */
     const r = d.dwell_s != null
       ? 8 + 6 * Math.min(1, Math.max(0, (d.dwell_s - 0.3) / 2.7)) : 8;
-    ring(p, r + 1);
+    ring(ctx, p, r + 1);
     if (ok) {
       ctx.fillStyle = '#0ca30c';
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill();
@@ -372,7 +815,7 @@ function render() {
     } else {
       ctx.strokeStyle = '#d03b3b'; ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, 7); ctx.stroke();
-      ctx.lineWidth = 2; xmark(p, 3.5);
+      ctx.lineWidth = 2; xmark(ctx, p, 3.5);
     }
     state.hits.push({...p, r: 11, html:
       (ok ? `<b>Treated</b> drop at rng ${d.rng?.toFixed(2)} m` +
@@ -388,15 +831,13 @@ function render() {
 
   if (layer('ly-abort')) for (const a of of('abort')) {
     const p = proj.px(a.lat, a.lon);
-    ctx.strokeStyle = css('--surface'); ctx.lineWidth = 6; xmark(p, 6);
-    ctx.strokeStyle = '#d03b3b'; ctx.lineWidth = 3; xmark(p, 6);
+    ctx.strokeStyle = css('--surface'); ctx.lineWidth = 6; xmark(ctx, p, 6);
+    ctx.strokeStyle = '#d03b3b'; ctx.lineWidth = 3; xmark(ctx, p, 6);
     state.hits.push({...p, r: 11, html:
       `<b>Abort</b> ${a.reason}<br>` +
       `<span class="t">${fmtT(a.t)} &middot; ${a.mission}</span>`});
   }
 
-  /* detections LAST so the dot stays visible on top of the bigger drop /
-     abort markers at the same spot (they'd fully occlude it otherwise) */
   if (layer('ly-det')) {
     ctx.lineWidth = 1.5;
     for (const d of of('detection')) {
@@ -423,14 +864,14 @@ function render() {
       `re-inspect / treat</span>`});
   }
 
-  chrome(w, h);
+  chrome(ctx, w, h);
 }
 
-function ring(p, r) {
+function ring(ctx, p, r) {
   ctx.strokeStyle = css('--surface'); ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.stroke();
 }
-function xmark(p, s) {
+function xmark(ctx, p, s) {
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(p.x - s, p.y - s); ctx.lineTo(p.x + s, p.y + s);
@@ -438,7 +879,7 @@ function xmark(p, s) {
   ctx.stroke();
 }
 
-function heatmap(w, h) {
+function heatmap(ctx, w, h) {
   const dets = of('detection');
   if (!dets.length) return;
   const off = document.createElement('canvas');
@@ -463,16 +904,15 @@ function heatmap(w, h) {
     if (!a) continue;
     const t = Math.min(1, a / amax) * (stops.length - 1);
     const k = Math.min(stops.length - 2, Math.floor(t)), f = t - k;
-    for (let c = 0; c < 3; c++)
-      px[i + c] = Math.round(stops[k][c] + (stops[k + 1][c] - stops[k][c]) * f);
+    for (let c2 = 0; c2 < 3; c2++)
+      px[i + c2] = Math.round(stops[k][c2] + (stops[k + 1][c2] - stops[k][c2]) * f);
     px[i + 3] = Math.min(215, a * 2.2);
   }
   oc.putImageData(img, 0, 0);
   ctx.drawImage(off, 0, 0, w, h);
 }
 
-function chrome(w, h) {
-  // Scale bar (nice 1/2/5 series filling ~60-140px), bottom-left.
+function chrome(ctx, w, h) {
   let m = Math.pow(10, Math.floor(Math.log10(100 / proj.s)));
   for (const k of [1, 2, 5, 10, 20, 50]) {
     if (m * k * proj.s >= 60) { m *= k; break; }
@@ -484,7 +924,6 @@ function chrome(w, h) {
   ctx.fillStyle = css('--ink-2');
   ctx.font = '11px system-ui, sans-serif';
   ctx.fillText(m >= 1000 ? (m / 1000) + ' km' : m + ' m', x + 4, y - 6);
-  // North arrow, top-right.
   const nx = w - 26, ny = 30;
   ctx.beginPath(); ctx.moveTo(nx, ny - 12); ctx.lineTo(nx - 5, ny + 4);
   ctx.lineTo(nx + 5, ny + 4); ctx.closePath();
@@ -493,77 +932,111 @@ function chrome(w, h) {
   ctx.textAlign = 'left';
 }
 
-/* ---------- zoom / pan ---------- */
-let dragging = null;
+/* ---------- map zoom / pan / tooltip (wired after buildPanels) ---------- */
+function wireMap() {
+  const canvas = canvasEl();
+  let dragging = null;
 
-canvas.addEventListener('wheel', ev => {
-  ev.preventDefault();
-  const r = canvas.getBoundingClientRect();
-  const mx = ev.clientX - r.left, my = ev.clientY - r.top;
-  const k2 = Math.min(64, Math.max(1, view.k * (ev.deltaY < 0 ? 1.25 : 0.8)));
-  const g = k2 / view.k;
-  // keep the world point under the cursor fixed while scaling
-  view.tx = mx * (1 - g) + view.tx * g;
-  view.ty = my * (1 - g) + view.ty * g;
-  view.k = k2;
-  if (view.k === 1) { view.tx = view.ty = 0; }   // fully out = snap home
-  canvas.style.cursor = view.k > 1 ? 'grab' : '';
-  render();
-}, { passive: false });
+  canvas.addEventListener('wheel', ev => {
+    ev.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+    const k2 = Math.min(64, Math.max(1, view.k * (ev.deltaY < 0 ? 1.25 : 0.8)));
+    const g = k2 / view.k;
+    view.tx = mx * (1 - g) + view.tx * g;
+    view.ty = my * (1 - g) + view.ty * g;
+    view.k = k2;
+    if (view.k === 1) { view.tx = view.ty = 0; }
+    canvas.style.cursor = view.k > 1 ? 'grab' : '';
+    render();
+  }, { passive: false });
 
-canvas.addEventListener('mousedown', ev => {
-  if (view.k === 1) return;                      // nothing to pan at base zoom
-  dragging = { x: ev.clientX, y: ev.clientY };
-  canvas.style.cursor = 'grabbing';
-  $('tip').style.display = 'none';
-});
-window.addEventListener('mousemove', ev => {
-  if (!dragging) return;
-  view.tx += ev.clientX - dragging.x;
-  view.ty += ev.clientY - dragging.y;
-  dragging = { x: ev.clientX, y: ev.clientY };
-  render();
-});
-window.addEventListener('mouseup', () => {
-  if (dragging) { dragging = null; canvas.style.cursor = 'grab'; }
-});
-canvas.addEventListener('dblclick', () => {
-  view.k = 1; view.tx = view.ty = 0;
-  canvas.style.cursor = '';
-  render();
-});
+  canvas.addEventListener('mousedown', ev => {
+    if (view.k === 1) return;
+    dragging = { x: ev.clientX, y: ev.clientY };
+    canvas.style.cursor = 'grabbing';
+    $('tip').style.display = 'none';
+  });
+  window.addEventListener('mousemove', ev => {
+    if (!dragging) return;
+    view.tx += ev.clientX - dragging.x;
+    view.ty += ev.clientY - dragging.y;
+    dragging = { x: ev.clientX, y: ev.clientY };
+    render();
+  });
+  window.addEventListener('mouseup', () => {
+    if (dragging) { dragging = null; canvas.style.cursor = 'grab'; }
+  });
+  canvas.addEventListener('dblclick', () => {
+    view.k = 1; view.tx = view.ty = 0;
+    canvas.style.cursor = '';
+    render();
+  });
 
-/* ---------- tooltip ---------- */
-canvas.addEventListener('mousemove', ev => {
-  if (dragging) return;
-  const r = canvas.getBoundingClientRect();
-  const mx = ev.clientX - r.left, my = ev.clientY - r.top;
-  let best = null, bd = Infinity;
-  for (const t of state.hits) {
-    const d = Math.hypot(t.x - mx, t.y - my);
-    if (d <= Math.max(t.r, 12) && d < bd) { bd = d; best = t; }
-  }
-  const tip = $('tip');
-  if (!best) { tip.style.display = 'none'; return; }
-  tip.innerHTML = best.html;
-  tip.style.display = 'block';
-  const tw = tip.offsetWidth;
-  tip.style.left = Math.min(mx + 14, r.width - tw - 6) + 'px';
-  tip.style.top = (my + 14) + 'px';
-});
-canvas.addEventListener('mouseleave', () => $('tip').style.display = 'none');
+  canvas.addEventListener('mousemove', ev => {
+    if (dragging) return;
+    const r = canvas.getBoundingClientRect();
+    const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+    let best = null, bd = Infinity;
+    for (const t of state.hits) {
+      const d = Math.hypot(t.x - mx, t.y - my);
+      if (d <= Math.max(t.r, 12) && d < bd) { bd = d; best = t; }
+    }
+    const tip = $('tip');
+    if (!best) { tip.style.display = 'none'; return; }
+    tip.innerHTML = best.html;
+    tip.style.display = 'block';
+    const tw = tip.offsetWidth;
+    tip.style.left = Math.min(mx + 14, r.width - tw - 6) + 'px';
+    tip.style.top = (my + 14) + 'px';
+  });
+  canvas.addEventListener('mouseleave', () => $('tip').style.display = 'none');
+}
 
 /* ---------- wiring ---------- */
+buildPanels();
+wireMap();
+
 $('flight').addEventListener('change', async ev => {
   state.selected = ev.target.value;
-  await loadEvents(); render(); stats(); table();
+  await loadEvents(); render(); stats(); table(); status(); detList(); profile();
 });
 for (const id of ['ly-heat','ly-det','ly-drop','ly-abort','ly-track','ly-site'])
   $(id).addEventListener('change', render);
 $('refresh').addEventListener('click', reload);
-window.addEventListener('resize', render);
+window.addEventListener('resize', () => { render(); profile(); });
+new ResizeObserver(() => { render(); profile(); })
+  .observe(document.querySelector('.panel[data-id=map] .pb'));
+new ResizeObserver(() => profile())
+  .observe(document.querySelector('.panel[data-id=profile] .pb'));
 
-setInterval(async () => {   // pick up a new flight landing while we're open
+setInterval(() => {
+  $('clock').textContent = new Date().toLocaleString([], {hour12: false});
+}, 1000);
+
+/* LIVE TICK, 3 s: refetch the selected scope's events so the take shows
+   detections and state changes as they happen, and re-render only when the
+   payload actually changed (a full redraw every 3 s would flicker the
+   tooltip and waste the board's CPU). Elapsed still ticks every second via
+   the clock interval below. */
+setInterval(async () => {
+  if (document.hidden) return;
+  try {
+    const evs = await getJSON('/api/events/' + state.selected);
+    const j = JSON.stringify(evs);
+    if (j !== state.lastEventsJson) {
+      state.lastEventsJson = j;
+      state.events = evs;
+      $('updated').textContent = 'updated ' +
+        new Date().toLocaleTimeString([], {hour12: false});
+      render(); stats(); table(); status(); detList(); profile();
+    } else {
+      status();     // keeps the elapsed counter moving while live
+    }
+  } catch {}
+}, 3000);
+
+setInterval(async () => {   // new flight appearing while we're open
   try {
     const j = JSON.stringify(await getJSON('/api/missions'));
     if (j !== state.lastMissionsJson) { state.lastMissionsJson = j; await reload(); }
