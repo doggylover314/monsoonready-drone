@@ -179,12 +179,42 @@ BATT_VOLT_MULT,10.802477
 # --- OLED status display (existing, verified working) ---
 NTF_DISPLAY_TYPE,2
 
-# --- Fence (user: to be configured later; flyaway backstop) ---
-# FENCE_ENABLE,1
-# FENCE_TYPE,7            # bitmask: alt + circle + polygon. VERIFY bit values
-# FENCE_ACTION,1          # 1 = RTL
-# FENCE_ALT_MAX,30        # m
-# FENCE_RADIUS,100        # m
+# --- Fence: flyaway backstop, ENABLED 2026-08-15 for the autonomous flight ---
+# WHY A CYLINDER AND NOT A POLYGON: a polygon has to be uploaded as a mission
+# item and validated, which is time and a new failure mode on a one-run day.
+# Altitude + circle needs nothing but these five numbers.
+#
+# THE ARDUINO CANNOT OVERRIDE THIS, and that is structural rather than a
+# promise. The fence lives inside the Pixhawk, downstream of every command the
+# companion sends; the companion only ever asks for a position or a velocity
+# and ArduPilot decides what to do with the request. Audited 2026-08-15: the
+# whole outbound vocabulary of uno_q/ is heartbeat, command_long (DO_SET_MODE,
+# COMPONENT_ARM_DISARM, NAV_TAKEOFF, DO_SET_SERVO, SET_MESSAGE_INTERVAL) and
+# the two SET_POSITION_TARGET messages. There is NO PARAM_SET and NO
+# MAV_CMD_DO_FENCE_ENABLE in the flight path at all, so no code on the board
+# can disable, resize, or breach-exempt the fence. Parameter writing lives
+# only in tools/parameters.py, which is run by hand from the laptop.
+# ON BREACH the action below changes the FLIGHT MODE. mission.py sees a mode
+# that is not GUIDED and goes STANDDOWN, which stops it commanding and does
+# NOT re-command a mode (STANDDOWN is deliberately excluded from the
+# end_mode branch), so the fence's RTL is left alone to run.
+FENCE_ENABLE,1
+# 1 = max altitude, 2 = circle, 4 = polygon (so 3 = alt + circle).
+# Deliberately NOT 7: enabling the polygon bit with no polygon loaded is a
+# way to fail a prearm check on the day.
+FENCE_TYPE,3
+FENCE_ACTION,1            # 1 = RTL (falls back to LAND if RTL is impossible)
+FENCE_ALT_MAX,30          # m. Survey is 15 m, RTL_ALT_M is 15, so 2x margin.
+FENCE_RADIUS,100          # m FROM HOME (= where it arms), not from the plot.
+                          # Survey reaches ~25 m from its start corner; 100 m
+                          # covers the walk from the ground station to the
+                          # start corner and still contains a flyaway.
+FENCE_MARGIN,2            # m of warning before the breach action fires
+# NOTE: AVOID_ENABLE stays 0. Bit 1 of AVOID_ENABLE is FENCE avoidance, the
+# soft "slow to a stop at the fence" behaviour, and turning it on would be an
+# untested change on a one-run day. The fence FAILSAFE above is independent of
+# it and is the layer that actually protects: the aircraft may cross the line,
+# and then it turns around.
 
 # --- RECOMMENDED notch upgrade: in-flight gyro FFT (INS_HNTCH_MODE 4).
 #     DEAD END (2026-07-25, hwdef-verified): 6-motor DShot/bdshot impossible on
