@@ -16,8 +16,14 @@ state machine that was proven in simulation is the one that flies.
 
     setsid nohup ~/venv/bin/python uno_q/run_mission.py \
         --conn udpin:127.0.0.1:14555 \
-        --waypoints wp_farm.txt --hfov-deg 58.2 \
+        --waypoints wp_farm.txt --hfov-deg <MEASURED> \
         > ~/mission.log 2>&1 &
+
+--hfov-deg IS NOT OPTIONAL IN PRACTICE. Omit it and detector._locate falls
+through to the nadir assumption and reports every puddle at the AIRCRAFT'S
+own position, so the drop lands where the aircraft was standing when it saw
+the water. Measure it with uno_q/calibrate_camera.py; the 58.2 that used to
+sit in this example was never a measurement and must not be quoted as one.
 
 LAUNCH IT DETACHED, exactly like that. `setsid` puts the runner in its own
 session so closing the ssh connection does not deliver SIGHUP to an aircraft
