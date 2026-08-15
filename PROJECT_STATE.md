@@ -449,3 +449,9 @@ STILL UNKNOWN AND NEEDED: `~/detect_worker.log`, which holds the actual cv2 erro
 - **44 (16:01): armed at 8 sats / HDOP 1.66**, below the project's own 10-sat / 1.5-HDOP arming rule. It recovered to 14 sats in flight, but that arm should not have happened.
 - All four logs: `PreArm: Rangefinder 2: No Data` throughout, the known-dead second rangefinder.
 - Vibration is fine everywhere (VibeZ median 8.4-9.0 vs the <15 gate). Hover throttle steady at 0.390. Burn rate ~500 mAh/min, so ~12.6 min to a 20% reserve on the 8000 mAh pack.
+
+### Camera failure narrowed (2026-08-15 evening)
+- CORRECTION of my earlier guess: calibrate_camera ran ON THE BOARD (user). So /dev/video0 at index 0 OPENED AND CAPTURED midday, then failed all three dashboard launches after ~15:45. Index 0 is CORRECT on the board.
+- detect_worker.log: `cap_v4l ... VIDEOIO(V4L2:/dev/video0): can't open camera by index`, 0.07-0.14 s after process start, identical x3. Fails at open(), before any format negotiation. cv2 does not print errno, so cause unproven.
+- Topology verified on the board: lsusb shows Logitech B525 (046d:0836); v4l2-ctl --list-devices: B525 = video0 (capture) + video1 (metadata) + media0; video2/3 = Qualcomm Venus encoder/decoder, NOT cameras. Nodes dated Aug 15 11:25 = no re-enumeration all day.
+- Candidates: (a) a holder process left from midday (V4L2 capture is exclusive at stream time; a stuck consumer blocks later opens), (b) permission/group difference between the SSH session that ran the FOV test and the process tree that spawned the dashboard. Diagnostics issued: fuser on video0/1, id, v4l2-ctl one-frame grab (real errno), cv2 open one-liner.
