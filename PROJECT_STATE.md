@@ -455,3 +455,8 @@ STILL UNKNOWN AND NEEDED: `~/detect_worker.log`, which holds the actual cv2 erro
 - detect_worker.log: `cap_v4l ... VIDEOIO(V4L2:/dev/video0): can't open camera by index`, 0.07-0.14 s after process start, identical x3. Fails at open(), before any format negotiation. cv2 does not print errno, so cause unproven.
 - Topology verified on the board: lsusb shows Logitech B525 (046d:0836); v4l2-ctl --list-devices: B525 = video0 (capture) + video1 (metadata) + media0; video2/3 = Qualcomm Venus encoder/decoder, NOT cameras. Nodes dated Aug 15 11:25 = no re-enumeration all day.
 - Candidates: (a) a holder process left from midday (V4L2 capture is exclusive at stream time; a stuck consumer blocks later opens), (b) permission/group difference between the SSH session that ran the FOV test and the process tree that spawned the dashboard. Diagnostics issued: fuser on video0/1, id, v4l2-ctl one-frame grab (real errno), cv2 open one-liner.
+
+### 2026-08-15 evening: the board REBOOTED since the farm failures, so the camera wedge is cleared but UNPROVEN
+- uptime 39 min at 17:34 = booted ~16:55, after the three failed launches. Camera now healthy: arduino in video group, no holder (fuser empty), v4l2-ctl one-frame grab OK, cv2 open+read OK. Whatever wedged /dev/video0 at the farm (holder process vs UVC/USB state vs launch environment) is unproven and can recur at the field shoot.
+- The Aug 15 11:25 /dev/video* timestamps are NOT proof of no-reboot: likely stamped by the pre-NTP boot clock (board sat on the internet-less MR3020 LAN, saved clock stale). Probable explanation, not verified.
+- User ordered verbose logging (design questions first, per SCOPE RULES 2), plus detect_worker self-diagnosis on camera failure pending answers. Questions sent 2026-08-15 evening.
