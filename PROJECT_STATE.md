@@ -486,3 +486,10 @@ V4L2 INDEX SHUFFLING. Tonight the user replugged the camera and the Qualcomm Ven
 - Dashboard: light mode DEFAULT with a dark toggle (glare). Panel layout stored SERVER-SIDE so both laptops see the same layout across reboots/refreshes.
 - basestation app.py RENAMED dashboard.py, log ~/logs/dashboard.log (logs named after their script).
 - AUTOMATION DELETED (rule now in CLAUDE.md SCOPE RULES 6): repo-side monsoonready-sync.service, monsoonready-sync.user.service, board_sync.sh removed and deploy/README.md rewritten manual-only; board-side removal commands issued (user units, system units, crontab entries, git-pull-script.sh, linger).
+
+### 2026-08-16 ~00:15 IST: hub PROVEN, green light for the USB migration
+- Camera through hub: 600/600 frames (40 s, index 2). Pixhawk simultaneously: 8/8 heartbeats, three consecutive runs. dmesg clean. THE HUB CARRIES BOTH.
+- Board clock NTP-synced, TZ Asia/Kolkata (RTC chip reads 1970, i.e. no battery, as diagnosed).
+- Board automation confirmed gone: user+system sync units removed, crontab has zero jobs, linger off, git-pull files deleted.
+- DECISION (user): MR3020 will run WISP mode at the field, uplinked to a phone hotspot, so the board has internet and NTP there. (Reverses the 08-15 "no WISP, no time" call.)
+- NOW EXECUTING (all user-ordered): delete shovel chain; conn switches to Pixhawk USB by-id with auto-resolve; boardlog logging everywhere; camera opened by name never index; photo queue pipeline + photos/manual_photos folders; dashboard renamed dashboard.py with light default + toggle, server-stored layout, test-everything button, manual photo button; test_everything.py; SERIAL5_PROTOCOL,-1 in the param file; checklist updated.
