@@ -8,18 +8,27 @@ Wires the real parts together, where sitl_test.py wires the fake ones:
                                  output (camera + ONNX in their own process;
                                  --inline-detector restores in-loop inference)
     LogDropper (prints)          PixhawkServoDropper (moves the gate)
-    tcp:127.0.0.1:5760           udpin:127.0.0.1:14555 (the shovel pump)
+    tcp:127.0.0.1:5760           auto (the Pixhawk's USB via the hub)
     no base station              basestation_cmd set, launched on DONE
 
 Everything else, above all mission.py, is identical. That is the point: the
 state machine that was proven in simulation is the one that flies.
 
     setsid nohup ~/venv/bin/python uno_q/run_mission.py \
-        --conn udpin:127.0.0.1:14555 \
-        --waypoints wp_farm.txt \
-        > ~/mission.log 2>&1 &
+        --waypoints wp_field.txt &
 
---hfov-deg now DEFAULTS to the measured 56.2 deg (camera_geom, tape measure
+--conn defaults to 'auto' (2026-08-16): the link is now the Pixhawk's own
+USB plug on the board's hub, resolved from /dev/serial/by-id by
+mavlink_io.resolve_conn, so no device number can shuffle underneath us. The
+byte-shovel (STM32 + pump + SERIAL5) this replaces is deleted; SITL still
+works by passing --conn tcp:127.0.0.1:5760.
+
+Everything prints AND appends to ~/logs/run_mission.log (boardlog): the
+program owns its log file, so it logs identically launched by hand, by the
+dashboard, or detached under nohup. The farm-day rule (SCOPE RULES 1):
+every launch, every command, every failure reason, in the file.
+
+--hfov-deg DEFAULTS to the measured 56.2 deg (camera_geom, tape measure
 2026-08-15), so it no longer has to be passed and no flight can silently
 fall back to the nadir assumption. Re-measure with
 uno_q/calibrate_camera.py if the camera or its housing ever changes, and
@@ -29,14 +38,6 @@ LAUNCH IT DETACHED, exactly like that. `setsid` puts the runner in its own
 session so closing the ssh connection does not deliver SIGHUP to an aircraft
 in the middle of a descent. This is the primary defence; the signal handling
 below is the backstop for when it was forgotten.
-
---conn: the aircraft has NO Linux tty to the Pixhawk (all four /dev/ttyS*
-refuse to configure, established 2026-08-13). The link is Linux -> unix
-socket -> arduino-router -> STM32 (sketch_mav_shovel) -> Serial1 -> SERIAL5,
-and mav_shovel_pump.py presents that as plain UDP, so --conn is
-udpin:127.0.0.1:14555 AND THE PUMP MUST ALREADY BE RUNNING. There is
-deliberately no default, so this fails at the argument parser rather than by
-silently opening the wrong device.
 
 Waypoint file: one "lat,lon" per line, blank lines and #comments ignored.
 
@@ -71,6 +72,7 @@ import subprocess
 import sys
 import time
 
+from boardlog import BoardLog
 from camera_geom import DEFAULT_HFOV_DEG, CameraGeometry
 from detect_worker import DEFAULT_OUT as DET_FILE_DEFAULT
 from detector import FileDetector, OnnxDetector
@@ -86,11 +88,12 @@ DEFAULT_MODEL = os.path.join(
     'models', 'best.onnx')
 
 
-def read_waypoints(path):
+def read_waypoints(path, log):
     wps = []
     try:
         f = open(os.path.expanduser(path))
     except OSError as exc:
+        log.error(f"waypoint file unreadable: {exc}")
         sys.exit(f"waypoint file unreadable: {exc}")
     with f:
         for n, line in enumerate(f, 1):
@@ -100,19 +103,20 @@ def read_waypoints(path):
             try:
                 lat, lon = (float(v) for v in line.split(','))
             except ValueError:
+                log.error(f"{path}:{n}: expected 'lat,lon', got {line!r}")
                 sys.exit(f"{path}:{n}: expected 'lat,lon', got {line!r}")
             wps.append((lat, lon))
     if not wps:
+        log.error(f"{path}: no waypoints")
         sys.exit(f"{path}: no waypoints")
     return wps
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--conn', required=True,
-                    help='ON THE AIRCRAFT: udpin:127.0.0.1:14555, with '
-                         'mav_shovel_pump.py running in another terminal. '
-                         'SITL: tcp:127.0.0.1:5760. No default on purpose.')
+    ap.add_argument('--conn', default='auto',
+                    help="'auto' (default) = the Pixhawk's USB, resolved "
+                         "from /dev/serial/by-id. SITL: tcp:127.0.0.1:5760.")
     ap.add_argument('--baud', type=int, default=115200)
     # Resolved from THIS FILE's location, not from $HOME. The old default was
     # ~/uno_q/best.onnx, a path that stopped existing when the board was
@@ -124,9 +128,10 @@ def main():
     ap.add_argument('--survey-alt', type=float, default=15.0)
     ap.add_argument('--drop-alt', type=float, default=3.0)
     ap.add_argument('--conf', type=float, default=0.5)
-    # 0, confirmed on the board at the farm 2026-08-15 (the B525 is the
-    # only USB video device on the reflashed image).
-    ap.add_argument('--camera', type=int, default=0)
+    # 'auto' = resolve the camera BY NAME (camera.py). Bare indexes are an
+    # enumeration race with the Venus codecs and losing that race is exactly
+    # the 2026-08-15 farm failure. A number or /dev/videoN pins it for bench.
+    ap.add_argument('--camera', default='auto')
     ap.add_argument('--frame-w', type=int, default=1280)
     ap.add_argument('--frame-h', type=int, default=720)
     # Defaults to the MEASURED value in camera_geom (56.2 deg, tape measure at
@@ -162,26 +167,30 @@ def main():
     ap.add_argument('--no-basestation', action='store_true')
     args = ap.parse_args()
 
-    wps = read_waypoints(args.waypoints)
+    log = BoardLog('run_mission')
+    log(f"[run] ===== launch: {' '.join(sys.argv)} =====")
+
+    wps = read_waypoints(args.waypoints, log)
     model = os.path.expanduser(args.model)
     if not os.path.exists(model):
+        log.error(f"model not found: {model}")
         sys.exit(f"model not found: {model}")
 
-    print(f"[run] connecting {args.conn} ...")
-    io = MavIO(args.conn, baud=args.baud)
+    log(f"[run] connecting {args.conn} ...")
+    io = MavIO(args.conn, baud=args.baud, log=log)
     io.wait_ready()
-    print(f"[run] heartbeat from system {io.conn.target_system}")
+    log(f"[run] heartbeat from system {io.conn.target_system}")
     io.setup_streams()
 
     geom = None
     if args.hfov_deg:
         geom = CameraGeometry(args.frame_w, args.frame_h, args.hfov_deg)
         fw, fh = geom.footprint_m(args.survey_alt)
-        print(f"[run] camera {args.hfov_deg:.1f}deg hfov -> footprint at "
-              f"{args.survey_alt:.0f}m is {fw:.1f} x {fh:.1f} m")
+        log(f"[run] camera {args.hfov_deg:.1f}deg hfov -> footprint at "
+            f"{args.survey_alt:.0f}m is {fw:.1f} x {fh:.1f} m")
     else:
-        print("[run] no --hfov-deg: detections assumed directly below "
-              "the aircraft (nadir)")
+        log("[run] no --hfov-deg: detections assumed directly below "
+            "the aircraft (nadir)")
 
     # Detection default (2026-08-01): inference in its own PROCESS
     # (detect_worker.py), results read from a file. Measured reason: in-line
@@ -190,19 +199,23 @@ def main():
     # flipping the mode switch goes unnoticed.
     if args.inline_detector:
         detector = OnnxDetector(model, camera=args.camera, conf=args.conf,
-                                geom=geom, mount_yaw_deg=args.mount_yaw_deg)
+                                geom=geom, mount_yaw_deg=args.mount_yaw_deg,
+                                log=log)
     else:
-        _spawn_or_reuse_worker(args, model)
+        _spawn_or_reuse_worker(args, model, log)
         detector = FileDetector(args.det_file, conf=args.conf,
-                                geom=geom, mount_yaw_deg=args.mount_yaw_deg)
+                                geom=geom, mount_yaw_deg=args.mount_yaw_deg,
+                                log=log)
     if not detector.preflight():
+        log.error("[run] camera preflight failed, refusing to fly a blind "
+                  "survey")
         sys.exit("[run] camera preflight failed, refusing to fly a blind survey")
 
     if args.dry_run:
         # Deliberately BEFORE the MissionLog is created. Building it first
         # left a phantom "in progress" flight on the judged dashboard after
         # every bench dry-run.
-        print("[run] DRY RUN: not arming. Polling the detector for 30s.")
+        log("[run] DRY RUN: not arming. Polling the detector for 30s.")
         deadline = time.monotonic() + 30
         seen = 0
         while time.monotonic() < deadline:
@@ -210,35 +223,35 @@ def main():
             det = detector.poll(io.tel)
             if det:
                 seen += 1
-                print(f"[run] detection {det.lat:.7f},{det.lon:.7f} "
-                      f"conf {det.confidence:.2f}")
+                log(f"[run] detection {det.lat:.7f},{det.lon:.7f} "
+                    f"conf {det.confidence:.2f}")
         if io.tel.lat is None:
-            print("[run] NOTE: no GPS fix arrived, so the detector was never "
-                  "polled (it needs a position to attach a detection to). "
-                  "Indoors this is expected and the dry run proved nothing "
-                  "beyond the link and the camera.")
+            log("[run] NOTE: no GPS fix arrived, so the detector was never "
+                "polled (it needs a position to attach a detection to). "
+                "Indoors this is expected and the dry run proved nothing "
+                "beyond the link and the camera.")
         else:
-            print(f"[run] dry run complete, {seen} detection(s)")
+            log(f"[run] dry run complete, {seen} detection(s)")
         return
 
     if args.no_drop:
         dropper = LogDropper()
-        print("[run] DROPS DISABLED (logging dropper)")
+        log("[run] DROPS DISABLED (logging dropper)")
     else:
         # Raises if the gate does not answer: that is the pre-arm test.
         dropper = PixhawkServoDropper(
             io, channel=args.servo_channel,
             closed_us=args.servo_closed_us, open_us=args.servo_open_us)
-        print(f"[run] dropper armed on servo channel {args.servo_channel} "
-              f"({args.servo_closed_us}us closed / {args.servo_open_us}us open)")
+        log(f"[run] dropper armed on servo channel {args.servo_channel} "
+            f"({args.servo_closed_us}us closed / {args.servo_open_us}us open)")
 
     recorder = MissionLog(args.data_dir)
-    print(f"[run] logging to {recorder.path}")
+    log(f"[run] logging to {recorder.path}")
 
     bs_cmd = None
     if not args.no_basestation:
         bs = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                          'basestation', 'app.py')
+                          'basestation', 'dashboard.py')
         bs_cmd = [sys.executable, bs, '--data-dir', args.data_dir]
 
     cfg = MissionConfig(waypoints=wps, survey_alt_m=args.survey_alt,
@@ -252,26 +265,26 @@ def main():
         # path, which is what commands RTL and closes the log.
         if stop['why'] is None:
             stop['why'] = f"{signal.Signals(signum).name} received"
-            print(f"\n[run] {stop['why']}: winding up, {cfg.end_mode} at the "
-                  f"next tick")
+            log(f"[run] {stop['why']}: winding up, {cfg.end_mode} at the "
+                f"next tick")
 
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, _wind_up)
 
-    print(f"[run] {len(wps)} waypoints, survey {args.survey_alt}m, "
-          f"drop at {args.drop_alt}m rangefinder")
-    mission = Mission(io, detector, dropper, cfg, recorder=recorder,
+    log(f"[run] {len(wps)} waypoints, survey {args.survey_alt}m, "
+        f"drop at {args.drop_alt}m rangefinder")
+    mission = Mission(io, detector, dropper, cfg, log=log, recorder=recorder,
                       should_stop=lambda: stop['why'])
     try:
         final = mission.run()
-        print(f"[run] finished in state {final}, "
-              f"drops={getattr(dropper, 'succeeded', dropper.fired)}")
+        log(f"[run] finished in state {final}, "
+            f"drops={getattr(dropper, 'succeeded', dropper.fired)}")
     except BaseException as exc:                       # noqa: BLE001
         # Anything at all, including KeyboardInterrupt that landed between
         # ticks. The aircraft is airborne; get it home before re-raising.
-        print(f"[run] MISSION RAISED in state {mission.state}: "
-              f"{type(exc).__name__}: {exc}")
-        _emergency_rtl(io, cfg.end_mode)
+        log.error(f"[run] MISSION RAISED in state {mission.state}: "
+                  f"{type(exc).__name__}: {exc}")
+        _emergency_rtl(io, cfg.end_mode, log)
         try:
             recorder.mission_end(f'CRASHED:{mission.state}',
                                  getattr(dropper, 'succeeded', None))
@@ -285,7 +298,7 @@ def main():
             pass
 
 
-def _spawn_or_reuse_worker(args, model):
+def _spawn_or_reuse_worker(args, model, log):
     """Start detect_worker.py unless one is already publishing.
 
     'Already publishing' = the output file is fresher than FileDetector's
@@ -294,6 +307,10 @@ def _spawn_or_reuse_worker(args, model):
     hand-started worker and one left behind by a SIGKILLed runner, and it is
     what makes double-spawning (two processes fighting over one V4L2 device)
     impossible from this entry point.
+
+    The worker writes its own ~/logs/detect_worker.log (boardlog), so its
+    stdout goes to /dev/null here: redirecting it into the same file would
+    duplicate every line.
 
     A worker WE spawn is stopped again at interpreter exit (atexit covers
     every path out of main, including sys.exit and the wind-up-on-signal
@@ -306,45 +323,45 @@ def _spawn_or_reuse_worker(args, model):
     except OSError:
         fresh = False
     if fresh:
-        print(f"[run] detect worker already publishing {det_file}, reusing it")
+        log(f"[run] detect worker already publishing {det_file}, reusing it")
         return None
     worker_py = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              'detect_worker.py')
-    log_path = os.path.expanduser('~/detect_worker.log')
-    with open(log_path, 'a') as logf:
-        proc = subprocess.Popen(
-            [sys.executable, worker_py, '--model', model,
-             '--camera', str(args.camera), '--conf', str(args.conf),
-             '--out', det_file],
-            stdout=logf, stderr=subprocess.STDOUT, start_new_session=True)
-    print(f"[run] detect worker spawned (pid {proc.pid}, log {log_path})")
-    atexit.register(_stop_worker, proc)
+    proc = subprocess.Popen(
+        [sys.executable, worker_py, '--model', model,
+         '--camera', str(args.camera), '--conf', str(args.conf),
+         '--out', det_file],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    log(f"[run] detect worker spawned (pid {proc.pid}, "
+        f"log ~/logs/detect_worker.log)")
+    atexit.register(_stop_worker, proc, log)
     return proc
 
 
-def _stop_worker(proc):
+def _stop_worker(proc, log):
     if proc.poll() is None:
         proc.terminate()
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
-        print("[run] detect worker stopped")
+        log("[run] detect worker stopped")
 
 
-def _emergency_rtl(io, mode, attempts=3):
+def _emergency_rtl(io, mode, log, attempts=3):
     """Best effort, and it really is best effort: if the runner is dying
     because the link died, this cannot work and says so rather than hanging."""
     for i in range(1, attempts + 1):
         try:
             confirmed = io.set_mode(mode)
-            print(f"[run] emergency {mode} commanded (attempt {i})"
-                  + ("" if confirmed else ", NOT confirmed by heartbeat"))
+            log(f"[run] emergency {mode} commanded (attempt {i})"
+                + ("" if confirmed else ", NOT confirmed by heartbeat"))
             return True
         except Exception as exc:                       # noqa: BLE001
-            print(f"[run] emergency {mode} attempt {i} failed: {exc}")
-    print(f"[run] COULD NOT COMMAND {mode}. Aircraft is holding in GUIDED. "
-          f"PILOT: take it on the mode switch.")
+            log.error(f"[run] emergency {mode} attempt {i} failed: {exc}")
+    log.error(f"[run] COULD NOT COMMAND {mode}. Aircraft is holding in "
+              f"GUIDED. PILOT: take it on the mode switch.")
     return False
 
 

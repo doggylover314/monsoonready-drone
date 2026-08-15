@@ -5,8 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MonsoonReady base station</title>
 <style>
+  /* LIGHT is the default (user 2026-08-16: dark unreadable in sun glare);
+     the header toggle switches to dark and the choice persists. */
   :root {
-    /* dark-only (light theme removed 2026-07-30, user request) */
+    color-scheme: light;
+    --page:      #f2f2ef;
+    --surface:   #ffffff;
+    --ink:       #191918;
+    --ink-2:     #45443f;
+    --muted:     #85837b;
+    --grid:      #e6e6e2;
+    --baseline:  #d7d7d2;
+    --border:    rgba(0,0,0,0.13);
+    --good:      #0a8a0a;
+    --critical:  #c22f2f;
+    --det-dot:   #2f6fce;
+    --track:     #6b6963;
+    --site-dim:  0.55;
+    --shadow:    rgba(0,0,0,.15);
+    --cell:      86px;   /* grid row height; panel heights are multiples */
+  }
+  :root[data-theme=dark] {
     color-scheme: dark;
     --page:      #0d0d0d;
     --surface:   #1a1a19;
@@ -21,7 +40,7 @@
     --det-dot:   #86b6ef;
     --track:     #898781;
     --site-dim:  0.40;
-    --cell:      86px;   /* grid row height; panel heights are multiples */
+    --shadow:    rgba(0,0,0,.4);
   }
   * { box-sizing: border-box; }
   body {
@@ -50,7 +69,7 @@
     display: none; position: absolute; right: 0; top: calc(100% + 6px);
     z-index: 40; background: var(--surface); border: 1px solid var(--border);
     border-radius: 10px; padding: 10px 14px; min-width: 190px;
-    box-shadow: 0 4px 18px rgba(0,0,0,.4);
+    box-shadow: 0 4px 18px var(--shadow);
   }
   #panelMenu.open { display: block; }
   #panelMenu label { display: block; padding: 3px 0; }
@@ -59,7 +78,9 @@
   /* ---------- tiling grid ----------
      12-column grid; every panel carries col/row spans in data attributes,
      mirrored into inline grid styles by layout(). Order in the DOM is the
-     layout order; drag-and-drop reorders the DOM and saves. */
+     layout order; drag-and-drop reorders the DOM and saves. The layout is
+     stored ON THE SERVER (data_dir/layout.json) so both laptops see the
+     same arrangement; localStorage is only the offline fallback. */
   #grid {
     display: grid; gap: 10px; padding: 0 16px 24px;
     grid-template-columns: repeat(12, 1fr);
@@ -111,7 +132,7 @@
     position: absolute; display: none; pointer-events: none; z-index: 5;
     background: var(--surface); color: var(--ink);
     border: 1px solid var(--border); border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0,0,0,.18);
+    box-shadow: 0 2px 10px var(--shadow);
     padding: 6px 9px; font-size: 12.5px; max-width: 260px;
   }
   #tip .t { color: var(--ink-2); }
@@ -162,7 +183,7 @@
   .tile .v.bad { color: var(--critical); }
 
   /* ---------- flight control ---------- */
-  #ctlOff { color: var(--muted); }
+  #ctlOff, #stOff, #phOff { color: var(--muted); }
   .ctlRow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .ctlRow + .ctlRow { margin-top: 9px; }
   .big {
@@ -178,7 +199,7 @@
   #ctlState { font-weight: 650; }
   #ctlState.run { color: var(--good); }
   #ctlNote { color: var(--ink-2); font-size: 12.5px; }
-  #ctlErr { color: var(--critical); font-size: 12.5px; }
+  #ctlErr, #stErr, #phErr { color: var(--critical); font-size: 12.5px; }
   #ctlLog {
     margin-top: 9px; background: var(--page); border: 1px solid var(--border);
     border-radius: 8px; padding: 7px 9px; font: 11.5px/1.4 ui-monospace,
@@ -192,6 +213,27 @@
   .pill.on { color: var(--good); border-color: var(--good); }
   .pill.off { color: var(--muted); }
 
+  /* ---------- self-test panel ---------- */
+  #stList { margin-top: 9px; font-size: 12.5px; }
+  .strow {
+    display: flex; gap: 8px; padding: 3px 2px; align-items: baseline;
+    border-bottom: 1px solid var(--grid);
+  }
+  .strow .nm { font-weight: 650; min-width: 86px; white-space: nowrap; }
+  .strow.ok .nm { color: var(--good); }
+  .strow.fail .nm { color: var(--critical); }
+  .strow.fail .dt { color: var(--critical); }
+  .strow .dt { color: var(--ink-2); }
+  #stNote { color: var(--muted); font-size: 12px; }
+
+  /* ---------- manual photo panel ---------- */
+  #phImgWrap { margin-top: 9px; }
+  #phImg {
+    max-width: 100%; max-height: 260px; display: none;
+    border: 1px solid var(--border); border-radius: 8px; cursor: zoom-in;
+  }
+  #phName { color: var(--muted); font-size: 11.5px; margin-top: 3px; }
+
   /* ---------- profile + detections + events ---------- */
   #prof { width: 100%; height: 100%; display: block; }
   #detList { font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -202,7 +244,7 @@
   #detList .row:first-child { color: var(--ink); }
   #detList .c { color: var(--det-dot); min-width: 66px; }
   #detList .a { color: var(--ink-2); margin-left: auto; }
-  #detList .none { color: var(--muted); padding: 8px 2px; }
+  #detList .none, .none { color: var(--muted); padding: 8px 2px; }
   table {
     border-collapse: collapse; width: 100%; font-size: 13px;
   }
@@ -223,6 +265,7 @@
   <select id="flight"></select>
   <button id="refresh" title="Reload data">&#10227;</button>
   <span class="sub" id="updated"></span>
+  <button id="themeBtn" title="Switch theme">&#9789; dark</button>
   <div id="panelMenuWrap">
     <button id="panelBtn">Panels &#9662;</button>
     <div id="panelMenu"></div>
@@ -268,17 +311,15 @@
   </div>
 
   <div class="pad" id="body-control">
-    <div id="ctlOff">Flight control is off. Start the base station with
+    <div id="ctlOff">Flight control is off. Start the dashboard with
       <code>--enable-control</code> to fly from here.</div>
     <div id="ctlOn" style="display:none">
       <div class="ctlRow">
         <span id="ctlState">–</span>
-        <span class="pill" id="ctlPump">pump ?</span>
         <span class="pill" id="ctlWp">waypoints ?</span>
         <span class="pill" id="ctlDrop">gate ?</span>
       </div>
       <div class="ctlRow">
-        <button class="big" id="btnPump">Start pump</button>
         <button class="big" id="btnArm">Arm controls</button>
         <button class="big go" id="btnGo" disabled>START MISSION</button>
         <button class="big stop" id="btnStop" disabled>STOP (RTL)</button>
@@ -286,6 +327,34 @@
       <div class="ctlRow"><span id="ctlNote"></span></div>
       <div class="ctlRow"><span id="ctlErr"></span></div>
       <div id="ctlLog"></div>
+    </div>
+  </div>
+
+  <div class="pad" id="body-selftest">
+    <div id="stOff">Flight control is off; the self-test runs from the
+      board shell instead: <code>test_everything.py</code></div>
+    <div id="stOn" style="display:none">
+      <div class="ctlRow">
+        <button class="big" id="btnTest">Test everything</button>
+        <span id="stNote"></span>
+      </div>
+      <div class="ctlRow"><span id="stErr"></span></div>
+      <div id="stList"></div>
+    </div>
+  </div>
+
+  <div class="pad" id="body-photo">
+    <div id="phOff">Flight control is off; no camera access from here.</div>
+    <div id="phOn" style="display:none">
+      <div class="ctlRow">
+        <button class="big" id="btnPhoto">Take photo</button>
+        <span id="phNote" class="sub"></span>
+      </div>
+      <div class="ctlRow"><span id="phErr"></span></div>
+      <div id="phImgWrap">
+        <img id="phImg" alt="latest manual photo">
+        <div id="phName"></div>
+      </div>
     </div>
   </div>
 
@@ -325,48 +394,84 @@ const fmtT = t => new Date(t * 1000).toLocaleString([], {hour12: false});
 const fmtHM = t => new Date(t * 1000).toLocaleTimeString([], {hour12: false});
 const fmtD = t => new Date(t * 1000).toLocaleDateString();
 
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + ' -> ' + r.status);
+  return r.json();
+}
+
+/* ---------- theme: light default, dark on toggle, persisted ---------- */
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('mr-theme', t); } catch {}
+  $('themeBtn').innerHTML = t === 'dark' ? '&#9788; light' : '&#9789; dark';
+  /* canvases sample the CSS variables at draw time, so redraw */
+  requestAnimationFrame(() => { render(); profile(); });
+}
+
 /* =====================================================================
    TILING LAYOUT. Panels: id -> {title, sub, w (1-12 cols), h (rows), on}.
-   DOM order inside #grid is the layout order. Everything persists to
-   localStorage and "Reset layout" restores DEFAULTS.
+   DOM order inside #grid is the layout order. Persists to the SERVER
+   (data_dir/layout.json) so both laptops share one arrangement across
+   reboots and refreshes; localStorage is the offline fallback and
+   "Reset layout" restores DEFAULTS.
    ===================================================================== */
 const DEFAULTS = {
-  order: ['map', 'status', 'control', 'totals', 'profile', 'detections', 'events'],
+  order: ['map', 'status', 'control', 'selftest', 'photo', 'totals',
+          'profile', 'detections', 'events'],
   panels: {
     map:        { title: 'Site map',        sub: 'detections & treatments', w: 8, h: 6, on: true },
     status:     { title: 'Mission status',  sub: 'live',                    w: 4, h: 3, on: true },
-    control:    { title: 'Flight control',  sub: 'launch & abort',          w: 4, h: 5, on: true },
+    control:    { title: 'Flight control',  sub: 'launch & abort',          w: 4, h: 4, on: true },
+    selftest:   { title: 'Self-test',       sub: 'no motors, no servos',    w: 4, h: 4, on: true },
+    photo:      { title: 'Manual photo',    sub: 'saved, never processed',  w: 4, h: 4, on: true },
     totals:     { title: 'Season totals',   sub: 'all data in scope',       w: 4, h: 3, on: true },
     profile:    { title: 'Altitude profile',sub: 'EKF alt + rangefinder',   w: 5, h: 3, on: true },
     detections: { title: 'Latest detections', sub: 'newest first',          w: 3, h: 3, on: true },
     events:     { title: 'Event log',       sub: 'everything but fixes',    w: 12, h: 4, on: true },
   },
 };
-/* v2: adding the control panel changes the default set, and a v1 save would
-   pin the old order and hide the new panel. Bumping the key retires those
-   saves rather than half-merging them. */
-const LS_KEY = 'mr-layout-v2';
+/* v3: pump removed, selftest+photo added; older saves would hide them. */
+const LS_KEY = 'mr-layout-v3';
+let layoutState = null;
 
-function loadLayout() {
-  let saved = null;
-  try { saved = JSON.parse(localStorage.getItem(LS_KEY)); } catch {}
+function mergeLayout(saved) {
   const lay = structuredClone(DEFAULTS);
   if (saved && saved.panels) {
     for (const id of Object.keys(lay.panels))
       if (saved.panels[id]) Object.assign(lay.panels[id], saved.panels[id]);
     // keep saved order, then append any panel ids added since the save
-    const known = saved.order?.filter(id => lay.panels[id]) ?? [];
+    const known = (saved.order || []).filter(id => lay.panels[id]);
     lay.order = [...known, ...lay.order.filter(id => !known.includes(id))];
   }
   return lay;
 }
-const layoutState = loadLayout();
 
+async function loadLayout() {
+  let saved = null;
+  try {
+    const srv = await getJSON('/api/layout');
+    if (srv && srv.panels) saved = srv;
+  } catch {}
+  if (!saved) {
+    try { saved = JSON.parse(localStorage.getItem(LS_KEY)); } catch {}
+  }
+  return mergeLayout(saved);
+}
+
+let saveTimer = null;
 function saveLayout() {
   const slim = { order: layoutState.order, panels: {} };
   for (const [id, p] of Object.entries(layoutState.panels))
     slim.panels[id] = { w: p.w, h: p.h, on: p.on };
-  localStorage.setItem(LS_KEY, JSON.stringify(slim));
+  try { localStorage.setItem(LS_KEY, JSON.stringify(slim)); } catch {}
+  clearTimeout(saveTimer);          // debounced: resizing fires per pixel
+  saveTimer = setTimeout(() => {
+    fetch('/api/layout', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(slim),
+    }).catch(() => {});
+  }, 600);
 }
 
 function buildPanels() {
@@ -439,18 +544,14 @@ function buildPanelMenu() {
   const rst = document.createElement('button');
   rst.textContent = 'Reset layout';
   rst.addEventListener('click', () => {
-    localStorage.removeItem(LS_KEY);
-    location.reload();
+    try { localStorage.removeItem(LS_KEY); } catch {}
+    fetch('/api/layout', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: '{}',
+    }).catch(() => {}).finally(() => location.reload());
   });
   m.appendChild(rst);
 }
-
-$('panelBtn').addEventListener('click', ev => {
-  ev.stopPropagation(); $('panelMenu').classList.toggle('open');
-});
-document.addEventListener('click', ev => {
-  if (!ev.target.closest('#panelMenuWrap')) $('panelMenu').classList.remove('open');
-});
 
 /* ---- move: drag a panel by its header, drop on another panel ---- */
 let dragId = null;
@@ -527,12 +628,6 @@ const state = {
   siteMeta: null, siteImg: null, hits: [], lastMissionsJson: '',
   lastEventsJson: '',
 };
-
-async function getJSON(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(url + ' -> ' + r.status);
-  return r.json();
-}
 
 async function loadSite() {
   try {
@@ -767,10 +862,11 @@ function profile() {
 const ctl = {
   enabled: false, armed: false, armTimer: null, running: false,
   // Preconditions from the last /api/control poll. setArmed MUST consult
-  // these: arming alone used to enable START even with the pump down, so a
-  // click during the take produced a red server error instead of a button
-  // that was simply not offered. Found in the 2026-08-15 laptop test.
+  // these: arming alone used to enable START even when the server would
+  // refuse, so a click during the take produced a red server error instead
+  // of a button that was simply not offered (2026-08-15 laptop test).
   canFly: false,
+  lastPhoto: null,
 };
 
 function goEnabled() {
@@ -787,15 +883,16 @@ function setArmed(on) {
   if (!ctl.armed && on) {
     $('ctlErr').textContent = ctl.running
       ? 'a mission is already running'
-      : 'cannot arm: the pump must be up and a waypoint file must exist';
+      : 'cannot arm: a waypoint file must exist (run make_waypoints.py)';
   } else if (ctl.armed) {
     $('ctlErr').textContent = '';   // arming worked; drop any stale complaint
   }
   if (ctl.armed) ctl.armTimer = setTimeout(() => setArmed(false), 8000);
 }
 
-async function ctlPost(path, body) {
-  $('ctlErr').textContent = '';
+async function ctlPost(path, body, errEl) {
+  errEl = errEl || $('ctlErr');
+  errEl.textContent = '';
   try {
     const r = await fetch(path, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -803,11 +900,46 @@ async function ctlPost(path, body) {
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.ok === false)
-      $('ctlErr').textContent = j.error || ('HTTP ' + r.status);
+      errEl.textContent = j.error || ('HTTP ' + r.status);
     return j;
   } catch (e) {
-    $('ctlErr').textContent = String(e);
+    errEl.textContent = String(e);
     return {};
+  }
+}
+
+function renderSelftest(c) {
+  $('btnTest').disabled = !!c.testing || ctl.running;
+  $('stNote').textContent = c.testing
+    ? 'test running (about 30 s)…'
+    : c.selftest
+      ? `last run ${Math.round(c.selftest.age_s)} s ago, took ` +
+        `${c.selftest.took_s} s, ` +
+        (c.selftest.ok_all ? 'ALL PASSED' : 'FAILURES BELOW')
+      : 'never run';
+  const box = $('stList');
+  if (!c.selftest) { box.innerHTML = '<div class="none">No results yet</div>'; return; }
+  box.innerHTML = '';
+  for (const r of c.selftest.results) {
+    const row = document.createElement('div');
+    row.className = 'strow ' + (r.ok ? 'ok' : 'fail');
+    const nm = document.createElement('span');
+    nm.className = 'nm'; nm.textContent = (r.ok ? '✓ ' : '✗ ') + r.name;
+    const dt = document.createElement('span');
+    dt.className = 'dt'; dt.textContent = r.detail;
+    row.append(nm, dt);
+    box.appendChild(row);
+  }
+}
+
+function renderPhoto(c) {
+  $('btnPhoto').disabled = false;
+  if (c.manual_photo && c.manual_photo !== ctl.lastPhoto) {
+    ctl.lastPhoto = c.manual_photo;
+    const img = $('phImg');
+    img.src = '/api/manual_photos/' + c.manual_photo;
+    img.style.display = '';
+    $('phName').textContent = c.manual_photo;
   }
 }
 
@@ -815,8 +947,10 @@ async function ctlRefresh() {
   let c;
   try { c = await getJSON('/api/control'); } catch { return; }
   ctl.enabled = !!c.enabled;
-  $('ctlOff').style.display = ctl.enabled ? 'none' : '';
-  $('ctlOn').style.display = ctl.enabled ? '' : 'none';
+  for (const [off, on] of [['ctlOff','ctlOn'],['stOff','stOn'],['phOff','phOn']]) {
+    $(off).style.display = ctl.enabled ? 'none' : '';
+    $(on).style.display = ctl.enabled ? '' : 'none';
+  }
   if (!ctl.enabled) return;
   ctl.running = !!c.mission_running;
 
@@ -829,13 +963,11 @@ async function ctlRefresh() {
     el.textContent = text;
     el.className = 'pill ' + (ok ? 'on' : 'off');
   };
-  pill($('ctlPump'), c.pump_running, c.pump_running ? 'pump up' : 'pump DOWN');
   pill($('ctlWp'), c.waypoints_exist,
        c.waypoints_exist ? c.waypoints.split('/').pop() : 'no waypoints');
   pill($('ctlDrop'), !c.no_drop, c.no_drop ? 'gate DISABLED' : 'gate live');
 
-  ctl.canFly = !!c.pump_running && !!c.waypoints_exist;
-  $('btnPump').disabled = c.pump_running;
+  ctl.canFly = !!c.waypoints_exist;
   $('btnStop').disabled = !ctl.running;
   // Re-derive through setArmed so the button state and the armed flag can
   // never disagree (they did before: arming ignored these preconditions).
@@ -845,23 +977,12 @@ async function ctlRefresh() {
     `${c.conn}  ·  camera ${c.camera}  ·  ${c.waypoints}`;
   const log = $('ctlLog');
   const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
-  log.textContent = (c.log || '(no mission log yet)')
-    + (c.pump_log ? '\n--- pump ---\n' + c.pump_log : '');
+  log.textContent = c.log || '(no mission log yet)';
   if (atBottom) log.scrollTop = log.scrollHeight;
-}
 
-$('btnPump').addEventListener('click', async () => {
-  await ctlPost('/api/control/pump'); ctlRefresh();
-});
-$('btnArm').addEventListener('click', () => setArmed(!ctl.armed));
-$('btnGo').addEventListener('click', async () => {
-  setArmed(false);
-  await ctlPost('/api/control/start');
-  ctlRefresh();
-});
-$('btnStop').addEventListener('click', async () => {
-  await ctlPost('/api/control/stop'); ctlRefresh();
-});
+  renderSelftest(c);
+  renderPhoto(c);
+}
 
 /* ---------- projection (equirectangular, meters, north-up) ---------- */
 const proj = {
@@ -1154,22 +1275,63 @@ function wireMap() {
   canvas.addEventListener('mouseleave', () => $('tip').style.display = 'none');
 }
 
-/* ---------- wiring ---------- */
-buildPanels();
-wireMap();
+/* ---------- wiring (after the async layout fetch) ---------- */
+function wireEvents() {
+  $('flight').addEventListener('change', async ev => {
+    state.selected = ev.target.value;
+    await loadEvents(); render(); stats(); table(); status(); detList(); profile();
+  });
+  for (const id of ['ly-heat','ly-det','ly-drop','ly-abort','ly-track','ly-site'])
+    $(id).addEventListener('change', render);
+  $('refresh').addEventListener('click', reload);
+  window.addEventListener('resize', () => { render(); profile(); });
+  new ResizeObserver(() => { render(); profile(); })
+    .observe(document.querySelector('.panel[data-id=map] .pb'));
+  new ResizeObserver(() => profile())
+    .observe(document.querySelector('.panel[data-id=profile] .pb'));
 
-$('flight').addEventListener('change', async ev => {
-  state.selected = ev.target.value;
-  await loadEvents(); render(); stats(); table(); status(); detList(); profile();
-});
-for (const id of ['ly-heat','ly-det','ly-drop','ly-abort','ly-track','ly-site'])
-  $(id).addEventListener('change', render);
-$('refresh').addEventListener('click', reload);
-window.addEventListener('resize', () => { render(); profile(); });
-new ResizeObserver(() => { render(); profile(); })
-  .observe(document.querySelector('.panel[data-id=map] .pb'));
-new ResizeObserver(() => profile())
-  .observe(document.querySelector('.panel[data-id=profile] .pb'));
+  $('themeBtn').addEventListener('click', () =>
+    applyTheme(document.documentElement.dataset.theme === 'dark'
+               ? 'light' : 'dark'));
+  $('btnArm').addEventListener('click', () => setArmed(!ctl.armed));
+  $('btnGo').addEventListener('click', async () => {
+    setArmed(false);
+    await ctlPost('/api/control/start');
+    ctlRefresh();
+  });
+  $('btnStop').addEventListener('click', async () => {
+    await ctlPost('/api/control/stop'); ctlRefresh();
+  });
+  $('btnTest').addEventListener('click', async () => {
+    $('stNote').textContent = 'starting…';
+    await ctlPost('/api/control/test', {}, $('stErr'));
+    ctlRefresh();
+  });
+  $('btnPhoto').addEventListener('click', async () => {
+    const btn = $('btnPhoto');
+    btn.disabled = true;
+    $('phNote').textContent = 'capturing…';
+    const j = await ctlPost('/api/control/photo', {}, $('phErr'));
+    $('phNote').textContent = '';
+    btn.disabled = false;
+    if (j.ok && j.file) {
+      ctl.lastPhoto = j.file;
+      const img = $('phImg');
+      img.src = '/api/manual_photos/' + j.file;
+      img.style.display = '';
+      $('phName').textContent = j.file;
+    }
+  });
+  $('phImg').addEventListener('click', () =>
+    window.open($('phImg').src, '_blank'));
+
+  $('panelBtn').addEventListener('click', ev => {
+    ev.stopPropagation(); $('panelMenu').classList.toggle('open');
+  });
+  document.addEventListener('click', ev => {
+    if (!ev.target.closest('#panelMenuWrap')) $('panelMenu').classList.remove('open');
+  });
+}
 
 setInterval(() => {
   $('clock').textContent = new Date().toLocaleString([], {hour12: false});
@@ -1179,9 +1341,9 @@ setInterval(() => {
    detections and state changes as they happen, and re-render only when the
    payload actually changed (a full redraw every 3 s would flicker the
    tooltip and waste the board's CPU). Elapsed still ticks every second via
-   the clock interval below. */
+   the clock interval above. */
 setInterval(async () => {
-  if (document.hidden) return;
+  if (document.hidden || !layoutState) return;
   ctlRefresh();          // flight control state + log tail, every tick
   try {
     const evs = await getJSON('/api/events/' + state.selected);
@@ -1199,14 +1361,26 @@ setInterval(async () => {
 }, 3000);
 
 setInterval(async () => {   // new flight appearing while we're open
+  if (!layoutState) return;
   try {
     const j = JSON.stringify(await getJSON('/api/missions'));
     if (j !== state.lastMissionsJson) { state.lastMissionsJson = j; await reload(); }
   } catch {}
 }, 15000);
 
-loadSite().then(reload);
-ctlRefresh();
+async function init() {
+  layoutState = await loadLayout();
+  buildPanels();
+  wireMap();
+  wireEvents();
+  let theme = 'light';
+  try { theme = localStorage.getItem('mr-theme') || 'light'; } catch {}
+  applyTheme(theme);
+  await loadSite();
+  await reload();
+  ctlRefresh();
+}
+init();
 </script>
 </body>
 </html>

@@ -3,14 +3,48 @@
 Single-threaded by design: one pump (step()) receives everything and updates
 the telemetry cache; commands that need an ACK pump the same loop while they
 wait. No locks, no races, and identical behavior on the laptop (SITL over TCP)
-and on the UNO Q (SERIAL4 via the STM32 byte-shovel, 115200).
+and on the UNO Q (the Pixhawk's own USB through the hub, /dev/ttyACM*).
 
 We are component 191 (MAV_COMP_ID_ONBOARD_COMPUTER) on the vehicle's system id.
+
+CONNECTION 'auto' (2026-08-16): the flight link is now the Pixhawk's USB
+plug on the board's hub, so the right device is discoverable rather than
+guessable: /dev/serial/by-id/ carries one stable ArduPilot entry per
+autopilot, immune to ACM number shuffling the same way the camera is now
+immune to video number shuffling. resolve_conn('auto') finds it or explains
+why not. (Proven 2026-08-16 00:10: 8/8 heartbeats three times while the
+camera streamed 600 frames beside it; the byte-shovel this replaces is
+deleted.)
 """
 
+import glob
 import time
 
 from pymavlink import mavutil
+
+# What an ArduPilot autopilot's USB CDC port looks like in /dev/serial/by-id.
+# This board's Pixhawk: usb-ArduPilot_Pixhawk1-bdshot_2D00...-if00.
+_PIXHAWK_ID_PATTERNS = ('*ArduPilot*', '*Pixhawk*', '*PX4*', '*fmu*')
+
+
+def resolve_conn(conn):
+    """'auto' -> the Pixhawk's /dev/serial/by-id path; anything else passes
+    through untouched (SITL tcp:, explicit devices, udp for bench rigs)."""
+    if conn != 'auto':
+        return conn
+    hits = sorted({p for pat in _PIXHAWK_ID_PATTERNS
+                   for p in glob.glob(f'/dev/serial/by-id/{pat}')
+                   if p.endswith('-if00')})
+    if len(hits) == 1:
+        return hits[0]
+    if not hits:
+        raise RuntimeError(
+            "conn 'auto': no autopilot on USB (/dev/serial/by-id has no "
+            "ArduPilot/Pixhawk entry). CHECK THE PIXHAWK'S USB PLUG AND THE "
+            "HUB, then ls -l /dev/serial/by-id/")
+    raise RuntimeError(
+        f"conn 'auto': {len(hits)} autopilot-like USB devices, refusing to "
+        f"guess: {', '.join(hits)}. Pass --conn with the right one.")
 
 # ArduPilot rejects guided setpoints older than a few seconds; resend at 5Hz.
 SETPOINT_RESEND_S = 0.2
@@ -54,15 +88,25 @@ class Telemetry:
         self.mode = None           # ArduCopter mode name, e.g. 'GUIDED'
         self.armed = False
         self.heartbeat_t = 0.0
+        self.batt_v = None         # volts (SYS_STATUS)
+        self.batt_pct = None       # -1 from ArduPilot = unknown -> None
+        self.sats = None           # GPS_RAW_INT satellites_visible
+        self.hdop = None           # GPS_RAW_INT eph / 100
+        self.fix_type = None       # 3 = 3D fix
 
 
 class MavIO:
     def __init__(self, conn_str, source_system=1, source_component=191,
-                 baud=115200):
-        # baud is ignored by tcp:/udp: connection strings and applies to the
-        # serial device on the aircraft (SERIAL4/5 at 115200).
+                 baud=115200, log=print):
+        # baud is ignored by tcp:/udp: connection strings and by USB CDC
+        # (the Pixhawk's USB ignores the number entirely); it only matters if
+        # a real UART ever carries this link again.
+        self.log = log
+        resolved = resolve_conn(conn_str)
+        if resolved != conn_str:
+            self.log(f"[mavio] conn 'auto' -> {resolved}")
         self.conn = mavutil.mavlink_connection(
-            conn_str, source_system=source_system,
+            resolved, source_system=source_system,
             source_component=source_component, baud=baud)
         self.tel = Telemetry()
         self._mode_names = {}   # custom_mode -> name, filled after heartbeat
@@ -132,6 +176,10 @@ class MavIO:
             mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT, 5)
         self.request_stream(
             mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR, 10)
+        # Battery and GPS quality, for the 1 Hz mission log line and the
+        # self-test. 1 Hz: these inform humans, not control loops.
+        self.request_stream(mavutil.mavlink.MAVLINK_MSG_ID_SYS_STATUS, 1)
+        self.request_stream(mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT, 1)
 
     # ---------- pump ----------
 
@@ -184,6 +232,15 @@ class MavIO:
                 tel.rng_valid = (msg.min_distance < msg.current_distance
                                  < msg.max_distance)
                 tel.rng_t = now
+        elif t == 'SYS_STATUS':
+            tel.batt_v = (msg.voltage_battery / 1000.0
+                          if msg.voltage_battery != 65535 else None)
+            tel.batt_pct = (msg.battery_remaining
+                            if msg.battery_remaining >= 0 else None)
+        elif t == 'GPS_RAW_INT':
+            tel.sats = msg.satellites_visible
+            tel.hdop = msg.eph / 100.0 if msg.eph != 65535 else None
+            tel.fix_type = msg.fix_type
         elif t == 'HEARTBEAT':
             # Ignore heartbeats from other components (e.g. ESP32 compid 195).
             if (msg.get_srcSystem() == self.conn.target_system
@@ -197,14 +254,29 @@ class MavIO:
 
     # ---------- commands ----------
 
+    _CMD_NAMES = {
+        mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL: 'SET_MESSAGE_INTERVAL',
+        mavutil.mavlink.MAV_CMD_DO_SET_MODE: 'DO_SET_MODE',
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM: 'ARM_DISARM',
+        mavutil.mavlink.MAV_CMD_NAV_TAKEOFF: 'TAKEOFF',
+        mavutil.mavlink.MAV_CMD_DO_SET_SERVO: 'DO_SET_SERVO',
+    }
+
     def command_ack(self, cmd, p1=0, p2=0, p3=0, p4=0, p5=0, p6=0, p7=0,
                     timeout=3.0, retries=3, retry_failed=False):
         """command_long + wait for its COMMAND_ACK, pumping telemetry meanwhile.
 
+        Every send and every ack result is logged (SCOPE RULES 1): the farm
+        day was undiagnosable partly because nothing recorded which commands
+        went out and what the autopilot said back.
+
         retry_failed: also retry on MAV_RESULT_FAILED (ArduPilot answers FAILED
         for arm attempts while prearm checks are still settling, e.g. EKF).
         """
-        for _ in range(retries):
+        name = self._CMD_NAMES.get(cmd, f'cmd{cmd}')
+        for attempt in range(1, retries + 1):
+            self.log(f"[mavio] -> {name} p1={p1:g} p2={p2:g} p7={p7:g}"
+                     + (f" (attempt {attempt})" if attempt > 1 else ""))
             self.conn.mav.command_long_send(
                 self.conn.target_system, self.conn.target_component,
                 cmd, 0, p1, p2, p3, p4, p5, p6, p7)
@@ -215,15 +287,20 @@ class MavIO:
                         or msg.command != cmd):
                     continue
                 if msg.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                    self.log(f"[mavio] <- {name} ACCEPTED")
                     return True
                 if msg.result == mavutil.mavlink.MAV_RESULT_IN_PROGRESS:
                     continue  # final ack still coming
                 if (msg.result == mavutil.mavlink.MAV_RESULT_TEMPORARILY_REJECTED
                         or (retry_failed and msg.result
                             == mavutil.mavlink.MAV_RESULT_FAILED)):
+                    self.log(f"[mavio] <- {name} result={msg.result}, "
+                             f"retrying")
                     break  # retry outer loop
+                self.log(f"[mavio] <- {name} REJECTED result={msg.result}")
                 raise RuntimeError(f"command {cmd} rejected: result={msg.result}")
             time.sleep(0.5)
+        self.log(f"[mavio] {name}: no ACCEPTED ack after {retries} tries")
         raise TimeoutError(f"command {cmd}: no ACCEPTED ack")
 
     def set_mode(self, name, confirm_s=5.0):
@@ -290,6 +367,7 @@ class MavIO:
 
     def goto(self, lat, lon, rel_alt_m):
         """Guided position target (global frame, alt relative to home)."""
+        self.log(f"[mavio] -> goto {lat:.7f},{lon:.7f} @{rel_alt_m:.1f}m")
         self.conn.mav.set_position_target_global_int_send(
             0, self.conn.target_system, self.conn.target_component,
             mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
@@ -313,6 +391,10 @@ class MavIO:
         now = time.monotonic()
         if not force and now - self._last_setpoint_t < SETPOINT_RESEND_S:
             return
+        if force:
+            # Only forced sends are logged: they are the setpoint CHANGES
+            # (stop, abort-climb). The 5 Hz keep-alive resends would be noise.
+            self.log(f"[mavio] -> velocity NED {vn:g},{ve:g},{vd:g} (forced)")
         self._last_setpoint_t = now
         self.conn.mav.set_position_target_local_ned_send(
             0, self.conn.target_system, self.conn.target_component,

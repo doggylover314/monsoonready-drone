@@ -1,18 +1,18 @@
-# Farm checklist — SATURDAY 2026-08-15: SHOOT DAY
+# Field checklist — the NEARBY FIELD shoot (rewritten 2026-08-16 after the
+# farm day; the farm items it replaced are in git history)
 
-**Tomorrow is the ONLY farm access; the submission upload is about a week
-later (user, 2026-08-14), from home wifi.** So tomorrow's job is the
-FOOTAGE, and the footage is unrepeatable. Back the video file up to a laptop
-AND to Drive the same evening — a phone lost or wiped in the following week
-must not be able to take the submission with it.
+**The submission upload is about a week after the shoot, from home wifi.**
+The shoot's job is the FOOTAGE, and the footage is unrepeatable. Back the
+video file up to a laptop AND to Drive the same evening — a phone lost or
+wiped in the following week must not be able to take the submission with it.
 
-**VENUE IS A FARM, not the grass field: dry dirt, much bigger area.** Prop
-wash on dirt is a dust cloud into motors, the B525 lens and the lidar ring,
-so takeoff happens from a weighted cloth sheet. There is a marketing office
-with mains power (charger between attempts), a verandah with tables, a water
-pump (tray refills), a kitchen (salt refills), and a farm first aid kit.
-BOTH laptops go: Linux laptop primary (every tool proven on it, native
-USB-A), MacBook backup.
+**WHAT CHANGED SINCE THE FARM (2026-08-16):** the Pixhawk now talks to the
+UNO Q over its own USB cable into a hub on the board's USB-A port (byte
+shovel deleted, SERIAL5 wires out); the camera is opened BY NAME so the
+farm's index-shuffle failure is impossible; every program logs to ~/logs/;
+the dashboard is light-mode, starts the mission, runs the self-test, and
+takes photos. Grass field, not dirt: the dust-cloud rule relaxes, the
+weighted sheet is still the cleanest pad.
 
 The goal: the FULL AUTONOMOUS LOOP (survey, detect, drop) on camera, one
 continuous take. ONE pack only, so each attempt costs a recharge at the
@@ -30,52 +30,44 @@ live, the ring params changed (PRX1_TYPE=2), and the gate got new endpoints
 
 ---
 
-## TONIGHT, AT HOME
+## THE NIGHT BEFORE, AT HOME
 
-- [ ] **Charge everything**: flight pack(s), transmitter, MacBook, both
-      phones, the camera you will film with. A power bank for the field.
+- [ ] **Charge everything**: flight pack, transmitter, MacBook, both
+      phones, the filming camera, BOTH power banks (one films, one feeds
+      the MR3020).
 - [ ] **SD CARD SEATED IN THE PIXHAWK** (standing item, nearly forgotten
       2026-08-10 because it was still in the reader). No card, no log.
-- [ ] **Phone hotspot test**: hotspot on, UNO Q joins it, SSH in once, open
-      https://drone.reysen.net and see the dashboard. Failure is free at home
-      and unfixable at the field.
-- [ ] **Both laptops ready**: repo pulled on BOTH; Linux laptop is primary
-      (all tools proven there, native USB-A); MacBook is backup (`.venv`
-      works, QGC opens, SiK appears as /dev/cu.* when plugged in).
-- [ ] **Write the running-order card** (bottom of this file) and tape it
-      somewhere the narrator can read it.
-- [ ] **MEASURE THE CAMERA FOV. 10 minutes, and it decides whether the drop
-      lands on the target or several metres from it.** Nobody has ever
-      measured it, so `--hfov-deg` has never been passed, so every detection
-      so far would resolve to NADIR: the mission flies to where the aircraft
-      was standing when it saw the water, not to the water. At 15 m that
-      error can be half a camera footprint.
-      Point the camera square at a wall a measured distance away, mark where
-      the left and right edges of the picture fall, measure between the
-      marks, then:
-      `./python uno_q/calibrate_camera.py --distance 2.0 --width <measured>`
-      Write the number it prints on the checklist and **pass `--hfov-deg
-      <that number>` on every run_mission command.**
-- [ ] **Make the target BIG, not tray-sized. The arithmetic decides this,
-      not taste.** A target spans `target_m / footprint_m * 640` pixels in
-      the model's input, and YOLO is unreliable below roughly 40 px. A 0.6 m
-      tray at 15 m comes out around 13-25 px depending on the true FOV,
-      which is a coin flip at best. The farm has a water pump and dirt: wet
-      a patch **2-3 m across** and the same sum gives 80-150 px, plus it
-      looks far more like the training data (real water on ground) than a
-      plastic tray does. Keep the tray as a backup target.
-      `calibrate_camera.py` prints this pixel figure once the FOV is known.
-- [ ] **Push params FIRST, then gate check — PROPS OFF, hopper EMPTY**:
-      `./python tools/parameters.py push` (delivers SERVO9 MIN 500 / MAX
-      1800 / TRIM 560 and PRX1_TYPE=2), then
-      `./python tools/wiring_check.py --wiggle` and watch AND listen: closed
-      560, open 1760, full throw, and NO buzzing at closed (buzzing = servo
-      stalled against the end stop; back the closed value off to ~580-600 and
-      tell the assistant). The wiggle ends on a close, which shuts the gate
-      that servo_jog left open. Your eyes are the test.
-- [ ] **Power-cycle the aircraft after the push** and confirm the gate SITS
-      CLOSED at boot, before arming, with nothing commanding it. That is
-      SERVO9_TRIM doing its job; if it boots open anyway, say so.
+- [ ] **PUSH THE PARAMS — this delivery now carries three changes:**
+      `./python tools/parameters.py push` delivers **SERIAL5_PROTOCOL,-1**
+      (the shovel port, now dead), the **FENCE block** (cylinder 100 m /
+      30 m alt, RTL on breach), and re-asserts AVOID_ENABLE=0. Pixhawk on
+      the laptop by USB, or pull the Pixhawk plug from the hub and use it.
+      **After the push, power-cycle and confirm it still ARMS on the bench**
+      (FENCE_ENABLE adds a prearm check; fallback is FENCE_ENABLE,0).
+- [ ] **Set up the MR3020 in WISP mode (user call 2026-08-16):** admin page
+      -> WISP -> join a phone hotspot as upstream (iPhone needs Maximize
+      Compatibility ON so it broadcasts 2.4 GHz). Board + laptop then live
+      on the TP-Link ALL DAY with internet through the phone: NTP keeps the
+      board clock true, git pull works, dashboard works; if the phone dies
+      you lose internet, never the LAN. Check the MR3020's label for its
+      power plug (v1 mini-USB, later micro-USB) and pack THAT cable.
+- [ ] **Full-system test at home, exactly as the field will run:** board on,
+      dashboard up (`--enable-control`), press **Test everything** on the
+      dashboard, all green except GPS indoors. This exercises the camera
+      by-name, the Pixhawk USB link, battery, Luna and ring in one button.
+- [ ] **Gate check — PROPS OFF, hopper EMPTY**:
+      `./python tools/wiring_check.py --wiggle`, watch AND listen: closed
+      560, open 1760, full throw, NO buzzing at closed. Power-cycle after
+      and confirm the gate SITS CLOSED at boot (SERVO9_TRIM doing its job).
+- [ ] **Tape / strain-relieve the hub plugs** (camera + Pixhawk + hub into
+      the board). The leading theory for the farm camera failure is a plug
+      walking out under flight vibration; tape is the one-rupee fix.
+- [ ] **Both laptops ready**: repo pulled on BOTH; Linux laptop primary.
+- [ ] **Write the running-order card** (bottom of this file).
+- [ ] FOV is DONE: 56.2 deg measured 2026-08-15, baked into camera_geom;
+      no flag needed. Re-measure ONLY if the camera or housing changes.
+- [ ] **Target stays BIG: wet a patch 2-3 m across** (80-150 px in the
+      model input vs a coin-flip 13-25 px for the 0.6 m tray). Tray = backup.
 
 ## PACK LIST — tick each item as it goes in the vehicle
 
@@ -95,11 +87,14 @@ Aircraft:
 Ground station:
 - [ ] Linux laptop + charger (primary field machine)
 - [ ] MacBook + charger (backup)
-- [ ] USB-C to USB-A adapter (packed — MacBook's only route to the radio)
+- [ ] **TL-MR3020 (WISP router, pre-configured the night before)** + its
+      correct USB power cable (check label: v1 mini-USB, later micro-USB)
+- [ ] **Power bank for the MR3020** (separate from the filming power bank)
+- [ ] USB-C to USB-A adapter (MacBook's only route to the radio)
 - [ ] SiK telemetry radio (in the MacBook bag)
 - [ ] Known-good DATA USB cable for the Pixhawk (not a charge-only one)
 - [ ] SD card reader
-- [ ] Hotspot phone, charged, with data (board already joined the hotspot)
+- [ ] Hotspot phone, charged, with data (the MR3020's upstream)
 
 Target:
 - [ ] The dark tray
@@ -134,107 +129,51 @@ At home, NOT in the car:
 - [ ] 1. **Transmitter ON before anything.** RC FAIL with the TX off is the
       check working, not a fault.
 - [ ] 2. **Prop nuts with the pliers, every one.**
-- [ ] 3. Power up, **do not arm for 2-5 min**:
-      `./python tools/bench.py gps --seconds 300` until READY (10+ sats,
-      HDOP < 1.5, 3D fix).
-- [ ] 3b. **FIRST laptop action: `./python tools/parameters.py push`** —
-      this DELIVERS AVOID_ENABLE=0, which never reached the board on Friday
-      night (the drone left for Raghav's before the push ran). Until this
-      runs, the degrading ring still steers the aircraft.
-- [ ] 4. Full check over the radio: `./python tools/wiring_check.py` —
-      expect FC / GPS / COMPASS / TF-LUNA / ESP32 / RC all PASS.
-      **RC is a HARD GATE: with the TX on it must PASS before arming — an
-      RC failsafe mid-mission is an RTL straight through the take.**
-      RING/UP-SENSOR FAILs are expected and accepted (avoidance is off).
-- [ ] 4b. **Confirm comp 191 on the bus**: `./python tools/bench.py nodes`
-      while the pump runs (see mission start below) — the last box to tick
-      on the Linux->Pixhawk link.
-- [ ] 4c. **POWER-CYCLE THE AIRCRAFT SHORTLY BEFORE THE TAKE, and check the
-      ring afterwards.** The ESP32 probes each lidar channel exactly ONCE at
-      boot and latches a failed channel dead for the entire session; there is
-      no retry. That is why the sector count only ever fell last night (2 dead
-      -> 3 -> 4) across a board that stayed powered for hours: those were
-      RUNTIME read timeouts on a hot, sealed frame, and nothing re-initialises
-      them while the power stays on. A cold boot re-runs init and may well
-      bring channels back. It costs 30 seconds and it is the only lever left
-      without opening the airframe.
-- [ ] 5. **Network plan (REVISED 2026-08-15 after range research; user
-      call: TP-Link carries the field LAN. cloudflared is NOT on the
-      reflashed board, so drone.reysen.net is DEAD.)**
-      **The TL-MR3020 is the LAN the board and laptop live on.** Researched
-      basis: it transmits at 20 dBm on 2.4 GHz (router-class, the
-      regulatory ceiling), sits still, runs off a power bank, and its DHCP
-      LAN works with no internet. A phone hotspot is the weaker AP: the
-      iPhone defaults its hotspot to 5 GHz (shorter range; 2.4 needs
-      "Maximize Compatibility" turned on) and phones are built for
-      pocket-distance clients. No honest open-field metre figure exists
-      for either — placement still matters: MR3020 HIGH at the ground
-      station (car roof), facing the plot. The other end of the link is
-      the board's own antenna regardless of AP, so expect the dashboard to
-      pause at the far survey edge and self-recover (mission unaffected —
-      everything flies onboard; data is cumulative).
-      **PREFERRED SETUP — WISP mode, zero mid-day switching:** MR3020
-      admin page -> WISP mode -> join the iPhone hotspot as upstream
-      (iPhone must have Maximize Compatibility ON so it broadcasts 2.4).
-      Then board + laptop sit on the TP-Link ALL DAY: git pull, the
-      on-camera Google-date search, and the dashboard all work through it;
-      if the iPhone dies you lose internet, never the LAN.
-      **FALLBACK if WISP fights you:** MR3020 standalone (no internet).
-      Do everything internet-y on the iPhone hotspot FIRST (git pull, pip),
-      then move board + laptop to the TP-Link. The take's opening
-      Google-date shot then happens with the laptop briefly on the iPhone,
-      and the laptop switches to the TP-Link during the components walk
-      (camera is off the laptop 0:30-3:00) so the dashboard is up by 3:00.
-      Board wifi switch (over SSH; the session drops mid-command, that is
-      normal): `sudo nmcli dev wifi connect "<SSID>" password "<pw>"` —
-      or however the board was joined to the hotspot before; NetworkManager
-      remembers and auto-rejoins after.
-      Dashboard URL on the laptop: `http://arduino-drone.local:8080`
-      (mDNS worked for arduino-cli discovery, VERIFY once) or
-      `http://<board-ip>:8080` with the IP from the MR3020's client list.
-      Check the MR3020's hardware version on its label: v1 is mini-USB
-      power, later revisions micro-USB — pack the matching cable.
-- [ ] 5b. **Dashboard needs flask on the board.** If it errors with
-      ModuleNotFoundError: `~/venv/bin/pip install flask msgpack`
-      (board_setup.sh now installs both, but the board was set up before
-      that fix landed).
-- [ ] 6. Load the hopper (salt from the kitchen if the bag runs out). Place
-      the tray where the survey will pass, fill it from the pump.
-- [ ] 6b. **Mission start (BOARD over SSH). All from ~/monsoonready-drone,
-      `git pull` first. EVERYTHING FLIGHT-CRITICAL LAUNCHES DETACHED
-      (setsid nohup), because the drone WILL fly out of hotspot wifi range:
-      the SSH session then dies, and a foreground process gets SIGHUP —
-      run_mission treats that as "wind up and RTL", which ends the take.**
-      Start the pump, detached:
-      `setsid nohup ~/venv/bin/python uno_q/mav_shovel_pump.py > ~/pump.log 2>&1 &`
-      Sanity check, foreground is fine (drone is still beside you):
-      `~/venv/bin/python uno_q/test_mission_link.py`
-- [ ] 6c. **Make the survey (no waypoint file exists — it is made HERE):**
-      carry the aircraft to the corner of the plot where the survey should
-      START, point its NOSE along the row direction, then (terminal 2, with
-      3D fix): `~/venv/bin/python uno_q/make_waypoints.py --out wp_farm.txt`
+- [ ] 3. **Network up first (WISP, pre-configured):** MR3020 on its power
+      bank, HIGH at the ground station, phone hotspot on (Maximize
+      Compatibility if iPhone). Laptop joins the TP-Link. Board joins on
+      power-up (it remembers). Internet through the phone means the board's
+      clock NTP-syncs and every log timestamp is true.
+- [ ] 4. Power the aircraft, **do not arm for 2-5 min**. Meanwhile, from
+      the laptop, SSH in and start the dashboard, DETACHED:
+      `setsid nohup ~/venv/bin/python uno_q/basestation/dashboard.py --enable-control --waypoints wp_field.txt &`
+      Open `http://<board-ip>:8080` (IP from the MR3020 client list;
+      `http://arduino-drone.local:8080` if mDNS cooperates).
+- [ ] 5. **Press TEST EVERYTHING on the dashboard.** 30 s, no motors, no
+      servos: camera by name, Pixhawk USB heartbeat, GPS vs the arming
+      rules (10+ sats, HDOP <= 1.5, 3D), battery voltage, TF-Luna, ring.
+      Every failure prints its reason in the panel and in
+      ~/logs/test_everything.log. Do not arm until GPS goes green.
+- [ ] 5b. **RC is a HARD GATE**: `./python tools/wiring_check.py` over the
+      radio must show RC PASS with the TX on — an RC failsafe mid-mission
+      is an RTL straight through the take. (Ring FAILs stay accepted.)
+- [ ] 5c. **POWER-CYCLE THE AIRCRAFT SHORTLY BEFORE THE TAKE.** The ESP32
+      probes each lidar channel exactly ONCE at boot and latches failures
+      for the whole session (runtime timeouts never recover while powered).
+      A cold boot re-runs init; 30 seconds, and it is the only lever.
+- [ ] 6. Load the hopper. Place the tray / wet the patch where the survey
+      will pass.
+- [ ] 6b. **Make the survey (no waypoint file exists — it is made HERE):**
+      carry the aircraft to the corner where the survey should START, point
+      its NOSE along the row direction, then over SSH (3D fix needed):
+      `~/venv/bin/python uno_q/make_waypoints.py --out wp_field.txt`
       Default = 3 rows x 20 m, 5 m apart, starting at the aircraft,
-      extending dead ahead. Put the tray under the MIDDLE row.
-- [ ] 6d. **Fly it — DETACHED, then watch the log:**
-      `setsid nohup ~/venv/bin/python uno_q/run_mission.py --conn
-      udpin:127.0.0.1:14555 --waypoints wp_farm.txt --hfov-deg <measured>
-      --camera <N> > ~/mission.log 2>&1 &`
-      then `tail -f ~/mission.log` (the tail dying on a wifi drop is
-      harmless; SSH back in and tail again).
-      **To stop it deliberately: `pkill -f run_mission.py`** — that is
-      SIGTERM, which winds up gracefully and commands RTL.
-      `--model` now defaults to the repo's own models/best.onnx.
-      **`--hfov-deg` MUST be passed**: without it every detection resolves
-      to nadir (see the FOV item above).
-      `--camera <N>`: check with `v4l2-ctl --list-devices` first; the
-      default of 1 is unverified on the reflashed image.
-      Add `--no-drop` for the rehearsal if you want the full loop flown
-      with nothing to clean up.
-- [ ] 7. **REHEARSAL FLIGHT, unrecorded.** Fly exactly what the take will be.
-      Land, pull the log (`./python tools/check_log.py <log>.BIN`), fix what
-      it shows, recharge if needed.
-- [ ] 8. Reset everything to its mark, reload the hopper, refill the tray,
-      THEN record.
+      extending dead ahead. Target under the MIDDLE row. (Run it BEFORE the
+      mission; they share the one serial port.)
+- [ ] 6c. **Fly it FROM THE DASHBOARD: Arm controls -> START MISSION.**
+      The mission launches detached on the board (SSH dropping cannot kill
+      it), the map follows it live, and ~/logs/run_mission.log carries the
+      1 Hz telemetry line plus every command and ack.
+      **STOP (RTL) on the dashboard is the deliberate abort**; it is
+      SIGTERM, the graceful wind-up. Every default is baked: conn auto,
+      camera auto, HFOV 56.2, model from the repo. `--no-drop` rehearsal =
+      start the dashboard with `--no-drop`, or tick nothing and let the
+      gate fire (hopper is the rehearsal variable, not the code).
+- [ ] 7. **REHEARSAL FLIGHT, unrecorded.** Fly exactly what the take will
+      be. Land, pull the SD log (`./python tools/check_log.py <log>.BIN`),
+      read ~/logs/run_mission.log, fix what they show, recharge.
+- [ ] 8. Reset everything to its mark, reload the hopper, refill the
+      target, THEN record.
 
 ## STOP AND GO HOME IF
 
@@ -245,13 +184,20 @@ At home, NOT in the car:
 
 ## KNOWN-GOOD — do not re-debug at the field
 
-FC, GPS driver, compass, TF-Luna, SiK link: PASS (2026-08-02 wiring check).
-UNO Q -> Pixhawk over D0/D1: comp 191 heard, TX direction proven 2026-08-13.
-ESP32 ring: comp 195 heard 2026-08-14 after the TX/RX swap was fixed; ch0/1/
-3/4 solid, ch5 intermittent, ch2 dead chip (known, accepted). Endurance is
-CLOSED: 16.7 min to empty, 13.3 min to 20% reserve at 28.8 A true hover; if
-the day needs a number, use that one. TF-Luna over water is a permanent no;
-descend-BESIDE is the design.
+FC, GPS driver, compass*, TF-Luna, SiK link: PASS (2026-08-02 wiring check).
+*Compass caveat from the farm logs: two prearm "Check mag field" failures
+(1038 and 1058 vs an 875 ceiling) across power cycles — if prearm complains
+about mag field or compass variance at the field, move the aircraft away
+from the car/phones/power bank and re-check before touching calibration.
+UNO Q -> Pixhawk over USB through the hub: PROVEN 2026-08-16, 8/8 heartbeats
+x3 while the camera streamed 600 frames beside it. The D0/D1 + SERIAL5
+shovel is DELETED and its wires are out.
+Camera: opened BY NAME since 2026-08-16 (the farm failure was the camera
+losing the /dev/video0 race to the video codecs after a replug; impossible
+now). ESP32 ring: comp 195 heard 2026-08-14; ch0/1/3/4 solid, ch5
+intermittent, ch2 dead chip (known, accepted). Endurance is CLOSED: 16.7 min
+to empty, 13.3 min to 20% reserve at 28.8 A true hover. TF-Luna over water
+is a permanent no; descend-BESIDE is the design.
 
 ---
 

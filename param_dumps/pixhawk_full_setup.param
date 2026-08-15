@@ -49,7 +49,11 @@ SERIAL2_PROTOCOL,2        # TELEM2 = SiK telemetry radio, MAVLink2
 SERIAL2_BAUD,57           # SiK default 57600
 SERIAL4_PROTOCOL,9        # SERIAL4 = TF-Luna, Rangefinder protocol (ports swapped at build 2026-07-27: user wired Luna to #4 lines). VERIFY 9=Rangefinder
 SERIAL4_BAUD,115          # TF-Luna default 115200
-SERIAL5_PROTOCOL,2        # SERIAL5 = UNO Q, MAVLink2 (swap upside: SERIAL5 boot noise now hits junk-tolerant pymavlink, not the Luna)
+# SERIAL5 DISABLED 2026-08-16: the UNO Q link moved to the Pixhawk's own USB
+# through the board's hub (proven: 8/8 heartbeats x3 while the camera streamed
+# 600 frames). The byte-shovel is deleted and the D0/D1 + SERIAL5 wires are
+# coming out; -1 makes sure a floating wire stub can never inject anything.
+SERIAL5_PROTOCOL,-1       # was 2 (UNO Q MAVLink2 via STM32 shovel, retired)
 SERIAL5_BAUD,115
 
 # --- Downward rangefinder: TF-Luna on SERIAL4 (option B split cable, swapped 2026-07-27) ---

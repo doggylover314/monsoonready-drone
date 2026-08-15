@@ -116,23 +116,21 @@ def cmd_nodes(m, args):
     if not any(c == 191 for _, c in seen):
         # NOT a link failure on its own, and saying so cost real time at the
         # farm on 2026-08-15. Nothing on the UNO Q heartbeats unless a python
-        # process using MavIO is RUNNING: the old probe sketch did it from
-        # firmware, sketch_mav_shovel only forwards bytes. So an idle board
-        # is silent by design.
+        # process using MavIO is RUNNING; an idle board is silent by design.
+        # (Since 2026-08-16 the companion link is the Pixhawk's own USB into
+        # the board's hub; the SERIAL5 byte-shovel is deleted.)
         print("\n  no component 191 heard. THIS ALONE DOES NOT MEAN THE LINK "
               "IS BROKEN.\n"
               "  Nothing on the UNO Q heartbeats unless a MavIO process is "
-              "running (the\n"
-              "  shovel sketch only forwards bytes; the old probe sketch used "
-              "to beat by\n"
-              "  itself). Start the pump plus test_mission_link (or the "
-              "mission) on the\n"
+              "running\n"
+              "  (the mission, test_mission_link, or test_everything). Start "
+              "one on the\n"
               "  board and re-run this. The real proof of the TX direction is "
               "that\n"
               "  test_mission_link gets its SET_MESSAGE_INTERVAL ACKed.")
     else:
         print("\n  COMPONENT 191 PRESENT: the UNO Q's transmit path to the "
-              "Pixhawk WORKS. D0/D1 -> SERIAL5 is proven in the TX direction.")
+              "Pixhawk WORKS (USB via the hub since 2026-08-16).")
 
 
 def cmd_battery(m, args):

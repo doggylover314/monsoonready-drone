@@ -217,7 +217,7 @@ class OnnxDetector(_RowResolver):
     SITL (defaults to the B525 via OpenCV V4L2 at MJPG 1280x720).
     """
 
-    def __init__(self, model_path, camera=0, conf=0.5, interval_s=1.0,
+    def __init__(self, model_path, camera='auto', conf=0.5, interval_s=1.0,
                  skip_radius_m=8.0, frame_source=None, log=print,
                  geom=None, mount_yaw_deg=0.0):
         import numpy as np
@@ -233,28 +233,17 @@ class OnnxDetector(_RowResolver):
         if frame_source is not None:
             self._grab = frame_source
         else:
+            # BY NAME, never by bare index: /dev/video numbers on this board
+            # are an enumeration race with the Venus codecs, and losing it is
+            # exactly the farm failure of 2026-08-15. camera.open_camera
+            # resolves the real camera, locks focus, and raises with a
+            # plain-words diagnosis (errno, holder process, or "missing from
+            # USB") when nothing usable opens.
             import cv2
+            from camera import open_camera
             self._cv2 = cv2
-            self._lock_focus(camera)
-            self.cap = cv2.VideoCapture(camera, cv2.CAP_V4L2)
-            self.cap.set(cv2.CAP_PROP_FOURCC,
-                         cv2.VideoWriter_fourcc(*'MJPG'))
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            self.cap, self.cam_node = open_camera(camera, log=log)
             self._grab = self._grab_camera
-
-    def _lock_focus(self, camera):
-        """Focus to infinity, best effort. Two separate v4l2-ctl calls:
-        both in one transaction fails (EACCES, seen on the board)."""
-        import subprocess
-        dev = f"/dev/video{camera}"
-        for ctrl in ("focus_automatic_continuous=0", "focus_absolute=0"):
-            r = subprocess.run(['v4l2-ctl', '-d', dev, f'--set-ctrl={ctrl}'],
-                               capture_output=True)
-            if r.returncode != 0:
-                self.log(f"[detector] focus ctrl failed ({ctrl}): "
-                         f"{r.stderr.decode().strip()}")
 
     def _grab_camera(self):
         self.cap.grab()                    # flush possibly-stale buffer
@@ -429,7 +418,10 @@ class FileDetector(_RowResolver):
             if payload is not None and not stale:
                 if payload.get('camera_ok') is False:
                     self.log("[detector] PREFLIGHT FAIL: worker reports no "
-                             "frame from the camera")
+                             "frame from the camera"
+                             + (f" -- {payload['error']}"
+                                if payload.get('error') else
+                                " (no detail; see ~/logs/detect_worker.log)"))
                     return False
                 w, h = payload.get('w'), payload.get('h')
                 self.log(f"[detector] preflight ok: worker seq "
@@ -477,7 +469,9 @@ class FileDetector(_RowResolver):
             return None
         if payload.get('camera_ok') is False:
             if not self._cam_warned:
-                self.log("[detector] worker reports camera frame grab FAILED")
+                self.log("[detector] worker reports camera frame grab FAILED"
+                         + (f" -- {payload['error']}"
+                            if payload.get('error') else ""))
                 self._cam_warned = True
             return None
         self._cam_warned = False

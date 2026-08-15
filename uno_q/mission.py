@@ -125,6 +125,7 @@ class Mission:
         # Test hook (dropout drill): below this rel_alt, pretend the
         # rangefinder went silent. None = disabled.
         self.rng_suppress_below_m = None
+        self._last_tel_log = 0.0   # 1 Hz telemetry line (SCOPE RULES 1)
 
     # ---------- helpers ----------
 
@@ -138,6 +139,24 @@ class Mission:
 
     def _elapsed(self):
         return time.monotonic() - self._t_state
+
+    def _tel_line(self, tel):
+        """One telemetry snapshot per second into the log (SCOPE RULES 1):
+        enough to replay any flight from the log alone. The farm day could
+        not be reconstructed because nothing recorded what the aircraft was
+        doing between events."""
+        now = time.monotonic()
+        if now - self._last_tel_log < 1.0:
+            return
+        self._last_tel_log = now
+        f = lambda v, spec='.1f': format(v, spec) if v is not None else '-'
+        self.log(f"[tel] {self.state} mode={tel.mode} armed={tel.armed} "
+                 f"lat={f(tel.lat, '.7f')} lon={f(tel.lon, '.7f')} "
+                 f"alt={f(tel.rel_alt_m)}m rng={f(tel.rng_m, '.2f')}m"
+                 f"{'' if tel.rng_valid else '(stale)'} "
+                 f"vd={f(tel.vd_mps, '.2f')} batt={f(tel.batt_v, '.2f')}V/"
+                 f"{f(tel.batt_pct, '.0f')}% sats={f(tel.sats, 'd')} "
+                 f"hdop={f(tel.hdop, '.2f')}")
 
     def _rng_fresh(self):
         tel = self.io.tel
@@ -177,6 +196,7 @@ class Mission:
             io.step()
             tel = io.tel
             self.rec.fix(tel, self.state)  # throttled inside the recorder
+            self._tel_line(tel)
 
             if tel.mode == 'GUIDED':
                 self._seen_guided = True

@@ -1,18 +1,18 @@
-"""Prove the MISSION STACK sees the Pixhawk through the shovel + pump.
+"""Prove the MISSION STACK sees the Pixhawk over its USB link.
 
-This is the last software unknown before the farm: test_shovel proved raw
-bytes flow; this proves the exact objects the mission flies with (MavIO ->
-udpin -> pump -> router -> STM32 -> SERIAL5) produce live telemetry.
+This proves the exact objects the mission flies with (MavIO on the
+Pixhawk's USB port through the board's hub, resolved from
+/dev/serial/by-id) produce live telemetry. One terminal on the BOARD:
 
-Two terminals on the BOARD (the pump is a server, it gets its own):
-
-    terminal 1:  ~/venv/bin/python uno_q/mav_shovel_pump.py
-    terminal 2:  ~/venv/bin/python uno_q/test_mission_link.py
+    ~/venv/bin/python uno_q/test_mission_link.py
 
 PASS = "MISSION STACK LIVE" with a mode and a battery voltage. Position may
 be None indoors (no GPS fix) - that is the sky's fault, not the stack's.
 Nothing here arms, changes mode, or moves a servo: read-only by design,
 because it will be run the night before the flight.
+
+(Until 2026-08-16 this went through the STM32 byte-shovel on SERIAL5; that
+chain is deleted, the wires are out, and 'auto' finds the USB device.)
 """
 
 import sys
@@ -20,18 +20,18 @@ import time
 
 from mavlink_io import MavIO
 
-CONN = 'udpin:127.0.0.1:14555'
+CONN = 'auto'
 RUN_S = 15.0
 
 
 def main():
-    print(f"connecting MavIO to {CONN} (start the pump first) ...")
+    print(f"connecting MavIO to {CONN} ...")
     io = MavIO(CONN)
     try:
         io.wait_ready(timeout=20)
     except (TimeoutError, RuntimeError) as exc:
-        sys.exit(f"{exc}\n(if nothing at all arrived: is "
-                 f"mav_shovel_pump.py running in the other terminal?)")
+        sys.exit(f"{exc}\n(if nothing at all arrived: is the Pixhawk's USB "
+                 f"plug seated in the hub? ls -l /dev/serial/by-id/)")
     print("heartbeat received: RECEIVE direction live at MAVLink level")
 
     # setup_streams sends SET_MESSAGE_INTERVAL commands and waits for their

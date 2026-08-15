@@ -14,7 +14,7 @@ reportable, and the same files double as documentation evidence.
 ```
 mission.py ──recorder=MissionLog──► <data_dir>/missions/mission_<id>.jsonl
                                              │
-app.py  ◄────── reads (never writes) ────────┘
+dashboard.py  ◄────── reads (never writes) ────────┘
    │
    ├── /api/missions            per-flight summaries
    ├── /api/events/<id|all>     event stream, one flight or accumulated
@@ -33,7 +33,7 @@ it unset.
 
 | File | Purpose |
 |------|---------|
-| `app.py` | Read-only Flask server. `--data-dir ~/monsoonready_data --host 0.0.0.0 --port 8080` defaults. |
+| `dashboard.py` | Read-only Flask server. `--data-dir ~/monsoonready_data --host 0.0.0.0 --port 8080` defaults. |
 | `static/index.html` | Self-contained dashboard (vanilla JS + canvas, no external assets, works offline). |
 | `gen_fake_mission.py` | Writes two plausible fake flights through `MissionLog`, for development without hardware. |
 
@@ -45,7 +45,7 @@ On the UNO Q (Flask is a one-time install, offline afterwards):
 
 ```bash
 ~/venv/bin/pip install flask
-~/venv/bin/python ~/uno_q/basestation/app.py
+~/venv/bin/python ~/uno_q/basestation/dashboard.py
 ```
 
 View at `http://drone:8080` on the tailnet, or at https://drone.reysen.net
@@ -58,7 +58,7 @@ On a dev machine, without a flight:
 ```bash
 python3 uno_q/basestation/gen_fake_mission.py   # 2 fake flights
 pip install flask                                # in a venv
-python3 uno_q/basestation/app.py                 # then open localhost:8080
+python3 uno_q/basestation/dashboard.py                 # then open localhost:8080
 ```
 
 ---
@@ -121,7 +121,7 @@ calibration) is used alone.
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| https://drone.reysen.net gives 502 | Tunnel is up but `app.py` is not running on the board |
+| https://drone.reysen.net gives 502 | Tunnel is up but `dashboard.py` is not running on the board |
 | Dashboard says "No mission data yet" | Data dir empty or wrong `--data-dir`; check `<data_dir>/missions/*.jsonl` exists |
 | Site image checkbox missing | No `site_image.json` in the data dir, or its `file` does not exist |
 | A flight shows "in progress / interrupted" | Its JSONL has no `mission_end` line: mission crashed or is still flying |

@@ -53,14 +53,13 @@ say "python packages"
 # opencv-python-headless, not opencv-python: the board has no display and the
 # GUI build drags in X libraries that are not there.
 "$VENV/bin/python" -m pip install --quiet --upgrade pip
-# flask = the base station dashboard, which the mission auto-launches and
-# which is FILMED in the demo video; msgpack = the Linux half of the MAVLink
-# byte-shovel (router_client.py). Both were missing here and had to be
-# installed by hand after the 2026-08-13 reflash (review 2026-08-15).
+# flask = the dashboard, which the mission auto-launches and which is FILMED
+# in the demo video (it was missing after the 2026-08-13 reflash). msgpack is
+# GONE with the byte-shovel (2026-08-16): the Pixhawk link is its own USB now.
 "$VENV/bin/python" -m pip install --quiet \
-    pymavlink pyserial numpy opencv-python-headless onnxruntime flask msgpack \
+    pymavlink pyserial numpy opencv-python-headless onnxruntime flask \
     || { echo "  pip install failed. Check the board has internet."; exit 1; }
-for mod in pymavlink serial numpy cv2 onnxruntime flask msgpack; do
+for mod in pymavlink serial numpy cv2 onnxruntime flask; do
     if "$VENV/bin/python" -c "import $mod" 2>/dev/null; then
         v=$("$VENV/bin/python" -c "import $mod;print(getattr($mod,'__version__','?'))" 2>/dev/null)
         good "$mod $v"
@@ -111,9 +110,9 @@ mkdir -p "$HOME/monsoonready_data" && good "$HOME/monsoonready_data"
 printf '\n=== SUMMARY: %d ok, %d missing ===\n' "$ok" "$warn"
 if [ "$warn" -eq 0 ]; then
     echo "Board is ready. Next, and it is the one that matters:"
-    echo "  $VENV/bin/python $REPO/uno_q/find_pixhawk_uart.py"
-    echo "That decides whether the Pixhawk is reachable from Linux directly"
-    echo "or only through an STM32 sketch."
+    echo "  $VENV/bin/python $REPO/uno_q/test_everything.py"
+    echo "That checks the camera, the Pixhawk USB link, GPS, battery, and"
+    echo "the rangefinders in one 30 s pass (no motors, no servos)."
 else
     echo "Fix the MISS lines above before trusting anything downstream."
 fi

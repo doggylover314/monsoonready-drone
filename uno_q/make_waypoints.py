@@ -5,14 +5,14 @@ so waypoints are made on site, from its own GPS, in one command:
 
   1. Put the aircraft at the plot corner where the survey should START.
   2. Point its NOSE along the direction the rows should run.
-  3. With the pump up (terminal 1) and a 3D fix:
-         ~/venv/bin/python uno_q/make_waypoints.py --out wp_farm.txt
-  4. Fly:  run_mission.py ... --waypoints wp_farm.txt
+  3. With a 3D fix (link is the Pixhawk's USB, resolved automatically):
+         ~/venv/bin/python uno_q/make_waypoints.py --out wp_field.txt
+  4. Fly:  run_mission.py --waypoints wp_field.txt
 
 Defaults make a 20 m x 10 m box (3 rows, 5 m apart): small enough to watch
-and film, wide enough that the camera footprint (~16.7 m across at 15 m
-with the B525's 58.2 deg HFOV) overlaps rows heavily. The tray goes under
-the MIDDLE row.
+and film, wide enough that the camera footprint (16.0 m across at 15 m
+with the B525's measured 56.2 deg HFOV) overlaps rows heavily. The tray
+goes under the MIDDLE row.
 
 Read-only toward the aircraft: it listens for position and heading, writes
 a text file, and commands nothing.
@@ -54,8 +54,9 @@ def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--out', default='wp_farm.txt')
-    ap.add_argument('--conn', default='udpin:127.0.0.1:14555',
-                    help='the pump (default), or SITL tcp:...')
+    ap.add_argument('--conn', default='auto',
+                    help="'auto' (default) = the Pixhawk's USB via "
+                         "/dev/serial/by-id, or SITL tcp:...")
     ap.add_argument('--rows', type=int, default=3)
     ap.add_argument('--spacing', type=float, default=5.0,
                     help='m between rows (camera covers ~16.7 m at 15 m alt)')
@@ -66,13 +67,13 @@ def main():
     if args.rows < 1 or args.spacing <= 0 or args.length <= 0:
         sys.exit("rows >= 1, spacing > 0, length > 0")
 
-    print(f"connecting {args.conn} (pump must be running) ...")
+    print(f"connecting {args.conn} ...")
     io = MavIO(args.conn)
     try:
         io.wait_ready(timeout=20)
     except (TimeoutError, RuntimeError) as exc:
-        sys.exit(f"{exc}\n(if nothing arrived at all: start "
-                 f"mav_shovel_pump.py first)")
+        sys.exit(f"{exc}\n(if nothing arrived at all: check the Pixhawk's "
+                 f"USB plug on the hub: ls -l /dev/serial/by-id/)")
     io.setup_streams()
 
     print("waiting for a real position fix ...")

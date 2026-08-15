@@ -18,7 +18,7 @@ Usage (laptop or board; stdlib only):
     python gen_fake_mission.py --flights 12 --seed 7   # big random dataset
 
 Then serve it:
-    python app.py --data-dir ~/monsoonready_data
+    python dashboard.py --data-dir ~/monsoonready_data
 """
 
 import argparse
