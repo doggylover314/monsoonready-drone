@@ -158,18 +158,40 @@ At home, NOT in the car:
       them while the power stays on. A cold boot re-runs init and may well
       bring channels back. It costs 30 seconds and it is the only lever left
       without opening the airframe.
-- [ ] 5. Hotspot up, board on it, dashboard loads on the phone.
+- [ ] 5. **Network plan (decided 2026-08-15 morning; cloudflared is NOT on
+      the reflashed board, so drone.reysen.net is DEAD — everything is
+      hotspot-LAN only).**
+      ONE network all day: the **iPhone 12 mini hotspot**. Laptop + board
+      join it. Why the iPhone: the Vivo is the FILMING phone (it moves with
+      the camera operator and must not carry the network), and the MR3020
+      has no internet, which kills the arrival git pull and the on-camera
+      Google-date search. Params/SiK need no wifi at all.
+      **Placement is the range lever**: the iPhone sits HIGH and STILL at
+      the ground station (car roof / chair back), next to the laptop,
+      facing the survey plot. The survey is only ~20 x 10 m, so a
+      well-placed hotspot can plausibly hold the whole flight; if the
+      drone drops off wifi anyway, THE MISSION IS UNAFFECTED (everything
+      flies onboard) — the dashboard just pauses and catches up
+      automatically when the drone is close/landed (its data is cumulative
+      on the board's disk). Keep the MR3020 packed as the no-internet
+      BACKUP LAN if the iPhone hotspot misbehaves (dashboard needs no
+      internet; do the git pull before switching networks).
+      Dashboard URL on the laptop: `http://<board-ip>:8080` — board IP
+      from the iPhone's hotspot client list or `hostname -I` over SSH.
 - [ ] 5b. **Dashboard needs flask on the board.** If it errors with
       ModuleNotFoundError: `~/venv/bin/pip install flask msgpack`
       (board_setup.sh now installs both, but the board was set up before
       that fix landed).
 - [ ] 6. Load the hopper (salt from the kitchen if the bag runs out). Place
       the tray where the survey will pass, fill it from the pump.
-- [ ] 6b. **Mission start (BOARD over SSH, two terminals — the pump is a
-      server and gets its own). All from ~/monsoonready-drone, `git pull`
-      first.**
-      terminal 1: `~/venv/bin/python uno_q/mav_shovel_pump.py`
-      terminal 2, sanity first (read-only):
+- [ ] 6b. **Mission start (BOARD over SSH). All from ~/monsoonready-drone,
+      `git pull` first. EVERYTHING FLIGHT-CRITICAL LAUNCHES DETACHED
+      (setsid nohup), because the drone WILL fly out of hotspot wifi range:
+      the SSH session then dies, and a foreground process gets SIGHUP —
+      run_mission treats that as "wind up and RTL", which ends the take.**
+      Start the pump, detached:
+      `setsid nohup ~/venv/bin/python uno_q/mav_shovel_pump.py > ~/pump.log 2>&1 &`
+      Sanity check, foreground is fine (drone is still beside you):
       `~/venv/bin/python uno_q/test_mission_link.py`
 - [ ] 6c. **Make the survey (no waypoint file exists — it is made HERE):**
       carry the aircraft to the corner of the plot where the survey should
@@ -177,12 +199,17 @@ At home, NOT in the car:
       3D fix): `~/venv/bin/python uno_q/make_waypoints.py --out wp_farm.txt`
       Default = 3 rows x 20 m, 5 m apart, starting at the aircraft,
       extending dead ahead. Put the tray under the MIDDLE row.
-- [ ] 6d. **Fly it** (terminal 2):
-      `~/venv/bin/python uno_q/run_mission.py --conn udpin:127.0.0.1:14555
-      --waypoints wp_farm.txt --hfov-deg <measured> --camera <N>`
-      `--model` now defaults to the repo's own models/best.onnx, so it no
-      longer has to be passed. **`--hfov-deg` DOES**: without it every
-      detection resolves to nadir (see the FOV item above).
+- [ ] 6d. **Fly it — DETACHED, then watch the log:**
+      `setsid nohup ~/venv/bin/python uno_q/run_mission.py --conn
+      udpin:127.0.0.1:14555 --waypoints wp_farm.txt --hfov-deg <measured>
+      --camera <N> > ~/mission.log 2>&1 &`
+      then `tail -f ~/mission.log` (the tail dying on a wifi drop is
+      harmless; SSH back in and tail again).
+      **To stop it deliberately: `pkill -f run_mission.py`** — that is
+      SIGTERM, which winds up gracefully and commands RTL.
+      `--model` now defaults to the repo's own models/best.onnx.
+      **`--hfov-deg` MUST be passed**: without it every detection resolves
+      to nadir (see the FOV item above).
       `--camera <N>`: check with `v4l2-ctl --list-devices` first; the
       default of 1 is unverified on the reflashed image.
       Add `--no-drop` for the rehearsal if you want the full loop flown
