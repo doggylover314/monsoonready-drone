@@ -158,26 +158,42 @@ At home, NOT in the car:
       them while the power stays on. A cold boot re-runs init and may well
       bring channels back. It costs 30 seconds and it is the only lever left
       without opening the airframe.
-- [ ] 5. **Network plan (decided 2026-08-15 morning; cloudflared is NOT on
-      the reflashed board, so drone.reysen.net is DEAD — everything is
-      hotspot-LAN only).**
-      ONE network all day: the **iPhone 12 mini hotspot**. Laptop + board
-      join it. Why the iPhone: the Vivo is the FILMING phone (it moves with
-      the camera operator and must not carry the network), and the MR3020
-      has no internet, which kills the arrival git pull and the on-camera
-      Google-date search. Params/SiK need no wifi at all.
-      **Placement is the range lever**: the iPhone sits HIGH and STILL at
-      the ground station (car roof / chair back), next to the laptop,
-      facing the survey plot. The survey is only ~20 x 10 m, so a
-      well-placed hotspot can plausibly hold the whole flight; if the
-      drone drops off wifi anyway, THE MISSION IS UNAFFECTED (everything
-      flies onboard) — the dashboard just pauses and catches up
-      automatically when the drone is close/landed (its data is cumulative
-      on the board's disk). Keep the MR3020 packed as the no-internet
-      BACKUP LAN if the iPhone hotspot misbehaves (dashboard needs no
-      internet; do the git pull before switching networks).
-      Dashboard URL on the laptop: `http://<board-ip>:8080` — board IP
-      from the iPhone's hotspot client list or `hostname -I` over SSH.
+- [ ] 5. **Network plan (REVISED 2026-08-15 after range research; user
+      call: TP-Link carries the field LAN. cloudflared is NOT on the
+      reflashed board, so drone.reysen.net is DEAD.)**
+      **The TL-MR3020 is the LAN the board and laptop live on.** Researched
+      basis: it transmits at 20 dBm on 2.4 GHz (router-class, the
+      regulatory ceiling), sits still, runs off a power bank, and its DHCP
+      LAN works with no internet. A phone hotspot is the weaker AP: the
+      iPhone defaults its hotspot to 5 GHz (shorter range; 2.4 needs
+      "Maximize Compatibility" turned on) and phones are built for
+      pocket-distance clients. No honest open-field metre figure exists
+      for either — placement still matters: MR3020 HIGH at the ground
+      station (car roof), facing the plot. The other end of the link is
+      the board's own antenna regardless of AP, so expect the dashboard to
+      pause at the far survey edge and self-recover (mission unaffected —
+      everything flies onboard; data is cumulative).
+      **PREFERRED SETUP — WISP mode, zero mid-day switching:** MR3020
+      admin page -> WISP mode -> join the iPhone hotspot as upstream
+      (iPhone must have Maximize Compatibility ON so it broadcasts 2.4).
+      Then board + laptop sit on the TP-Link ALL DAY: git pull, the
+      on-camera Google-date search, and the dashboard all work through it;
+      if the iPhone dies you lose internet, never the LAN.
+      **FALLBACK if WISP fights you:** MR3020 standalone (no internet).
+      Do everything internet-y on the iPhone hotspot FIRST (git pull, pip),
+      then move board + laptop to the TP-Link. The take's opening
+      Google-date shot then happens with the laptop briefly on the iPhone,
+      and the laptop switches to the TP-Link during the components walk
+      (camera is off the laptop 0:30-3:00) so the dashboard is up by 3:00.
+      Board wifi switch (over SSH; the session drops mid-command, that is
+      normal): `sudo nmcli dev wifi connect "<SSID>" password "<pw>"` —
+      or however the board was joined to the hotspot before; NetworkManager
+      remembers and auto-rejoins after.
+      Dashboard URL on the laptop: `http://arduino-drone.local:8080`
+      (mDNS worked for arduino-cli discovery, VERIFY once) or
+      `http://<board-ip>:8080` with the IP from the MR3020's client list.
+      Check the MR3020's hardware version on its label: v1 is mini-USB
+      power, later revisions micro-USB — pack the matching cable.
 - [ ] 5b. **Dashboard needs flask on the board.** If it errors with
       ModuleNotFoundError: `~/venv/bin/pip install flask msgpack`
       (board_setup.sh now installs both, but the board was set up before
