@@ -2,7 +2,10 @@
 
 FIRST ACTION every session: read PROJECT_STATE.md completely, and PRIVATE.md if present (gitignored machine/account details; on a new machine copy PRIVATE.sample.md and fill it in). It is the single
 source of truth (project state, decisions, TODO, session continuity) and
-replaces prior chat context. Git discipline: run git pull --rebase BEFORE reading state or changing anything (others may have pushed), and commit+push after every change. Update PROJECT_STATE.md as part of every change.
+replaces prior chat context. Git discipline: THE ASSISTANT NEVER RUNS `git pull`
+(user, 2026-08-15, emphatic, after being told before). The user pulls. The
+assistant may commit and push its own edits. NEVER `cd` into the repo in any
+command, ever, on any machine. Update PROJECT_STATE.md as part of every change.
 
 ## Response defaults (every reply, unless the user overrides)
 
@@ -59,6 +62,33 @@ answer delivered confidently is worse than no answer. In every response:
    official docs, or a meter reading, never from model memory alone. If it
    cannot be verified right now, say so and mark the step VERIFY in the plan.
 
+## SCOPE RULES (user, 2026-08-15, after the failed farm run; these OUTRANK every
+## other rule in this file except an explicit later instruction from the user)
+
+1. LOGS IN EVERY PROGRAM THAT NEEDS THEM. Anything that runs unattended or on
+   the board (dashboard, mission, pump, scripts) writes EVERYTHING to a log
+   file, not just to stdout. The dashboard specifically must log every request,
+   every launch attempt, every failure reason. `tools/` does not need logging
+   (it is interactive and its output is read live).
+2. PROGRAM ONLY WHAT IS ASKED, WHEN IT IS ASKED. No unrequested features, no
+   "while I was in there" fixes, no proactive rewrites. Before writing any
+   program, ASK AS MANY QUESTIONS AS POSSIBLE and write it exactly the way the
+   user answers. Asking too much is correct; guessing is not.
+3. THE USER OWNS THE TODO LIST. The assistant does not create, reorder, or
+   invent tasks.
+4. NO GIANT COMMAND BLOCKS. Multi-step procedures become SCRIPTS, committed to
+   the repo and meticulously tested before the user runs them. Only one or
+   two-liner commands are ever pasted into a shell. No `git pull` from the
+   assistant, no `cd <dir>` in any command.
+5. NOTHING BUT PROGRAMMING unless explicitly asked. No analysis, no research,
+   no planning documents, no state-of-the-world reports, unless the user asks
+   for them. (The STATE-FIRST rule below still applies: recording facts and
+   rules in PROJECT_STATE.md / CLAUDE.md is bookkeeping, not initiative.)
+
+WHY: the 2026-08-15 farm run failed completely. The dashboard could not arm the
+aircraft, and the day was spent on assistant-generated procedure instead of on
+a working flight. Filming moves to the nearby field.
+
 ## Project-specific standing rules
 
 - STATE-FIRST, EVERY MESSAGE (user, 2026-08-01): before finishing any reply,
@@ -106,8 +136,9 @@ answer delivered confidently is worse than no answer. In every response:
 
 ## Multi-machine coordination (owner + friend, both with AIs)
 
-- git pull --rebase immediately before EVERY commit as well as at session start;
-  two people push to main and stale pushes cause conflicts.
+- Two people push to main, so a stale push can conflict. The USER runs the pull
+  (see SCOPE RULES 4: the assistant never runs `git pull`). If an assistant push
+  is rejected as non-fast-forward, say so and stop; do not pull to fix it.
 - Never rewrite pushed history (no force push, no amend of pushed commits).
 - Decision log entries: append-only, dated, and tagged with who made them,
   e.g. "2026-07-26 (friend): ...". Never edit or delete existing entries.
