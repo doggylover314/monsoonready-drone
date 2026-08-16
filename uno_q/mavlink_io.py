@@ -67,6 +67,39 @@ MASK_POSITION_ONLY = 0x0DF8  # ignore vel+accel+yaw+yaw_rate
 MASK_VELOCITY_ONLY = 0x0DC7  # ignore pos+accel+yaw+yaw_rate
 
 
+# Rest-voltage -> state-of-charge for one LiPo cell, the standard published
+# approximation. WHY this exists (user, 2026-08-16): ArduPilot's own
+# battery_remaining is a coulomb counter that RESETS TO ~100% at every boot,
+# so after a battery swap or reboot it lies until a full flight drains it
+# (the bench showed 11.88 V as "99%" when the pack was really ~60%).
+# Voltage survives reboots. Caveats, stated wherever the estimate is shown:
+# it is approximate (+/-10 points), and it reads LOW while motors run
+# because load sag drops the terminal voltage below the rest voltage.
+_LIPO_CELL_PCT = [
+    (4.20, 100), (4.15, 95), (4.11, 90), (4.08, 85), (4.02, 75),
+    (3.97, 65), (3.92, 55), (3.87, 45), (3.85, 40), (3.82, 35),
+    (3.79, 25), (3.75, 20), (3.70, 15), (3.65, 10), (3.60, 5),
+    (3.30, 0),
+]
+
+
+def volt_to_pct(volts, cells=3):
+    """Estimate battery % from pack voltage (3S default). None if unknown.
+
+    Linear interpolation over _LIPO_CELL_PCT, clamped to 0..100.
+    """
+    if volts is None or volts <= 0:
+        return None
+    v = volts / cells
+    if v >= _LIPO_CELL_PCT[0][0]:
+        return 100
+    for (v_hi, p_hi), (v_lo, p_lo) in zip(_LIPO_CELL_PCT, _LIPO_CELL_PCT[1:]):
+        if v >= v_lo:
+            frac = (v - v_lo) / (v_hi - v_lo)
+            return int(round(p_lo + frac * (p_hi - p_lo)))
+    return 0
+
+
 class Telemetry:
     """Latest-value cache; timestamps are time.monotonic() at receive."""
 
@@ -93,6 +126,12 @@ class Telemetry:
         self.sats = None           # GPS_RAW_INT satellites_visible
         self.hdop = None           # GPS_RAW_INT eph / 100
         self.fix_type = None       # 3 = 3D fix
+
+    @property
+    def batt_pct_est(self):
+        """Voltage-derived battery %, ~accurate across reboots (see
+        volt_to_pct); ArduPilot's batt_pct resets to 100 every boot."""
+        return volt_to_pct(self.batt_v)
 
 
 class MavIO:

@@ -154,8 +154,8 @@ class Mission:
                  f"lat={f(tel.lat, '.7f')} lon={f(tel.lon, '.7f')} "
                  f"alt={f(tel.rel_alt_m)}m rng={f(tel.rng_m, '.2f')}m"
                  f"{'' if tel.rng_valid else '(stale)'} "
-                 f"vd={f(tel.vd_mps, '.2f')} batt={f(tel.batt_v, '.2f')}V/"
-                 f"{f(tel.batt_pct, '.0f')}% sats={f(tel.sats, 'd')} "
+                 f"vd={f(tel.vd_mps, '.2f')} batt={f(tel.batt_v, '.2f')}V"
+                 f"/~{f(tel.batt_pct_est, '.0f')}% sats={f(tel.sats, 'd')} "
                  f"hdop={f(tel.hdop, '.2f')}")
 
     def _rng_fresh(self):

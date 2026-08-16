@@ -96,7 +96,14 @@ uint16_t MavlinkProximity::sendDistanceSensorUp(uint16_t mm) {
 }
 
 // -----------------------------------------------------------------------------
-uint16_t MavlinkProximity::sendStatusText(const char *text) {
+uint16_t MavlinkProximity::sendStatusText(const char *text, uint8_t severity) {
+  // The header hard-codes these (MAVLink.h is not visible there); if the
+  // library enum ever disagreed, fail the build instead of mislabeling.
+  static_assert(MavlinkProximity::SEV_WARNING == MAV_SEVERITY_WARNING,
+                "SEV_WARNING out of sync with MAVLink enum");
+  static_assert(MavlinkProximity::SEV_INFO == MAV_SEVERITY_INFO,
+                "SEV_INFO out of sync with MAVLink enum");
+
   mavlink_message_t msg;
   static uint8_t buf[MAVLINK_MAX_PACKET_LEN];
 
@@ -107,7 +114,7 @@ uint16_t MavlinkProximity::sendStatusText(const char *text) {
 
   mavlink_msg_statustext_pack(
       MAV_SYSID, MAV_COMPID, &msg,
-      MAV_SEVERITY_INFO,           // informational: never trips a GCS alarm
+      severity,
       padded,
       0, 0);                       // id/chunk_seq: single-chunk message
 

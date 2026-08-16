@@ -183,7 +183,7 @@
   .tile .v.bad { color: var(--critical); }
 
   /* ---------- flight control ---------- */
-  #ctlOff, #stOff, #phOff { color: var(--muted); }
+  #ctlOff, #stOff { color: var(--muted); }
   .ctlRow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .ctlRow + .ctlRow { margin-top: 9px; }
   .big {
@@ -225,14 +225,15 @@
   .strow.fail .dt { color: var(--critical); }
   .strow .dt { color: var(--ink-2); }
   #stNote { color: var(--muted); font-size: 12px; }
-
-  /* ---------- manual photo panel ---------- */
-  #phImgWrap { margin-top: 9px; }
-  #phImg {
-    max-width: 100%; max-height: 260px; display: none;
-    border: 1px solid var(--border); border-radius: 8px; cursor: zoom-in;
+  /* progress bar shown ONLY while the test runs; replaces the note text */
+  #stBar {
+    display: none; margin-top: 10px; height: 10px; border-radius: 999px;
+    background: var(--grid); overflow: hidden;
   }
-  #phName { color: var(--muted); font-size: 11.5px; margin-top: 3px; }
+  #stFill {
+    height: 100%; width: 0; background: var(--det-dot);
+    border-radius: 999px; transition: width 2.9s linear;
+  }
 
   /* ---------- photo browser panel ---------- */
   .galbtn.on { color: var(--det-dot); border-color: var(--det-dot); }
@@ -309,6 +310,7 @@
     <span class="chip"><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#0ca30c"/><path d="M4 7.4l2 2 4-4.5" stroke="#fff" stroke-width="1.8" fill="none"/></svg> treated</span>
     <span class="chip"><svg width="14" height="14"><path d="M3 3l8 8M11 3l-8 8" stroke="#d03b3b" stroke-width="2.4"/></svg> abort</span>
     <span class="chip"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="var(--track)" stroke-width="2"/></svg> track</span>
+    <span class="chip"><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--det-dot)" stroke-width="1.8"/><text x="7" y="10" font-size="8" text-anchor="middle" fill="var(--det-dot)">1</text></svg> waypoint</span>
     <span class="chip"><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="3 2.5"/></svg> recurring &ge;2 flights</span>
     <span class="chip" style="margin-left:auto">scroll = zoom &middot; drag = pan &middot; dbl-click = reset</span>
   </div>
@@ -353,22 +355,8 @@
         <span id="stNote"></span>
       </div>
       <div class="ctlRow"><span id="stErr"></span></div>
+      <div id="stBar"><div id="stFill"></div></div>
       <div id="stList"></div>
-    </div>
-  </div>
-
-  <div class="pad" id="body-photo">
-    <div id="phOff">Flight control is off; no camera access from here.</div>
-    <div id="phOn" style="display:none">
-      <div class="ctlRow">
-        <button class="big" id="btnPhoto">Take photo</button>
-        <span id="phNote" class="sub"></span>
-      </div>
-      <div class="ctlRow"><span id="phErr"></span></div>
-      <div id="phImgWrap">
-        <img id="phImg" alt="latest manual photo">
-        <div id="phName"></div>
-      </div>
     </div>
   </div>
 
@@ -377,8 +365,11 @@
       <button class="galbtn on" id="galAuto">Mission</button>
       <button class="galbtn" id="galManual">Manual</button>
       <button id="galRefresh" title="Refresh list">&#10227;</button>
+      <button id="btnPhoto" style="display:none" title="Capture one photo to
+        the Manual tab; never processed by the detector">Take photo</button>
       <span id="galCount"></span>
     </div>
+    <div class="ctlRow"><span id="phErr"></span></div>
     <div id="galGrid"></div>
     <button id="galMore" style="display:none">Load more</button>
   </div>
@@ -442,14 +433,13 @@ function applyTheme(t) {
    "Reset layout" restores DEFAULTS.
    ===================================================================== */
 const DEFAULTS = {
-  order: ['map', 'status', 'control', 'selftest', 'photo', 'gallery',
+  order: ['map', 'status', 'control', 'selftest', 'gallery',
           'totals', 'profile', 'detections', 'events'],
   panels: {
     map:        { title: 'Site map',        sub: 'detections & treatments', w: 8, h: 6, on: true },
     status:     { title: 'Mission status',  sub: 'live',                    w: 4, h: 3, on: true },
     control:    { title: 'Flight control',  sub: 'launch & abort',          w: 4, h: 4, on: true },
     selftest:   { title: 'Self-test',       sub: 'no motors, no servos',    w: 4, h: 4, on: true },
-    photo:      { title: 'Manual photo',    sub: 'saved, never processed',  w: 4, h: 4, on: true },
     gallery:    { title: 'Photos',          sub: 'mission + manual, newest first', w: 4, h: 4, on: true },
     totals:     { title: 'Season totals',   sub: 'all data in scope',       w: 4, h: 3, on: true },
     profile:    { title: 'Altitude profile',sub: 'EKF alt + rangefinder',   w: 5, h: 3, on: true },
@@ -457,7 +447,8 @@ const DEFAULTS = {
     events:     { title: 'Event log',       sub: 'everything but fixes',    w: 12, h: 4, on: true },
   },
 };
-/* v3: pump removed, selftest+photo added; older saves would hide them. */
+/* v3: pump removed, selftest added; the standalone photo panel merged into
+   gallery 2026-08-16 (mergeLayout silently drops its saved entry). */
 const LS_KEY = 'mr-layout-v3';
 let layoutState = null;
 
@@ -529,12 +520,18 @@ function buildPanels() {
   const lay = document.createElement('span');
   lay.style.cssText = 'display:inline-flex;gap:10px;flex-wrap:wrap;font-size:12px;margin-left:6px';
   lay.innerHTML = `
+    <label><input type="checkbox" id="ly-sat" checked> sat</label>
+    <label><input type="checkbox" id="ly-wp" checked> route</label>
     <label><input type="checkbox" id="ly-heat" checked> heat</label>
     <label><input type="checkbox" id="ly-det" checked> det</label>
     <label><input type="checkbox" id="ly-drop" checked> drops</label>
     <label><input type="checkbox" id="ly-abort" checked> aborts</label>
     <label><input type="checkbox" id="ly-track" checked> track</label>
-    <label id="ly-site-label" style="display:none"><input type="checkbox" id="ly-site" checked> site</label>`;
+    <label id="ly-site-label" style="display:none"><input type="checkbox" id="ly-site" checked> site</label>
+    <button id="wpEdit" style="display:none;font-size:12px;padding:2px 8px">Edit route</button>
+    <button id="wpSave" style="display:none;font-size:12px;padding:2px 8px">Save route</button>
+    <button id="wpRevert" style="display:none;font-size:12px;padding:2px 8px">Revert</button>
+    <span id="wpNote" style="font-size:11.5px;color:var(--muted)"></span>`;
   mapPh.insertBefore(lay, mapPh.querySelector('.x'));
   applyLayout();
   buildPanelMenu();
@@ -653,7 +650,23 @@ const state = {
   missions: [], events: [], selected: 'all',
   siteMeta: null, siteImg: null, hits: [], lastMissionsJson: '',
   lastEventsJson: '',
+  // planned route (GET /api/waypoints): shown BEFORE any flight and
+  // draggable in edit mode (user 2026-08-16)
+  wps: [], wpAvailable: false, wpEdit: false, wpDirty: false, wpDrag: null,
 };
+
+async function loadWaypoints() {
+  try {
+    const j = await getJSON('/api/waypoints');
+    state.wpAvailable = !!(j.available && j.exists);
+    if (!state.wpEdit) {            // never clobber an edit in progress
+      state.wps = state.wpAvailable ? j.waypoints : [];
+      state.wpDirty = false;
+    }
+    if (j.errors && j.errors.length)
+      $('wpNote').textContent = 'waypoint file: ' + j.errors[0];
+  } catch { state.wpAvailable = false; }
+}
 
 async function loadSite() {
   try {
@@ -682,7 +695,7 @@ async function loadEvents() {
 }
 
 async function reload() {
-  await loadMissions(); await loadEvents();
+  await loadMissions(); await loadEvents(); await loadWaypoints();
   render(); stats(); table(); status(); detList(); profile();
 }
 
@@ -892,7 +905,7 @@ const ctl = {
   // refuse, so a click during the take produced a red server error instead
   // of a button that was simply not offered (2026-08-15 laptop test).
   canFly: false,
-  lastPhoto: null,
+  testStart: null,   // Date.now() when we first saw a self-test running
 };
 
 function goEnabled() {
@@ -936,13 +949,35 @@ async function ctlPost(path, body, errEl) {
 
 function renderSelftest(c) {
   $('btnTest').disabled = !!c.testing || ctl.running;
-  $('stNote').textContent = c.testing
-    ? 'test running (about 30 s)…'
-    : c.selftest
-      ? `last run ${Math.round(c.selftest.age_s)} s ago, took ` +
-        `${c.selftest.took_s} s, ` +
-        (c.selftest.ok_all ? 'ALL PASSED' : 'FAILURES BELOW')
-      : 'never run';
+  const bar = $('stBar'), fill = $('stFill');
+  if (c.testing) {
+    // While the test runs, the PREVIOUS results disappear and a progress
+    // bar replaces the "about 30 s" text (user, 2026-08-16). The clock
+    // starts when this page first sees the run, so it is at most one 3 s
+    // poll behind the real start; the CSS width transition keeps the bar
+    // moving smoothly between polls.
+    if (!ctl.testStart) ctl.testStart = Date.now();
+    $('stList').innerHTML = '';
+    $('stNote').textContent = 'testing…';
+    bar.style.display = 'block';
+    fill.style.width =
+      Math.min(97, (Date.now() - ctl.testStart) / 30000 * 100) + '%';
+    return;
+  }
+  if (ctl.testStart) {                     // the run we watched just ended
+    ctl.testStart = null;
+    fill.style.width = '100%';
+    setTimeout(() => {
+      bar.style.display = 'none'; fill.style.width = '0';
+    }, 400);
+  } else {
+    bar.style.display = 'none'; fill.style.width = '0';
+  }
+  $('stNote').textContent = c.selftest
+    ? `last run ${Math.round(c.selftest.age_s)} s ago, took ` +
+      `${c.selftest.took_s} s, ` +
+      (c.selftest.ok_all ? 'ALL PASSED' : 'FAILURES BELOW')
+    : 'never run';
   const box = $('stList');
   if (!c.selftest) { box.innerHTML = '<div class="none">No results yet</div>'; return; }
   box.innerHTML = '';
@@ -955,17 +990,6 @@ function renderSelftest(c) {
     dt.className = 'dt'; dt.textContent = r.detail;
     row.append(nm, dt);
     box.appendChild(row);
-  }
-}
-
-function renderPhoto(c) {
-  $('btnPhoto').disabled = false;
-  if (c.manual_photo && c.manual_photo !== ctl.lastPhoto) {
-    ctl.lastPhoto = c.manual_photo;
-    const img = $('phImg');
-    img.src = '/api/manual_photos/' + c.manual_photo;
-    img.style.display = '';
-    $('phName').textContent = c.manual_photo;
   }
 }
 
@@ -1000,15 +1024,32 @@ function galSwitch(which) {
   galLoad(true);
 }
 
+/* ---------- route editing: Edit -> drag markers -> Save / Revert -------- */
+function updateWpButtons() {
+  const can = ctl.enabled && state.wpAvailable && !ctl.running;
+  $('wpEdit').style.display = can && !state.wpEdit ? '' : 'none';
+  $('wpSave').style.display = state.wpEdit ? '' : 'none';
+  $('wpRevert').style.display = state.wpEdit ? '' : 'none';
+  $('wpSave').disabled = !state.wpDirty;
+}
+
+function setWpEdit(on) {
+  state.wpEdit = on;
+  if (!on) canvasEl().style.cursor = '';
+  updateWpButtons();
+  render();
+}
+
 async function ctlRefresh() {
   let c;
   try { c = await getJSON('/api/control'); } catch { return; }
   ctl.enabled = !!c.enabled;
-  for (const [off, on] of [['ctlOff','ctlOn'],['stOff','stOn'],['phOff','phOn']]) {
+  for (const [off, on] of [['ctlOff','ctlOn'],['stOff','stOn']]) {
     $(off).style.display = ctl.enabled ? 'none' : '';
     $(on).style.display = ctl.enabled ? '' : 'none';
   }
-  if (!ctl.enabled) return;
+  $('btnPhoto').style.display = ctl.enabled ? '' : 'none';
+  if (!ctl.enabled) { updateWpButtons(); return; }
   ctl.running = !!c.mission_running;
 
   const st = $('ctlState');
@@ -1038,7 +1079,7 @@ async function ctlRefresh() {
   if (atBottom) log.scrollTop = log.scrollHeight;
 
   renderSelftest(c);
-  renderPhoto(c);
+  updateWpButtons();
 }
 
 /* ---------- projection (equirectangular, meters, north-up) ---------- */
@@ -1068,12 +1109,89 @@ const proj = {
   },
 };
 
+/* inverse of proj.px: canvas pixel -> [lat, lon] (drag editing, tiles) */
+function unproject(x, y) {
+  return [proj.lat0 + (proj.oy - y) / proj.s / 111320,
+          proj.lon0 + (x - proj.ox) / proj.s / proj.mLon];
+}
+
 /* view transform (zoom/pan) folded into proj after fit() */
 const view = { k: 1, tx: 0, ty: 0 };
 function applyView() {
   proj.s *= view.k;
   proj.ox = proj.ox * view.k + view.tx;
   proj.oy = proj.oy * view.k + view.ty;
+}
+
+/* ---------- satellite imagery (user 2026-08-16: like QGC/MissionPlanner) --
+   Esri World Imagery slippy tiles, fetched by the BROWSER (the laptop has
+   internet at the field via the WISP router; the board never fetches).
+   Tiles are drawn under everything else by stretching each tile's geographic
+   corners through our equirectangular projection; the mercator-vs-equirect
+   difference inside one tile is sub-pixel at the z16+ scales a survey site
+   uses. Offline or blocked -> tiles simply never arrive and the map renders
+   exactly as before. Esri's terms require visible attribution (drawn in
+   chrome()). */
+const TILE_MAX_Z = 19, TILE_MIN_Z = 3, TILE_LIMIT = 64;
+const tiles = { cache: new Map(), drawn: false };
+const tileURL = (z, x, y) =>
+  `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+
+function tileXY(lat, lon, z) {
+  const n = 2 ** z, la = lat * Math.PI / 180;
+  return [(lon + 180) / 360 * n,
+          (1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2 * n];
+}
+function tileLatLon(x, y, z) {
+  const n = 2 ** z;
+  return [Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI,
+          x / n * 360 - 180];
+}
+
+let renderQueued = false;
+function renderSoon() {            // coalesce per-tile onloads into one draw
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+
+function drawSat(ctx, w, h) {
+  tiles.drawn = false;
+  // zoom whose tile resolution best matches the screen (156543 m/px at z0)
+  const mPerPx = 1 / proj.s;
+  const zf = Math.log2(156543.03392 *
+                       Math.cos(proj.lat0 * Math.PI / 180) / mPerPx);
+  const z = Math.max(TILE_MIN_Z, Math.min(TILE_MAX_Z, Math.ceil(zf)));
+  const [latT, lonL] = unproject(0, 0), [latB, lonR] = unproject(w, h);
+  const [x0f, y0f] = tileXY(latT, lonL, z), [x1f, y1f] = tileXY(latB, lonR, z);
+  const x0 = Math.floor(x0f), y0 = Math.floor(y0f);
+  const x1 = Math.floor(x1f), y1 = Math.floor(y1f);
+  if ((x1 - x0 + 1) * (y1 - y0 + 1) > TILE_LIMIT) return; // zoomed far out
+  const n = 2 ** z;
+  for (let ty = Math.max(0, y0); ty <= Math.min(n - 1, y1); ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
+      const wx = ((tx % n) + n) % n;                 // wrap the antimeridian
+      const key = `${z}/${wx}/${ty}`;
+      let img = tiles.cache.get(key);
+      if (!img) {
+        img = new Image();
+        img.onload = renderSoon;
+        img.src = tileURL(z, wx, ty);
+        tiles.cache.set(key, img);
+        if (tiles.cache.size > 300) {                // bound memory: drop oldest
+          for (const k of [...tiles.cache.keys()].slice(0, 150))
+            tiles.cache.delete(k);
+        }
+      }
+      if (!img.complete || !img.naturalWidth) continue;  // loading or failed
+      const [aLat, aLon] = tileLatLon(tx, ty, z);
+      const [bLat, bLon] = tileLatLon(tx + 1, ty + 1, z);
+      const a = proj.px(aLat, aLon), b = proj.px(bLat, bLon);
+      // +0.5 px overdraw hides the hairline seams between tiles
+      ctx.drawImage(img, a.x, a.y, b.x - a.x + 0.5, b.y - a.y + 0.5);
+      tiles.drawn = true;
+    }
+  }
 }
 
 /* ---------- map rendering ---------- */
@@ -1097,11 +1215,21 @@ function render() {
   const sm = state.siteMeta;
   if (sm && layer('ly-site') && state.siteImg?.complete)
     pts.push([sm.lat_top, sm.lon_left], [sm.lat_bottom, sm.lon_right]);
-  proj.fit(pts, w, h, 44);
+  // the planned route counts toward the view: the map is useful BEFORE the
+  // first flight, and editing needs the waypoints on screen
+  if (layer('ly-wp')) for (const wp of state.wps) pts.push(wp);
+  // While a waypoint is being dragged the projection must hold still:
+  // re-fitting around the moving point would shift the map under the cursor
+  // and the marker would chase its own projection.
+  if (state.wpDrag == null) {
+    proj.fit(pts, w, h, 44);
+    if (proj.ok) applyView();
+  }
 
   $('empty').style.display = proj.ok ? 'none' : 'grid';
   if (!proj.ok) return;
-  applyView();
+
+  if (layer('ly-sat')) drawSat(ctx, w, h);
 
   if (sm && layer('ly-site') && state.siteImg?.complete) {
     const a = proj.px(sm.lat_top, sm.lon_left), b = proj.px(sm.lat_bottom, sm.lon_right);
@@ -1136,6 +1264,36 @@ function render() {
       ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, 7); ctx.fill(); ctx.stroke();
       state.hits.push({...p, r: 10, html: `<b>Aircraft</b> latest fix`});
     }
+  }
+
+  /* planned route: numbered waypoints joined by a dashed line, in flight
+     order. In edit mode the markers grow and fill so they read as handles. */
+  if (layer('ly-wp') && state.wps.length) {
+    ctx.strokeStyle = css('--det-dot'); ctx.lineWidth = 1.8;
+    ctx.setLineDash([6, 5]); ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    state.wps.forEach((wp, i) => {
+      const p = proj.px(wp[0], wp[1]);
+      i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    const r = state.wpEdit ? 11 : 8;
+    ctx.font = '650 ' + (state.wpEdit ? 12 : 10) + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    state.wps.forEach((wp, i) => {
+      const p = proj.px(wp[0], wp[1]);
+      ctx.fillStyle = state.wpEdit ? css('--det-dot') : css('--surface');
+      ctx.strokeStyle = css('--det-dot'); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = state.wpEdit ? '#fff' : css('--det-dot');
+      ctx.fillText(String(i + 1), p.x, p.y + 0.5);
+      if (!state.wpEdit)
+        state.hits.push({...p, r: r + 3, html:
+          `<b>Waypoint ${i + 1}</b> of ${state.wps.length}<br>` +
+          `<span class="t">${wp[0].toFixed(6)}, ${wp[1].toFixed(6)}</span>`});
+    });
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
 
   /* ok === false: gate commanded but never actuated -> hollow red, visible.
@@ -1269,6 +1427,11 @@ function chrome(ctx, w, h) {
   ctx.fillStyle = css('--ink-2'); ctx.fill();
   ctx.textAlign = 'center'; ctx.fillText('N', nx, ny + 16);
   ctx.textAlign = 'left';
+  if (tiles.drawn) {                 // Esri's terms require attribution
+    ctx.textAlign = 'right'; ctx.fillStyle = css('--ink-2');
+    ctx.fillText('imagery: Esri World Imagery', w - 8, h - 8);
+    ctx.textAlign = 'left';
+  }
 }
 
 /* ---------- map zoom / pan / tooltip (wired after buildPanels) ---------- */
@@ -1290,13 +1453,42 @@ function wireMap() {
     render();
   }, { passive: false });
 
+  // In edit mode a press on a waypoint marker grabs THAT; panning only
+  // happens off-marker. Grab radius is generous: these are drag handles.
+  const wpHit = (mx, my) => {
+    if (!state.wpEdit || !layer('ly-wp')) return null;
+    let best = null, bd = Infinity;
+    state.wps.forEach((wp, i) => {
+      const p = proj.px(wp[0], wp[1]);
+      const d = Math.hypot(p.x - mx, p.y - my);
+      if (d <= 14 && d < bd) { bd = d; best = i; }
+    });
+    return best;
+  };
+
   canvas.addEventListener('mousedown', ev => {
+    const r = canvas.getBoundingClientRect();
+    const hit = wpHit(ev.clientX - r.left, ev.clientY - r.top);
+    if (hit != null) {
+      state.wpDrag = hit;              // freezes proj.fit (see render)
+      canvas.style.cursor = 'grabbing';
+      $('tip').style.display = 'none';
+      return;
+    }
     if (view.k === 1) return;
     dragging = { x: ev.clientX, y: ev.clientY };
     canvas.style.cursor = 'grabbing';
     $('tip').style.display = 'none';
   });
   window.addEventListener('mousemove', ev => {
+    if (state.wpDrag != null) {
+      const r = canvas.getBoundingClientRect();
+      state.wps[state.wpDrag] =
+        unproject(ev.clientX - r.left, ev.clientY - r.top);
+      state.wpDirty = true;
+      render();
+      return;
+    }
     if (!dragging) return;
     view.tx += ev.clientX - dragging.x;
     view.ty += ev.clientY - dragging.y;
@@ -1304,6 +1496,13 @@ function wireMap() {
     render();
   });
   window.addEventListener('mouseup', () => {
+    if (state.wpDrag != null) {
+      state.wpDrag = null;
+      canvas.style.cursor = '';
+      updateWpButtons();
+      render();                        // unfrozen: re-fit around the new spot
+      return;
+    }
     if (dragging) { dragging = null; canvas.style.cursor = 'grab'; }
   });
   canvas.addEventListener('dblclick', () => {
@@ -1313,9 +1512,11 @@ function wireMap() {
   });
 
   canvas.addEventListener('mousemove', ev => {
-    if (dragging) return;
+    if (dragging || state.wpDrag != null) return;
     const r = canvas.getBoundingClientRect();
     const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+    if (state.wpEdit)
+      canvas.style.cursor = wpHit(mx, my) != null ? 'grab' : '';
     let best = null, bd = Infinity;
     for (const t of state.hits) {
       const d = Math.hypot(t.x - mx, t.y - my);
@@ -1338,7 +1539,8 @@ function wireEvents() {
     state.selected = ev.target.value;
     await loadEvents(); render(); stats(); table(); status(); detList(); profile();
   });
-  for (const id of ['ly-heat','ly-det','ly-drop','ly-abort','ly-track','ly-site'])
+  for (const id of ['ly-sat','ly-wp','ly-heat','ly-det','ly-drop','ly-abort',
+                    'ly-track','ly-site'])
     $(id).addEventListener('change', render);
   $('refresh').addEventListener('click', reload);
   window.addEventListener('resize', () => { render(); profile(); });
@@ -1360,32 +1562,53 @@ function wireEvents() {
     await ctlPost('/api/control/stop'); ctlRefresh();
   });
   $('btnTest').addEventListener('click', async () => {
-    $('stNote').textContent = 'starting…';
-    await ctlPost('/api/control/test', {}, $('stErr'));
+    // The bar and the cleared list must appear NOW, not one poll later.
+    $('stList').innerHTML = '';
+    $('stNote').textContent = 'testing…';
+    ctl.testStart = Date.now();
+    $('stBar').style.display = 'block';
+    $('stFill').style.width = '2%';
+    const j = await ctlPost('/api/control/test', {}, $('stErr'));
+    if (!j.ok) {                       // refused: put the panel back
+      ctl.testStart = null;
+      $('stBar').style.display = 'none'; $('stFill').style.width = '0';
+      $('stNote').textContent = '';
+    }
     ctlRefresh();
   });
   $('btnPhoto').addEventListener('click', async () => {
     const btn = $('btnPhoto');
-    btn.disabled = true;
-    $('phNote').textContent = 'capturing…';
+    btn.disabled = true; btn.textContent = 'capturing…';
     const j = await ctlPost('/api/control/photo', {}, $('phErr'));
-    $('phNote').textContent = '';
-    btn.disabled = false;
-    if (j.ok && j.file) {
-      ctl.lastPhoto = j.file;
-      const img = $('phImg');
-      img.src = '/api/manual_photos/' + j.file;
-      img.style.display = '';
-      $('phName').textContent = j.file;
-      if (gal.which === 'manual') galLoad(true);  // browser shows it at once
-    }
+    btn.textContent = 'Take photo'; btn.disabled = false;
+    // the gallery's Manual tab shows the new shot first (newest-first sort)
+    if (j.ok && j.file) galSwitch('manual');
   });
   $('galAuto').addEventListener('click', () => galSwitch('auto'));
   $('galManual').addEventListener('click', () => galSwitch('manual'));
   $('galRefresh').addEventListener('click', () => galLoad(true));
   $('galMore').addEventListener('click', () => galLoad(false));
-  $('phImg').addEventListener('click', () =>
-    window.open($('phImg').src, '_blank'));
+
+  $('wpEdit').addEventListener('click', () => {
+    $('wpNote').textContent = 'drag a numbered waypoint, then Save';
+    setWpEdit(true);
+  });
+  $('wpSave').addEventListener('click', async () => {
+    const j = await ctlPost('/api/waypoints',
+                            { waypoints: state.wps }, $('wpNote'));
+    if (!j.ok) return;                 // refusal reason is now in wpNote
+    $('wpNote').textContent = `route saved (${j.count} waypoints)`;
+    state.wpDirty = false;
+    setWpEdit(false);
+    await loadWaypoints(); render();
+  });
+  $('wpRevert').addEventListener('click', async () => {
+    state.wpEdit = false;              // lets loadWaypoints overwrite wps
+    state.wpDirty = false;
+    $('wpNote').textContent = '';
+    await loadWaypoints();
+    setWpEdit(false);
+  });
 
   $('panelBtn').addEventListener('click', ev => {
     ev.stopPropagation(); $('panelMenu').classList.toggle('open');

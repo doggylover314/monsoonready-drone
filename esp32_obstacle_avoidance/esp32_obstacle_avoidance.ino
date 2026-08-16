@@ -35,7 +35,40 @@ static uint16_t latest_mm[NUM_SENSORS]; // freshest reading per channel (mm)
 static uint32_t last_tx_ms = 0;
 static uint32_t last_hb_ms = 0;
 static uint32_t last_health_ms = 0;
+static uint32_t last_event_ms = 0;
+static uint16_t health_prev = 0;        // bitmask snapshot for change detection
 static uint32_t tx_count = 0;
+
+// -----------------------------------------------------------------------------
+// One bit per healthy channel (fitted ring channels + up). Comparing two
+// snapshots tells us exactly which sensor was lost or revived, so the GCS
+// hears about a mid-flight dropout the moment it happens instead of up to
+// 15 s later in the periodic summary.
+static uint16_t healthMask() {
+  uint16_t m = 0;
+  for (uint8_t ch = 0; ch < NUM_RING_SENSORS; ch++)
+    if (RING_SENSOR_FITTED[ch] && sensors.channelHealthy(ch)) m |= (uint16_t)1u << ch;
+  if (sensors.channelHealthy(UP_SENSOR_CHANNEL)) m |= (uint16_t)1u << UP_SENSOR_CHANNEL;
+  return m;
+}
+
+// "prx LOST ch4 BACK up | ring 4/6" -- only the sections that apply.
+static void formatHealthEvent(uint16_t lost, uint16_t back, char *out, size_t n) {
+  size_t p = (size_t)snprintf(out, n, "prx");
+  for (int pass = 0; pass < 2; pass++) {
+    uint16_t bits = pass == 0 ? lost : back;
+    if (!bits || p >= n) continue;
+    p += (size_t)snprintf(out + p, n - p, pass == 0 ? " LOST" : " BACK");
+    for (uint8_t ch = 0; ch < NUM_SENSORS && p < n; ch++) {
+      if (!(bits & ((uint16_t)1u << ch))) continue;
+      if (ch == UP_SENSOR_CHANNEL) p += (size_t)snprintf(out + p, n - p, " up");
+      else                         p += (size_t)snprintf(out + p, n - p, " ch%u", ch);
+    }
+  }
+  if (p < n)
+    snprintf(out + p, n - p, " | ring %u/%u",
+             (unsigned)sensors.ringHealthy(), (unsigned)sensors.ringFitted());
+}
 
 // -----------------------------------------------------------------------------
 static void printBanner() {
@@ -142,6 +175,12 @@ void setup() {
   uint32_t now = millis();
   last_tx_ms = now;
   last_hb_ms = now;
+  // Baseline for change detection: channels dead at boot are covered by the
+  // banner and the begin() warning, not announced as a "change". Backdate the
+  // periodic timer so the FIRST health summary goes out on the first loop
+  // pass; the GCS learns the boot state immediately, not 15 s in.
+  health_prev = healthMask();
+  last_health_ms = now - HEALTH_TEXT_PERIOD_MS;
 }
 
 // -----------------------------------------------------------------------------
@@ -201,20 +240,56 @@ void loop() {
   }
 #endif  // SEND_HEARTBEAT
 
-  // --- Ring health STATUSTEXT every 30 s: lands in QGC, the dashboard's
-  // log tail, and the .BIN log, so field diagnosis never needs this USB. ---
+  // --- Ring health, two mechanisms (2026-08-16, ESP32 reliability pass):
+  //
+  // 1. EVENT: any sensor lost or revived is announced IMMEDIATELY, severity
+  //    WARNING on a loss (pops in the GCS) and INFO on a recovery. Serial
+  //    always prints the event even when MAVLink TX is jumper-blocked.
+  // 2. PERIODIC: every 15 s a summary STATUSTEXT plus a per-channel serial
+  //    line with the live error counters, so a slow decay is visible from
+  //    the serial monitor before it costs a sector.
+  {
+    uint16_t health_now = healthMask();
+    if (health_now != health_prev &&
+        now - last_event_ms >= HEALTH_EVENT_MIN_GAP_MS) {
+      uint16_t lost = health_prev & ~health_now;
+      uint16_t back = health_now & ~health_prev;
+      char text[50];
+      formatHealthEvent(lost, back, text, sizeof(text));
+      if (tx_allowed)
+        mav.sendStatusText(text, lost ? MavlinkProximity::SEV_WARNING
+                                      : MavlinkProximity::SEV_INFO);
+      DEBUG_SERIAL.printf("[health] EVENT %s%s\n", text,
+                          tx_allowed ? "" : " (TX blocked)");
+      health_prev = health_now;
+      last_event_ms = now;
+    }
+  }
+
   if (now - last_health_ms >= HEALTH_TEXT_PERIOD_MS) {
     last_health_ms = now;
-    if (tx_allowed) {
-      char text[50];
-      snprintf(text, sizeof(text), "prx ring %u/%u up:%s",
-               (unsigned)sensors.ringHealthy(),
-               (unsigned)sensors.ringFitted(),
-               (latest_mm[UP_SENSOR_CHANNEL] == SENSOR_MM_ERROR
-                || !sensors.sensorOk(UP_SENSOR_CHANNEL)) ? "ERR" : "ok");
-      mav.sendStatusText(text);
-      DEBUG_SERIAL.printf("[health] %s\n", text);
+    char text[50];
+    snprintf(text, sizeof(text), "prx ring %u/%u up:%s",
+             (unsigned)sensors.ringHealthy(),
+             (unsigned)sensors.ringFitted(),
+             (latest_mm[UP_SENSOR_CHANNEL] == SENSOR_MM_ERROR
+              || !sensors.channelHealthy(UP_SENSOR_CHANNEL)) ? "ERR" : "ok");
+    if (tx_allowed) mav.sendStatusText(text);
+    DEBUG_SERIAL.printf("[health] %s%s | per-channel:",
+                        text, tx_allowed ? "" : " (TX blocked)");
+    for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) {
+      char label[8];
+      if (ch == UP_SENSOR_CHANNEL) snprintf(label, sizeof(label), "up");
+      else                         snprintf(label, sizeof(label), "ch%u", ch);
+      if (ch < NUM_RING_SENSORS && !RING_SENSOR_FITTED[ch])
+        DEBUG_SERIAL.printf(" %s:--", label);          // not fitted
+      else if (sensors.channelHealthy(ch))
+        DEBUG_SERIAL.printf(" %s:ok", label);
+      else
+        DEBUG_SERIAL.printf(" %s:DOWN(e%u)", label,
+                            (unsigned)sensors.errCount(ch));
     }
+    DEBUG_SERIAL.println();
   }
 #endif  // RUN_I2C_DIAG
 }

@@ -189,9 +189,13 @@ def main():
     if tel.batt_v is None:
         report('battery', False, 'no voltage in SYS_STATUS')
     else:
+        # % comes from VOLTAGE (survives reboots), not ArduPilot's coulomb
+        # counter, which resets to ~100% every boot and lies after a swap.
+        est = tel.batt_pct_est
         report('battery', tel.batt_v >= MIN_BATT_V,
                f'{tel.batt_v:.2f} V'
-               + (f' ({tel.batt_pct}%)' if tel.batt_pct is not None else '')
+               + (f' (~{est}% by rest voltage, +/-10; sags low under load)'
+                  if est is not None else '')
                + ('' if tel.batt_v >= MIN_BATT_V else
                   f' -- below {MIN_BATT_V} V, charge or swap before flying'))
 

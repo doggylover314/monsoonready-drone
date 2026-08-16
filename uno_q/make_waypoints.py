@@ -53,7 +53,9 @@ def build_serpentine(lat0, lon0, heading_deg, rows, spacing_m, length_m):
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--out', default='wp_farm.txt')
+    # wp_field.txt since 2026-08-16: filming moved to the nearby field, and
+    # start_dashboard.sh's START button flies ~/wp_field.txt.
+    ap.add_argument('--out', default='wp_field.txt')
     ap.add_argument('--conn', default='auto',
                     help="'auto' (default) = the Pixhawk's USB via "
                          "/dev/serial/by-id, or SITL tcp:...")

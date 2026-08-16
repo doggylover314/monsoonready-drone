@@ -200,8 +200,15 @@ static const bool RING_SENSOR_FITTED[NUM_RING_SENSORS] __attribute__((unused)) =
 // HEALTH_TEXT_PERIOD_MS with the live sensor state ("prx ring 5/6 up:ok").
 // ArduPilot forwards it to every GCS and writes it into the .BIN log (MSG),
 // so ring health is visible from QGC, the dashboard log tail, and post-flight
-// analysis without ever opening the airframe or the debug serial.
-#define HEALTH_TEXT_PERIOD_MS 30000
+// analysis without ever opening the airframe or the debug serial. On top of
+// the periodic line, every CHANGE (a sensor lost or revived) is announced
+// the moment it happens, WARNING severity on a loss so the GCS pops it.
+// 15 s (user, 2026-08-16; was 30).
+#define HEALTH_TEXT_PERIOD_MS 15000
+// Change announcements are rate-limited to one per this gap, so a sensor
+// flickering right at the error threshold cannot flood the GCS; a suppressed
+// change still shows up in the next periodic line within 15 s.
+#define HEALTH_EVENT_MIN_GAP_MS 2000
 
 // -----------------------------------------------------------------------------
 // REPORTED RANGE (centimetres) -- goes into OBSTACLE_DISTANCE min/max_distance

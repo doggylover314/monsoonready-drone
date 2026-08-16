@@ -47,10 +47,16 @@ class MavlinkProximity {
   // Returns bytes written.
   uint16_t sendHeartbeat();
 
-  // Emit a STATUSTEXT (severity INFO). ArduPilot forwards it to every GCS
-  // and records it in the .BIN log, which makes it the one channel that
-  // reaches the field operator without the debug USB. Max 49 chars used.
-  uint16_t sendStatusText(const char *text);
+  // Emit a STATUSTEXT. ArduPilot forwards it to every GCS and records it in
+  // the .BIN log, which makes it the one channel that reaches the field
+  // operator without the debug USB. Max 49 chars used. `severity` uses the
+  // MAVLink MAV_SEVERITY scale (4=WARNING pops in most GCS, 6=INFO does
+  // not); the default stays INFO so periodic health lines never alarm.
+  // Numeric literals because MAVLink.h is only included in the .cpp; a
+  // static_assert there pins them to the real enum values.
+  static const uint8_t SEV_WARNING = 4;
+  static const uint8_t SEV_INFO = 6;
+  uint16_t sendStatusText(const char *text, uint8_t severity = SEV_INFO);
 
   // Convert one raw sensor reading (mm) into the cm value that goes into the
   // distances[] array (or a SECTOR_NO_* sentinel). Exposed static so the debug

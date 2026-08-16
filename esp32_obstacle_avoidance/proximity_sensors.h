@@ -59,11 +59,20 @@ class ProximitySensors {
   uint8_t ringHealthy() const;
   uint8_t ringFitted() const;
 
+  // Per-channel live health, public so the sketch can announce CHANGES the
+  // moment they happen instead of only in the periodic summary.
+  // "Healthy" = initialised and not currently streaming errors.
+  bool channelHealthy(uint8_t ch) const {
+    return (ch < NUM_SENSORS) && _ok[ch] && _err[ch] < SENSOR_RETRY_ERR_READS;
+  }
+  // Consecutive failed reads on `ch` right now (0 = reading fine). For the
+  // serial health line; a channel at SENSOR_RETRY_ERR_READS is counted down.
+  uint8_t errCount(uint8_t ch) const {
+    return (ch < NUM_SENSORS) ? _err[ch] : 0;
+  }
+
  private:
   bool initChannel(uint8_t ch);        // shared by begin() and maintain()
-  bool channelHealthy(uint8_t ch) const {
-    return _ok[ch] && _err[ch] < SENSOR_RETRY_ERR_READS;
-  }
   bool _ok[NUM_SENSORS] = {false};
   // Consecutive failed reads per channel; SENSOR_RETRY_ERR_READS in a row
   // marks an _ok channel as needing re-init (its continuous mode is gone).

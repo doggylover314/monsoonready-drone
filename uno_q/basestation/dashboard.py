@@ -131,12 +131,26 @@ def summarize(mission_id, events):
     }
 
 
-def newest_jpg(d):
+def read_waypoints_tolerant(path):
+    """Same 'lat,lon per line, # comments' format run_mission.read_waypoints
+    enforces, but tolerant: bad lines are reported, not fatal. The dashboard
+    must still render 9 good waypoints when line 3 is mangled."""
+    wps, errors = [], []
     try:
-        files = [f for f in os.listdir(d) if f.endswith('.jpg')]
-    except OSError:
-        return None
-    return max(files) if files else None       # names are IST timestamps
+        f = open(os.path.expanduser(path))
+    except OSError as exc:
+        return [], [str(exc)]
+    with f:
+        for n, line in enumerate(f, 1):
+            line = line.split('#', 1)[0].strip()
+            if not line:
+                continue
+            try:
+                lat, lon = (float(v) for v in line.split(','))
+                wps.append([lat, lon])
+            except ValueError:
+                errors.append(f"line {n}: expected 'lat,lon', got {line!r}")
+    return wps, errors
 
 
 def make_app(data_dir, control=None):
@@ -242,8 +256,61 @@ def make_app(data_dir, control=None):
             'conn': ctl['conn'], 'camera': ctl['camera'],
             'no_drop': ctl['no_drop'],
             'log': tail(os.path.join(LOG_DIR, 'run_mission.log')),
-            'manual_photo': newest_jpg(manual_dir),
         })
+
+    # ---------------- waypoints (map shows the planned route BEFORE flight
+    # and lets it be edited by dragging, user 2026-08-16) -------------------
+
+    @app.get('/api/waypoints')
+    def api_waypoints_get():
+        """The route the Start button would fly. Read-only; polling-free
+        (fetched once at load and after each save), so not logged."""
+        if not ctl:
+            return jsonify({'available': False})
+        path = os.path.expanduser(ctl['waypoints'])
+        wps, errors = ([], []) if not os.path.isfile(path) \
+            else read_waypoints_tolerant(path)
+        return jsonify({'available': True, 'path': ctl['waypoints'],
+                        'exists': os.path.isfile(path),
+                        'waypoints': wps, 'errors': errors})
+
+    @app.post('/api/waypoints')
+    def api_waypoints_post():
+        """Overwrite the waypoint file with the dragged route.
+
+        Refused while a mission runs: run_mission read the file at launch,
+        so a mid-flight save could NOT redirect the aircraft, and letting it
+        appear to succeed would leave the operator believing it had."""
+        if not ctl:
+            abort(403)
+        if find_pids('run_mission.py'):
+            log.warn('WAYPOINTS save refused: mission running')
+            return jsonify({'ok': False,
+                            'error': 'mission running; the flying route was '
+                                     'read at launch and cannot be changed '
+                                     'from here'}), 409
+        body = request.get_json(silent=True) or {}
+        wps = body.get('waypoints')
+        if (not isinstance(wps, list) or not 1 <= len(wps) <= 50
+                or not all(isinstance(p, (list, tuple)) and len(p) == 2
+                           and all(isinstance(v, (int, float)) for v in p)
+                           and abs(p[0]) <= 90 and abs(p[1]) <= 180
+                           for p in wps)):
+            log.warn(f'WAYPOINTS save refused: bad body '
+                     f'({type(wps).__name__}, '
+                     f'{len(wps) if isinstance(wps, list) else "-"} items)')
+            return jsonify({'ok': False,
+                            'error': 'need 1..50 [lat,lon] pairs'}), 400
+        path = os.path.expanduser(ctl['waypoints'])
+        tmp = path + '.tmp'
+        with open(tmp, 'w') as f:
+            f.write('# edited on the dashboard '
+                    + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
+            for lat, lon in wps:
+                f.write(f'{lat:.7f},{lon:.7f}\n')
+        os.replace(tmp, path)
+        log(f'WAYPOINTS: wrote {len(wps)} waypoints to {path}')
+        return jsonify({'ok': True, 'count': len(wps)})
 
     @app.post('/api/control/start')
     def api_start():
@@ -378,12 +445,6 @@ def make_app(data_dir, control=None):
         except Exception as exc:                        # noqa: BLE001
             log.error(f'PHOTO: direct capture failed: {exc}')
             return jsonify({'ok': False, 'error': str(exc)}), 500
-
-    @app.get('/api/manual_photos/<name>')
-    def api_manual_photo(name):
-        if not re.match(r'^[A-Za-z0-9_.\-]+\.jpg$', name):
-            abort(404)
-        return send_from_directory(manual_dir, name)
 
     # ---------------- photo browser (read-only, user 2026-08-16) -----------
     # 'auto' = every frame the worker captured (future training data);
