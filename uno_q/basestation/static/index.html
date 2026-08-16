@@ -323,6 +323,7 @@
   <select id="flight"></select>
   <button id="refresh" title="Reload data">&#10227;</button>
   <span class="sub" id="updated"></span>
+  <span class="sub" id="uiVer"></span>
   <button id="themeBtn" title="Switch theme">&#9789; dark</button>
   <div id="panelMenuWrap">
     <button id="panelBtn">Panels &#9662;</button>
@@ -398,7 +399,7 @@
       </div>
       <div class="ctlRow"><span id="ctlPrearm"></span></div>
       <div class="ctlRow">
-        <button class="big" id="btnArm">Arm controls</button>
+        <button class="big" id="btnArm">Arm</button>
         <button class="big go" id="btnGo" disabled>START MISSION</button>
         <button class="big stop" id="btnStop" disabled>STOP (RTL)</button>
       </div>
@@ -1003,10 +1004,33 @@ function profile() {
 }
 
 /* =====================================================================
-   FLIGHT CONTROL. Two-step on purpose: "Arm controls" unlocks START for
+   FLIGHT CONTROL. Two-step on purpose: "Arm" unlocks START for
    8 seconds, so no single stray click can launch an aircraft. STOP is
    never gated - an abort must always be one click.
    ===================================================================== */
+/* Which build of this page is running, and is it still the one the board
+   serves? An open tab survives a git pull untouched (2026-08-16: a pre-pull
+   tab kept drawing the old grey map for hours while the board already
+   served the satellite fix), so every /api/control poll carries
+   index.html's mtime and a change turns the header stamp into a reload
+   demand. */
+const UI_VER = '2026-08-16b';
+let uiSrvMtime = null;
+function uiStaleCheck(m) {
+  if (!m) return;
+  if (uiSrvMtime === null) { uiSrvMtime = m; return; }
+  if (m !== uiSrvMtime) {
+    // Short on purpose: the header is one flex row and a long banner
+    // wrapped it in testing. The tooltip carries the explanation.
+    const el = $('uiVer');
+    el.textContent = 'RELOAD PAGE';
+    el.title = 'The board has a newer dashboard than this open tab. '
+             + 'Ctrl+Shift+R on a laptop, pull-to-refresh on a phone.';
+    el.style.color = '#d64545';
+    el.style.fontWeight = '700';
+  }
+}
+
 const ctl = {
   enabled: false, armed: false, armTimer: null, running: false,
   // Preconditions from the last /api/control poll. setArmed MUST consult
@@ -1027,7 +1051,7 @@ function setArmed(on) {
   const go = $('btnGo'), arm = $('btnArm');
   go.disabled = !goEnabled();
   go.classList.toggle('armed', goEnabled());
-  arm.textContent = ctl.armed ? 'Armed – click START' : 'Arm controls';
+  arm.textContent = ctl.armed ? 'Armed – click START' : 'Arm';
   if (!ctl.armed && on) {
     $('ctlErr').textContent = ctl.running
       ? 'a mission is already running'
@@ -1277,6 +1301,7 @@ async function setMode(mode) {
 async function ctlRefresh() {
   let c;
   try { c = await getJSON('/api/control'); } catch { return; }
+  uiStaleCheck(c.ui_mtime);
   ctl.enabled = !!c.enabled;
   for (const [off, on] of [['ctlOff','ctlOn'],['stOff','stOn']]) {
     $(off).style.display = ctl.enabled ? 'none' : '';
@@ -2087,6 +2112,10 @@ setInterval(async () => {   // new flight appearing while we're open
 }, 15000);
 
 async function init() {
+  // Version goes in the tab title, not the header: the header is a packed
+  // flex row and even 14 extra characters wrapped it at 1280 px. The
+  // #uiVer span stays empty (zero width) until uiStaleCheck needs it.
+  document.title += ' · ui ' + UI_VER;
   layoutState = await loadLayout();
   buildPanels();
   wireMap();

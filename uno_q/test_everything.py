@@ -33,6 +33,7 @@ how a self-test becomes a crash.
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -276,23 +277,45 @@ def main():
 
     up_note = (f'; up sensor {up_m:.2f} m' if up_m is not None
                else '; up sensor SILENT (RNGFND2, known-flaky power plug)')
-    if not ring_orients:
+    # The 2026-08-16 firmware broadcasts its own health every 15 s
+    # ("prx ring 4/6 up:ok"): that is the alive-count ground truth. Bearing
+    # bins only show sectors that SEE an object during the listen window (a
+    # sensor staring at open air fills no bin), so bins must never be read
+    # as an alive-count. 2026-08-16: bins were [0, 4] on the bench while
+    # the ESP32's own serial showed 4/6 alive, and the old bin-based guess
+    # here wrongly told the user the new firmware was "NOT yet flashed".
+    prx_health = next((s['text'] for s in reversed(tel.statustexts)
+                       if 'prx ring' in s['text']), None)
+    alive = None
+    if prx_health:
+        m = re.search(r'prx ring (\d)\s*/\s*\d', prx_health)
+        if m:
+            alive = int(m.group(1))
+    if not ring_orients and alive is None:
         report('ring', False,
-               'no ring DISTANCE_SENSOR messages: ESP32 silent or dead '
-               '(cold power cycle)' + up_note)
+               'no ring DISTANCE_SENSOR messages and no "prx ring" health '
+               'text: ESP32 silent or dead (cold power cycle)' + up_note)
+    elif alive is not None:
+        # ch2 (120 deg) is a KNOWN DEAD CHIP (proven at four bus speeds
+        # 2026-08-14), so 5/6 is the healthy ceiling until it is replaced.
+        # The firmware retries every DOWN channel each 10 s and announces
+        # BACK by itself, so a channel that STAYS down is hardware (chip or
+        # wiring at the mux), never a reflash job.
+        report('ring', alive >= 5,
+               f'ESP32 says {alive}/6 ring sensors alive '
+               f'("{prx_health}"); {len(ring_orients)} bearing bin(s) see '
+               f'an object right now: {sorted(ring_orients)}'
+               + ('' if alive >= 5 else
+                  '. A channel that stays DOWN is hardware: reseat its '
+                  'wires at the mux, or replace the chip')
+               + up_note)
     else:
         n = len(ring_orients)
-        # 6 sensors land in 6 of ArduPilot's eight 45-deg bins; ch2 (120
-        # deg) is a KNOWN DEAD CHIP (proven at four bus speeds 2026-08-14),
-        # so 5 bins is the healthy ceiling, 4 = one more sensor out. The
-        # 2026-08-16 firmware re-inits dropped sensors every 5 s, so a bin
-        # that stays missing across minutes is hardware, not the old
-        # boot-latch.
         report('ring', n >= 4,
                f'{n} of ~5 achievable bearing bins: {sorted(ring_orients)} '
-               f'(6 fitted, ch2 dead chip = permanently blind 120deg'
-               + (', self-heal firmware NOT yet flashed'
-                  if n < 4 else '') + ')' + up_note)
+               f'(6 fitted, ch2 dead chip = permanently blind 120deg); no '
+               f'"prx ring" health text reached this link (pre-08-16 '
+               f'firmware, or TELEM2 STATUSTEXT not forwarded)' + up_note)
 
     # ---- fence: does the AIRCRAFT hold the polygon that was drawn? ------
     # This check exists because the firmware will not do it. Tested in SITL

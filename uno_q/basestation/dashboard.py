@@ -170,7 +170,24 @@ def make_app(data_dir, control=None):
 
     @app.get('/')
     def index():
-        return send_from_directory(STATIC_DIR, 'index.html')
+        resp = send_from_directory(STATIC_DIR, 'index.html')
+        # Explicit, not left to Werkzeug defaults: the whole UI is this one
+        # file, and a browser reusing a stale copy makes every fix look
+        # broken (2026-08-16, satellite tiles). no-cache = revalidate every
+        # load; unchanged file still answers 304, so nothing gets slower.
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
+    def ui_mtime():
+        """mtime of index.html, sent with every /api/control poll. The page
+        remembers the first value it sees and turns a later change into a
+        RELOAD banner: an open tab survives a git pull untouched, and on
+        2026-08-16 a pre-pull tab kept drawing the old grey map for hours
+        while the board had been serving the fixed page all along."""
+        try:
+            return os.stat(os.path.join(STATIC_DIR, 'index.html')).st_mtime
+        except OSError:
+            return None
 
     @app.get('/api/missions')
     def api_missions():
@@ -237,7 +254,7 @@ def make_app(data_dir, control=None):
         control is off, rather than guessing from a 404. Polled every 3 s;
         deliberately NOT logged."""
         if not ctl:
-            return jsonify({'enabled': False})
+            return jsonify({'enabled': False, 'ui_mtime': ui_mtime()})
         mission = find_pids('run_mission.py')
         testing = find_pids('test_everything.py')
         st = None
@@ -249,7 +266,7 @@ def make_app(data_dir, control=None):
         except (OSError, ValueError):
             pass
         return jsonify({
-            'enabled': True,
+            'enabled': True, 'ui_mtime': ui_mtime(),
             'mission_running': bool(mission), 'mission_pids': mission,
             'testing': bool(testing),
             'selftest': st,
