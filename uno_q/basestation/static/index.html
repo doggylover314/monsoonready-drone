@@ -208,6 +208,15 @@
   #ctlOff, #stOff { color: var(--muted); }
   .ctlRow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .ctlRow + .ctlRow { margin-top: 9px; }
+  /* oneline rows NEVER wrap (user 2026-08-16, after the gallery's refresh
+     button dropped to a second line): buttons keep their size, and the
+     text spans (.shrink) give way with an ellipsis instead. */
+  .ctlRow.oneline { flex-wrap: nowrap; min-width: 0; }
+  .ctlRow.oneline > * { flex: 0 0 auto; }
+  .ctlRow.oneline .shrink {
+    flex: 0 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
   .big {
     font: 650 15px/1 system-ui, sans-serif; padding: 11px 20px;
     border-radius: 9px; border: 1px solid var(--border);
@@ -258,7 +267,7 @@
   /* progress bar sits ON THE BUTTON'S ROW (user 2026-08-16), not below it,
      and only while a test is running */
   #stBar {
-    display: none; flex: 1; min-width: 90px; height: 10px;
+    display: none; flex: 1 1 40px; min-width: 40px; height: 10px;
     border-radius: 999px; background: var(--grid); overflow: hidden;
   }
   #stFill {
@@ -403,11 +412,11 @@
     <div id="stOff">Flight control is off; the self-test runs from the
       board shell instead: <code>test_everything.py</code></div>
     <div id="stOn" style="display:none">
-      <div class="ctlRow">
+      <div class="ctlRow oneline">
         <button class="big" id="btnTest">Test everything</button>
-        <button class="big" id="btnArmCheck" title="Ask the Pixhawk to run its prearm checks and report why it will not arm">Check arming</button>
+        <button id="btnArmCheck" title="Ask the Pixhawk to run its prearm checks and report why it will not arm">Check arming</button>
         <div id="stBar"><div id="stFill"></div></div>
-        <span id="stNote"></span>
+        <span id="stNote" class="shrink"></span>
       </div>
       <div class="ctlRow"><span id="stErr"></span></div>
       <div id="stList"></div>
@@ -417,15 +426,15 @@
   <div class="pad" id="body-settings">
     <div id="wfOff">Flight control is off; Wi-Fi cannot be changed from here.</div>
     <div id="wfOn" style="display:none">
-      <div class="ctlRow">
-        <b id="wfNow">Wi-Fi: …</b>
+      <div class="ctlRow oneline">
+        <b id="wfNow" class="shrink">Wi-Fi: …</b>
         <button id="wfScan">Scan</button>
       </div>
       <div id="wfIps" class="sub"></div>
-      <div class="ctlRow" style="margin-top:8px">
-        <select id="wfList"></select>
+      <div class="ctlRow oneline" style="margin-top:8px">
+        <select id="wfList" class="shrink"></select>
         <input id="wfPass" type="password" placeholder="password"
-               autocomplete="off" style="width:150px">
+               autocomplete="off" style="width:130px">
         <button id="wfGo">Connect</button>
       </div>
       <div id="wfWarn" class="sub">Switching networks drops this page: the
@@ -436,13 +445,13 @@
   </div>
 
   <div class="pad" id="body-gallery">
-    <div class="ctlRow">
+    <div class="ctlRow oneline">
       <button class="galbtn on" id="galAuto">Mission</button>
       <button class="galbtn" id="galManual">Manual</button>
       <button id="btnPhoto" style="display:none" title="Capture one photo into the Manual tab; never processed by the detector">Take photo</button>
       <button id="galRefresh" title="Refresh list">&#10227;</button>
-      <span id="galCount"></span>
-      <span id="phErr"></span>
+      <span id="galCount" class="shrink"></span>
+      <span id="phErr" class="shrink"></span>
     </div>
     <div id="galGrid"></div>
     <button id="galMore" style="display:none">Load more</button>
@@ -1374,14 +1383,21 @@ function tileStatus() {
   if (!el) return;
   if (!layer('ly-sat')) { el.textContent = ''; return; }
   el.textContent =
-    tiles.mode === 'off' ? 'sat: no imagery (no internet here or on the board)'
+    tiles.mode === 'off'
+      ? 'sat: FAILED direct + via board — no internet, or the dashboard '
+        + 'predates the git pull (restart it); re-tick sat to retry'
     : tiles.ok ? `sat: ${tiles.ok} tiles${tiles.mode === 'proxy' ? ' via board' : ''}`
+    : tiles.mode === 'proxy' ? 'sat: direct fetch failed, retrying via board…'
     : 'sat: loading…';
 }
 
 /* One failure switches every future tile to the other source and forgets the
-   failed images, so a retry actually re-requests them. */
-function tileFailed() {
+   failed images, so a retry actually re-requests them. Every failure is
+   console.warn'ed with its URL (user 2026-08-16: "take some logs and find
+   out why") — F12 shows exactly which fetch died, and the board-side half
+   of the story is in ~/logs/dashboard.log ("satellite tiles unavailable"). */
+function tileFailed(src) {
+  console.warn('[sat] tile failed:', src, '(mode ' + tiles.mode + ')');
   tiles.failed++;
   if (tiles.mode === 'direct') {
     tiles.mode = 'proxy';
@@ -1390,6 +1406,9 @@ function tileFailed() {
     renderSoon();
   } else if (tiles.mode === 'proxy' && !tiles.ok && tiles.failed >= 3) {
     tiles.mode = 'off';                 // both paths dead: stop hammering
+    console.warn('[sat] giving up: direct AND board proxy failed. If the '
+      + 'dashboard was not restarted after the last git pull, /api/tile '
+      + 'does not exist on the old server process — restart it.');
   }
   tileStatus();
 }
@@ -1419,12 +1438,22 @@ function drawSat(ctx, w, h) {
   const mPerPx = 1 / proj.s;
   const zf = Math.log2(156543.03392 *
                        Math.cos(proj.lat0 * Math.PI / 180) / mPerPx);
-  const z = Math.max(TILE_MIN_Z, Math.min(TILE_MAX_Z, Math.ceil(zf)));
+  let z = Math.max(TILE_MIN_Z, Math.min(TILE_MAX_Z, Math.ceil(zf)));
   const [latT, lonL] = unproject(0, 0), [latB, lonR] = unproject(w, h);
-  const [x0f, y0f] = tileXY(latT, lonL, z), [x1f, y1f] = tileXY(latB, lonR, z);
-  const x0 = Math.floor(x0f), y0 = Math.floor(y0f);
-  const x1 = Math.floor(x1f), y1 = Math.floor(y1f);
-  if ((x1 - x0 + 1) * (y1 - y0 + 1) > TILE_LIMIT) return; // zoomed far out
+  // A wide view (all-flights fit spanning the farm AND the field) can need
+  // more than TILE_LIMIT tiles at the screen-matched zoom. This used to
+  // silently draw NOTHING - the "satellite isn't working at all" bug
+  // (2026-08-16). Each zoom step down quarters the tile count, so step
+  // down until it fits: blurrier imagery, never absent imagery.
+  let x0, y0, x1, y1;
+  for (;;) {
+    const [x0f, y0f] = tileXY(latT, lonL, z);
+    const [x1f, y1f] = tileXY(latB, lonR, z);
+    x0 = Math.floor(x0f); y0 = Math.floor(y0f);
+    x1 = Math.floor(x1f); y1 = Math.floor(y1f);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) <= TILE_LIMIT || z <= TILE_MIN_Z) break;
+    z--;
+  }
   const n = 2 ** z;
   for (let ty = Math.max(0, y0); ty <= Math.min(n - 1, y1); ty++) {
     for (let tx = x0; tx <= x1; tx++) {
@@ -1434,7 +1463,7 @@ function drawSat(ctx, w, h) {
       if (!img) {
         img = new Image();
         img.onload = () => { tiles.ok++; tileStatus(); renderSoon(); };
-        img.onerror = tileFailed;
+        img.onerror = () => tileFailed(img.src);
         img.src = tileURL(z, wx, ty);
         tiles.cache.set(key, img);
         if (tiles.cache.size > 300) {                // bound memory: drop oldest
@@ -1451,6 +1480,7 @@ function drawSat(ctx, w, h) {
       tiles.drawn = true;
     }
   }
+  tileStatus();          // 'loading…' shows from the first frame, not the last
 }
 
 /* ---------- map rendering ---------- */
