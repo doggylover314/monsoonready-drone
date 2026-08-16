@@ -1038,7 +1038,7 @@ function profile() {
    served the satellite fix), so every /api/control poll carries
    index.html's mtime and a change turns the header stamp into a reload
    demand. */
-const UI_VER = '2026-08-16d';
+const UI_VER = '2026-08-16e';
 let uiSrvMtime = null;
 function uiStaleCheck(m) {
   if (!m) return;
@@ -1884,7 +1884,6 @@ function wireMap() {
     view.tx = mx * (1 - g) + view.tx * g;
     view.ty = my * (1 - g) + view.ty * g;
     view.k = k2;
-    if (view.k === 1) { view.tx = view.ty = 0; }
     canvas.style.cursor = view.k > 1 ? 'grab' : '';
     render();
   }, { passive: false });
@@ -1923,7 +1922,10 @@ function wireMap() {
       updateEditBox(); render();
       return;
     }
-    if (view.k === 1) return;
+    // Pan at ANY zoom (2026-08-16): with a typed site anchor the world
+    // extends past the fitted frame, so base zoom must pan too. dbl-click
+    // still resets to the fit. (Zooming out no longer zeroes the pan for
+    // the same reason.)
     dragging = { x: ev.clientX, y: ev.clientY };
     canvas.style.cursor = 'grabbing';
     $('tip').style.display = 'none';
