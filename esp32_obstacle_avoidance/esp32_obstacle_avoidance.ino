@@ -34,6 +34,7 @@ MavlinkProximity mav;
 static uint16_t latest_mm[NUM_SENSORS]; // freshest reading per channel (mm)
 static uint32_t last_tx_ms = 0;
 static uint32_t last_hb_ms = 0;
+static uint32_t last_health_ms = 0;
 static uint32_t tx_count = 0;
 
 // -----------------------------------------------------------------------------
@@ -156,9 +157,15 @@ void loop() {
   sensors.readAll(latest_mm);
 
   // Self-healing: re-init channels that failed at boot or stopped answering
-  // (rate-limited inside; at most one bounded attempt per 5 s). Before this,
-  // a mid-session dropout was dead until the next power cycle.
+  // (rate-limited inside; at most one bounded attempt per 5 s), and clear
+  // the whole I2C bus if every fitted channel dies at once. Before this, a
+  // mid-session dropout was dead until the next power cycle.
   sensors.maintain();
+
+  // The Pixhawk streams its own telemetry at us on this port (SERIAL1 is
+  // MAVLink2). Nothing here reads it, so drain it and keep the RX buffer
+  // from sitting permanently full.
+  while (PIXHAWK_SERIAL.available()) PIXHAWK_SERIAL.read();
 
   uint32_t now = millis();
 
@@ -193,5 +200,21 @@ void loop() {
 #endif
   }
 #endif  // SEND_HEARTBEAT
+
+  // --- Ring health STATUSTEXT every 30 s: lands in QGC, the dashboard's
+  // log tail, and the .BIN log, so field diagnosis never needs this USB. ---
+  if (now - last_health_ms >= HEALTH_TEXT_PERIOD_MS) {
+    last_health_ms = now;
+    if (tx_allowed) {
+      char text[50];
+      snprintf(text, sizeof(text), "prx ring %u/%u up:%s",
+               (unsigned)sensors.ringHealthy(),
+               (unsigned)sensors.ringFitted(),
+               (latest_mm[UP_SENSOR_CHANNEL] == SENSOR_MM_ERROR
+                || !sensors.sensorOk(UP_SENSOR_CHANNEL)) ? "ERR" : "ok");
+      mav.sendStatusText(text);
+      DEBUG_SERIAL.printf("[health] %s\n", text);
+    }
+  }
 #endif  // RUN_I2C_DIAG
 }

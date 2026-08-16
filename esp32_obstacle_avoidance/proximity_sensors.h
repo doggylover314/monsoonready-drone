@@ -54,12 +54,21 @@ class ProximitySensors {
     return (ch < NUM_SENSORS) ? _ok[ch] : false;
   }
 
+  // Currently-healthy channel count out of the fitted ring channels (for the
+  // health STATUSTEXT). "Healthy" = initialised and not streaming errors.
+  uint8_t ringHealthy() const;
+  uint8_t ringFitted() const;
+
  private:
   bool initChannel(uint8_t ch);        // shared by begin() and maintain()
+  bool channelHealthy(uint8_t ch) const {
+    return _ok[ch] && _err[ch] < SENSOR_RETRY_ERR_READS;
+  }
   bool _ok[NUM_SENSORS] = {false};
   // Consecutive failed reads per channel; SENSOR_RETRY_ERR_READS in a row
   // marks an _ok channel as needing re-init (its continuous mode is gone).
   uint8_t _err[NUM_SENSORS] = {0};
   uint32_t _last_retry_ms = 0;
+  uint32_t _last_bus_clear_ms = 0;
   uint8_t _retry_ch = 0;               // round-robin cursor
 };

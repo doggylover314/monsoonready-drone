@@ -4,6 +4,15 @@
 
 #include "proximity_sensors.h"
 
+// Is a sensor physically present on this mux channel? Ring channels come from
+// RING_SENSOR_FITTED, the up channel from UP_SENSOR_FITTED (both in config.h).
+// Outside the USE_FAKE_SENSORS guard on purpose: the health counters need it
+// in both modes.
+static bool isFitted(uint8_t ch) {
+  if (ch == UP_SENSOR_CHANNEL) return UP_SENSOR_FITTED;
+  return (ch < NUM_RING_SENSORS) ? RING_SENSOR_FITTED[ch] : false;
+}
+
 #if !USE_FAKE_SENSORS
 // ---- Real hardware path ----------------------------------------------------
 #include <Wire.h>
@@ -12,13 +21,6 @@
 // One driver object per mux channel. Pololu staff note: use a SEPARATE object
 // per sensor, otherwise every channel reports the same value.
 static VL53L0X g_sensor[NUM_SENSORS];
-
-// Is a sensor physically present on this mux channel? Ring channels come from
-// RING_SENSOR_FITTED, the up channel from UP_SENSOR_FITTED (both in config.h).
-static bool isFitted(uint8_t ch) {
-  if (ch == UP_SENSOR_CHANNEL) return UP_SENSOR_FITTED;
-  return (ch < NUM_RING_SENSORS) ? RING_SENSOR_FITTED[ch] : false;
-}
 
 // Select a single downstream channel on the TCA9548A. The control register is a
 // bitmask, so writing (1 << ch) enables exactly that one channel and disables
@@ -131,9 +133,79 @@ void ProximitySensors::readAll(uint16_t out_mm[NUM_SENSORS]) {
 }
 
 // -----------------------------------------------------------------------------
+#if !USE_FAKE_SENSORS
+// Free a stuck I2C bus. A slave abandoned mid-transaction (brown-out, contact
+// bounce) can hold SDA low forever, which kills every channel at once and no
+// per-channel re-init can fix, because re-init needs the bus. The standard
+// cure: with SDA released on our side, clock SCL up to 9 times so the slave
+// shifts out the rest of its byte and lets go, then issue a STOP and bring
+// the Wire peripheral back up.
+static void busClear() {
+  Wire.end();
+  pinMode(I2C_SDA_PIN, INPUT_PULLUP);
+  pinMode(I2C_SCL_PIN, OUTPUT);
+  for (uint8_t i = 0; i < 9 && digitalRead(I2C_SDA_PIN) == LOW; i++) {
+    digitalWrite(I2C_SCL_PIN, LOW);
+    delayMicroseconds(5);
+    digitalWrite(I2C_SCL_PIN, HIGH);
+    delayMicroseconds(5);
+  }
+  pinMode(I2C_SDA_PIN, OUTPUT);          // STOP: SDA low->high while SCL high
+  digitalWrite(I2C_SDA_PIN, LOW);
+  delayMicroseconds(5);
+  digitalWrite(I2C_SCL_PIN, HIGH);
+  delayMicroseconds(5);
+  digitalWrite(I2C_SDA_PIN, HIGH);
+  delayMicroseconds(5);
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.setClock(I2C_CLOCK_HZ);
+}
+#endif
+
+uint8_t ProximitySensors::ringFitted() const {
+  uint8_t n = 0;
+  for (uint8_t ch = 0; ch < NUM_RING_SENSORS; ch++)
+    if (isFitted(ch)) n++;
+  return n;
+}
+
+uint8_t ProximitySensors::ringHealthy() const {
+  uint8_t n = 0;
+  for (uint8_t ch = 0; ch < NUM_RING_SENSORS; ch++)
+    if (isFitted(ch) && channelHealthy(ch)) n++;
+  return n;
+}
+
+// -----------------------------------------------------------------------------
 void ProximitySensors::maintain() {
 #if !USE_FAKE_SENSORS
   uint32_t now = millis();
+
+  // Whole-bus death first: if NOTHING fitted is healthy (ring or up), the
+  // shared bus is the suspect, and re-initing channels one at a time through
+  // a stuck bus can never work.
+  uint8_t fitted_all = 0, healthy_all = 0;
+  for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) {
+    if (!isFitted(ch)) continue;
+    fitted_all++;
+    if (channelHealthy(ch)) healthy_all++;
+  }
+  if (fitted_all > 0 && healthy_all == 0
+      && now - _last_bus_clear_ms >= BUS_CLEAR_PERIOD_MS) {
+    _last_bus_clear_ms = now;
+    DEBUG_SERIAL.println(F("[sensors] every fitted channel is down: "
+                           "clearing the I2C bus and re-initing all"));
+    busClear();
+    for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) {
+      if (!isFitted(ch)) continue;
+      _ok[ch] = initChannel(ch);
+      _err[ch] = 0;
+      DEBUG_SERIAL.printf("[sensors] ch%u: %s after bus clear\n", ch,
+                          _ok[ch] ? "OK" : "still dead");
+    }
+    return;
+  }
+
   if (now - _last_retry_ms < SENSOR_RETRY_PERIOD_MS) return;
 
   // One attempt per period, round-robin, so a permanently dead chip (ch2)

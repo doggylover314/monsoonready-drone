@@ -96,6 +96,27 @@ uint16_t MavlinkProximity::sendDistanceSensorUp(uint16_t mm) {
 }
 
 // -----------------------------------------------------------------------------
+uint16_t MavlinkProximity::sendStatusText(const char *text) {
+  mavlink_message_t msg;
+  static uint8_t buf[MAVLINK_MAX_PACKET_LEN];
+
+  // STATUSTEXT carries exactly 50 chars; pack() reads that many, so feed it
+  // a bounded, NUL-padded copy rather than trusting the caller's length.
+  char padded[50] = {0};
+  strncpy(padded, text, sizeof(padded) - 1);
+
+  mavlink_msg_statustext_pack(
+      MAV_SYSID, MAV_COMPID, &msg,
+      MAV_SEVERITY_INFO,           // informational: never trips a GCS alarm
+      padded,
+      0, 0);                       // id/chunk_seq: single-chunk message
+
+  uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
+  if (_out) _out->write(buf, len);
+  return len;
+}
+
+// -----------------------------------------------------------------------------
 uint16_t MavlinkProximity::sendHeartbeat() {
   mavlink_message_t msg;
   static uint8_t buf[MAVLINK_MAX_PACKET_LEN];

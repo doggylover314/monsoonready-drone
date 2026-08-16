@@ -47,6 +47,11 @@ class MavlinkProximity {
   // Returns bytes written.
   uint16_t sendHeartbeat();
 
+  // Emit a STATUSTEXT (severity INFO). ArduPilot forwards it to every GCS
+  // and records it in the .BIN log, which makes it the one channel that
+  // reaches the field operator without the debug USB. Max 49 chars used.
+  uint16_t sendStatusText(const char *text);
+
   // Convert one raw sensor reading (mm) into the cm value that goes into the
   // distances[] array (or a SECTOR_NO_* sentinel). Exposed static so the debug
   // log can show exactly what each sector will report. Pure function.

@@ -186,6 +186,23 @@ static const bool RING_SENSOR_FITTED[NUM_RING_SENSORS] __attribute__((unused)) =
 #define SENSOR_RETRY_PERIOD_MS 5000
 #define SENSOR_RETRY_ERR_READS 20
 
+// FULL-BUS RECOVERY (2026-08-16). If EVERY fitted channel is failing at once,
+// the fault is the shared I2C bus, not seven simultaneous sensor deaths: the
+// classic cause is one device stuck mid-transaction holding SDA low, which no
+// amount of per-channel re-init can clear. Recovery = clock out up to 9 SCL
+// pulses so the stuck device finishes its byte and releases SDA, issue a STOP,
+// restart the Wire peripheral, and re-init every fitted channel. Rate-limited
+// hard: a healthy-but-empty bench (nothing fitted works) must not spend its
+// life in recovery.
+#define BUS_CLEAR_PERIOD_MS 30000
+
+// RING-HEALTH STATUSTEXT (2026-08-16). One MAVLink STATUSTEXT every
+// HEALTH_TEXT_PERIOD_MS with the live sensor state ("prx ring 5/6 up:ok").
+// ArduPilot forwards it to every GCS and writes it into the .BIN log (MSG),
+// so ring health is visible from QGC, the dashboard log tail, and post-flight
+// analysis without ever opening the airframe or the debug serial.
+#define HEALTH_TEXT_PERIOD_MS 30000
+
 // -----------------------------------------------------------------------------
 // REPORTED RANGE (centimetres) -- goes into OBSTACLE_DISTANCE min/max_distance
 // -----------------------------------------------------------------------------

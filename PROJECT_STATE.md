@@ -519,3 +519,14 @@ BOARD PROOF: test_everything ran on the real aircraft: camera by name PASS (vide
 - PHOTO BROWSER added to the dashboard (user): /api/photos/<auto|manual> paginated list + file serving (read-only, available without --enable-control); Photos panel with Mission/Manual tabs, newest first, 12 per page lazy-loaded, Load more, click opens full size; manual shots appear in it immediately after the button. Endpoint tests 10/10, browser-verified live (12->15 paging, manual tab).
 - Dashboard request-line spam (werkzeug INFO per GET, seen in the user's foreground run; would flood dashboard.log detached) silenced to ERROR; control actions still logged explicitly. Matches the no-request-logging spec.
 - Checklist note: MR3020 router + its power bank were already in the pack list from the 08-16 night rewrite; user re-request confirmed covered, no edit needed.
+
+### 2026-08-16 afternoon: ESP32 final-flash audit + start_dashboard.sh (user-ordered)
+FIRMWARE AUDIT (all six source files read line by line). Wire format verified correct: OBSTACLE_DISTANCE sector mapping/increments/body-frame, classifyCm clamps (0 mm glitch -> unknown, >=8 m -> clear, <5 cm clamps up), up-sensor DISTANCE_SENSOR orientation 24, heartbeat identity. No wire-format bugs found. ADDED for the never-flash-again build:
+- Self-heal (earlier today): maintain() re-inits failed/stopped channels, one bounded attempt/5 s.
+- FULL-BUS RECOVERY: if EVERY fitted channel is down at once the fault is the shared bus (a slave holding SDA low); maintain() now clocks out <=9 SCL pulses, issues STOP, restarts Wire, re-inits all. Rate-limited to 1/30 s.
+- RING-HEALTH STATUSTEXT every 30 s ("prx ring 5/6 up:ok"): forwarded by ArduPilot to QGC and logged in the .BIN (MSG), so ring health is visible in the field and post-flight without the debug USB.
+- RX drain of the never-read Pixhawk->ESP32 direction (SERIAL1 streams MAVLink at us; buffer sat full forever).
+- isFitted() moved outside the USE_FAKE_SENSORS guard (health counters need it in both modes). BOTH build modes compile (real: RAM 7.1%, flash 22.7%; fake: clean; restored to real). Flash from the laptop: ~/.platformio/penv/bin/pio run -d esp32_obstacle_avoidance -t upload
+- What software can NEVER fix, so expectations stay honest: ch2 (120 deg) dead chip; the up sensor's flaky POWER plug (self-heal revives it only when contact returns).
+- uno_q/start_dashboard.sh (NEW, user-ordered): the one post-reboot SSH command. Stops any old dashboard (SIGTERM, never touches run_mission), starts detached with --enable-control --waypoints ~/wp_field.txt (extra args pass through, e.g. --no-drop), prints per-IP URLs, verifies liveness, tails the log on failure. bash -n clean.
+- Waypoints-system explanation delivered in chat (file format, on-site serpentine generation from GPS+heading, 5 m spacing vs 16 m footprint, wp_radius arrival, detection interrupt/resume, DONE->RTL).
