@@ -38,6 +38,8 @@ from flask import Flask, abort, jsonify, request, send_from_directory
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from boardlog import BoardLog                              # noqa: E402
 import detect_worker as dw                                 # noqa: E402
+import fence                                               # noqa: E402
+import wifi                                                # noqa: E402
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
 MISSION_ID_RE = re.compile(r'^[A-Za-z0-9_\-]+$')
@@ -159,6 +161,7 @@ def make_app(data_dir, control=None):
     manual_dir = os.path.join(data_dir, 'manual_photos')
     layout_path = os.path.join(data_dir, 'layout.json')
     selftest_path = os.path.join(data_dir, 'selftest.json')
+    fence_path = os.path.join(data_dir, 'fence.json')
     # control is None => read-only dashboard, exactly as before. A dict =>
     # the flight-control endpoints below are live. Opt-in on purpose: these
     # arm and fly an aircraft, so the capability must be asked for
@@ -312,6 +315,75 @@ def make_app(data_dir, control=None):
         log(f'WAYPOINTS: wrote {len(wps)} waypoints to {path}')
         return jsonify({'ok': True, 'count': len(wps)})
 
+    @app.post('/api/waypoints/generate')
+    def api_waypoints_generate():
+        """Run the serpentine generator from where the aircraft IS.
+
+        Same maths as make_waypoints.py (imported, not duplicated): rows run
+        along the nose heading, stepping RIGHT. Needs the Pixhawk link and a
+        3D fix, so it refuses whenever another program owns the port. Does
+        NOT write the file: the route comes back for the operator to look at
+        (and drag) on the map, and only Save writes it.
+        """
+        if not ctl:
+            abort(403)
+        busy = find_pids('run_mission.py') or find_pids('test_everything.py')
+        if busy:
+            log.warn(f'GENERATE refused: port busy (pids {busy})')
+            return jsonify({'ok': False,
+                            'error': 'the Pixhawk link is busy (mission or '
+                                     'self-test running)'}), 409
+        b = request.get_json(silent=True) or {}
+        try:
+            rows = int(b.get('rows', 3))
+            spacing = float(b.get('spacing', 5))
+            length = float(b.get('length', 20))
+            heading = b.get('heading')
+            heading = None if heading in (None, '') else float(heading)
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'bad numbers'}), 400
+        if not (1 <= rows <= 25) or not (1 <= spacing <= 50) \
+                or not (2 <= length <= 500):
+            return jsonify({'ok': False,
+                            'error': 'rows 1-25, spacing 1-50 m, '
+                                     'row length 2-500 m'}), 400
+        try:
+            from make_waypoints import build_serpentine
+            from mavlink_io import MavIO
+            io = MavIO(ctl['conn'], log=log)
+            io.wait_ready(timeout=15)
+            io.setup_streams()
+            deadline = time.time() + 25
+            while time.time() < deadline:
+                io.step()
+                t = io.tel
+                if (t.lat is not None and (abs(t.lat) > 0.01
+                                           or abs(t.lon) > 0.01)
+                        and t.heading_deg is not None):
+                    break
+            else:
+                log.warn('GENERATE: no GPS fix in 25 s')
+                return jsonify({'ok': False,
+                                'error': 'no GPS fix in 25 s: the aircraft '
+                                         'needs sky view before a route can '
+                                         'be made from its position'}), 400
+            t = io.tel
+            head = t.heading_deg if heading is None else heading
+            wps = build_serpentine(t.lat, t.lon, head, rows, spacing, length)
+        except Exception as exc:                        # noqa: BLE001
+            log.error(f'GENERATE failed: {exc}')
+            return jsonify({'ok': False, 'error': str(exc)}), 500
+        finally:
+            try:
+                io.conn.close()
+            except Exception:                           # noqa: BLE001
+                pass
+        log(f'GENERATE: {len(wps)} waypoints, {rows} rows x {length:g} m, '
+            f'{spacing:g} m apart, heading {head:.0f} (not saved yet)')
+        return jsonify({'ok': True, 'waypoints': [list(p) for p in wps],
+                        'heading': round(head, 1),
+                        'from': [round(t.lat, 7), round(t.lon, 7)]})
+
     @app.post('/api/control/start')
     def api_start():
         """Launch run_mission detached. start_new_session is the same
@@ -379,10 +451,16 @@ def make_app(data_dir, control=None):
                                      'camera and serial port'}), 409
         if find_pids('test_everything.py'):
             return jsonify({'ok': True, 'note': 'test already running'})
+        body = request.get_json(silent=True) or {}
+        only = str(body.get('only', ''))
+        if only and not re.match(r'^[a-z,\-]{1,60}$', only):
+            abort(400)
         cmd = [ctl['python'],
                os.path.join(REPO, 'uno_q', 'test_everything.py'),
                '--conn', ctl['conn'], '--camera', str(ctl['camera']),
                '--out', selftest_path]
+        if only:
+            cmd += ['--only', only]
         p = subprocess.Popen(cmd, cwd=REPO, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL,
                              start_new_session=True)
@@ -445,6 +523,184 @@ def make_app(data_dir, control=None):
         except Exception as exc:                        # noqa: BLE001
             log.error(f'PHOTO: direct capture failed: {exc}')
             return jsonify({'ok': False, 'error': str(exc)}), 500
+
+    # ---------------- Wi-Fi settings (user 2026-08-16; the WISP router
+    # plan failed, so the board joins the phone hotspot directly) ----------
+    # Passwords are never logged and never put in a command line (see
+    # wifi.py). Switching networks kills the very connection serving this
+    # page, which the panel says out loud before you press the button.
+
+    @app.get('/api/wifi')
+    def api_wifi():
+        if not ctl:
+            return jsonify({'enabled': False})
+        return jsonify({'enabled': True, **wifi.status()})
+
+    @app.post('/api/wifi/scan')
+    def api_wifi_scan():
+        if not ctl:
+            abort(403)
+        try:
+            nets = wifi.scan()
+        except wifi.WifiError as exc:
+            log.warn(f'WIFI scan failed: {exc}')
+            return jsonify({'ok': False, 'error': str(exc)}), 500
+        log(f'WIFI: scan found {len(nets)} networks')
+        return jsonify({'ok': True, 'networks': nets})
+
+    @app.post('/api/wifi/connect')
+    def api_wifi_connect():
+        if not ctl:
+            abort(403)
+        if find_pids('run_mission.py'):
+            log.warn('WIFI connect refused: mission running')
+            return jsonify({'ok': False,
+                            'error': 'a mission is running; switching the '
+                                     'network now would cut the dashboard '
+                                     'off mid-flight'}), 409
+        b = request.get_json(silent=True) or {}
+        ssid = str(b.get('ssid') or '').strip()
+        saved = bool(b.get('saved'))
+        password = b.get('password') or ''
+        if not ssid or len(ssid) > 64:
+            return jsonify({'ok': False, 'error': 'ssid required'}), 400
+        # The password is deliberately absent from this line and from every
+        # other line this program writes.
+        log(f'WIFI: connecting to {ssid!r} (saved={saved}, '
+            f'password {"given" if password else "none"})')
+        try:
+            note = (wifi.connect_saved(ssid) if saved
+                    else wifi.connect_new(ssid, password))
+        except wifi.WifiError as exc:
+            log.error(f'WIFI connect to {ssid!r} failed: {exc}')
+            return jsonify({'ok': False, 'error': str(exc)}), 500
+        st = wifi.status()
+        log(f'WIFI: {note}; now on {st.get("connection")} {st.get("ips")}')
+        return jsonify({'ok': True, 'note': note, **st})
+
+    # ---------------- geofence polygon (user 2026-08-16: the field is an
+    # irregular shape hemmed in by trees, so it is drawn by hand) ----------
+
+    @app.get('/api/fence')
+    def api_fence_get():
+        poly = fence.load(fence_path)
+        return jsonify({'polygon': poly, 'count': len(poly),
+                        'problem': fence.validate(poly)})
+
+    @app.post('/api/fence')
+    def api_fence_post():
+        """Store the drawn polygon. Storing is NOT pushing: nothing reaches
+        the aircraft until the operator presses Push."""
+        if not ctl:
+            abort(403)
+        body = request.get_json(silent=True) or {}
+        poly = body.get('polygon')
+        if not isinstance(poly, list) or not all(
+                isinstance(p, (list, tuple)) and len(p) == 2
+                and all(isinstance(v, (int, float)) for v in p)
+                for p in poly):
+            return jsonify({'ok': False,
+                            'error': 'need a list of [lat,lon] pairs'}), 400
+        bad = fence.validate(poly)
+        if bad:
+            return jsonify({'ok': False, 'error': bad}), 400
+        n = fence.save(poly, fence_path)
+        log(f'FENCE: saved {n} corners to {fence_path} (not pushed yet)')
+        return jsonify({'ok': True, 'count': n})
+
+    @app.post('/api/fence/push')
+    def api_fence_push():
+        """Upload the polygon to the Pixhawk and read it back to prove it.
+
+        Refused while the mission owns the serial port. Read-back is not
+        decoration: MISSION_ACK only says the exchange was liked, and a
+        fence the operator believes in but the aircraft never stored is
+        worse than no fence at all.
+        """
+        if not ctl:
+            abort(403)
+        busy = find_pids('run_mission.py') or find_pids('test_everything.py')
+        if busy:
+            log.warn(f'FENCE push refused: link busy (pids {busy})')
+            return jsonify({'ok': False,
+                            'error': 'the Pixhawk link is busy (mission or '
+                                     'self-test running)'}), 409
+        poly = fence.load(fence_path)
+        bad = fence.validate(poly)
+        if bad:
+            return jsonify({'ok': False, 'error': bad}), 400
+        io = None
+        try:
+            from mavlink_io import MavIO
+            io = MavIO(ctl['conn'], log=log)
+            io.wait_ready(timeout=15)
+            note = fence.push(io, poly, log=log)
+            back = fence.read_back(io, log=log)
+        except Exception as exc:                        # noqa: BLE001
+            log.error(f'FENCE push failed: {exc}')
+            return jsonify({'ok': False, 'error': str(exc)}), 500
+        finally:
+            if io is not None:
+                try:
+                    io.conn.close()
+                except Exception:                       # noqa: BLE001
+                    pass
+        if len(back) != len(poly):
+            log.error(f'FENCE read-back mismatch: sent {len(poly)}, '
+                      f'stored {len(back)}')
+            return jsonify({'ok': False,
+                            'error': f'sent {len(poly)} corners but the '
+                                     f'Pixhawk holds {len(back)}: the fence '
+                                     f'is NOT what you drew'}), 500
+        log(f'FENCE: {note}; read back {len(back)} corners')
+        return jsonify({'ok': True, 'count': len(back),
+                        'note': f'{len(back)} corners are in the Pixhawk '
+                                f'(read back and matched)'})
+
+    # ---------------- satellite tiles (user 2026-08-16: "the satellite
+    # imagery isn't working at all") ----------------------------------------
+    # The page tries Esri directly from the browser first. When the LAPTOP
+    # has no route to the internet (at the field it is on the board's or the
+    # phone's network, which may not forward), it falls back to this proxy,
+    # which fetches from the BOARD instead and caches every tile on disk.
+    # Consequences that make this worth the code: whichever machine has
+    # internet, the map works; and once a site's tiles are cached, the map
+    # keeps working with NO internet at all, which is the actual field case.
+    tile_dir = os.path.join(data_dir, 'tiles')
+    ESRI = ('https://server.arcgisonline.com/ArcGIS/rest/services/'
+            'World_Imagery/MapServer/tile/{z}/{y}/{x}')
+    tile_state = {'fail_logged': False}
+
+    @app.get('/api/tile/<int:z>/<int:x>/<int:y>')
+    def api_tile(z, x, y):
+        if not (0 <= z <= 19) or not (0 <= x < 2 ** z) or not (0 <= y < 2 ** z):
+            abort(404)
+        path = os.path.join(tile_dir, str(z), str(x), f'{y}.jpg')
+        if os.path.isfile(path):
+            return send_from_directory(os.path.dirname(path),
+                                       os.path.basename(path),
+                                       max_age=86400)
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                ESRI.format(z=z, x=x, y=y),
+                headers={'User-Agent': 'MonsoonReady-dashboard'})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                blob = r.read()
+        except Exception as exc:                        # noqa: BLE001
+            # Once per dashboard run: a field with no internet would
+            # otherwise write one line per tile per pan.
+            if not tile_state['fail_logged']:
+                tile_state['fail_logged'] = True
+                log.warn(f'satellite tiles unavailable from the board: {exc}')
+            abort(504)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + '.tmp'
+        with open(tmp, 'wb') as f:
+            f.write(blob)
+        os.replace(tmp, path)
+        return send_from_directory(os.path.dirname(path),
+                                   os.path.basename(path), max_age=86400)
 
     # ---------------- photo browser (read-only, user 2026-08-16) -----------
     # 'auto' = every frame the worker captured (future training data);

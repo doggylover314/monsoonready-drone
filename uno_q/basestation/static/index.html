@@ -140,6 +140,28 @@
     position: absolute; inset: 0; display: none; place-items: center;
     color: var(--muted); font-size: 15px;
   }
+  /* route / fence editor, floats over the map only while editing */
+  #edBox {
+    position: absolute; left: 10px; top: 10px; z-index: 6; display: none;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 9px 11px; font-size: 12px;
+    box-shadow: 0 3px 14px var(--shadow); max-width: min(430px, 90%);
+  }
+  #edBox.on { display: block; }
+  #edBox .edHead { display: flex; gap: 8px; align-items: baseline;
+    margin-bottom: 6px; }
+  #edBox .edHead span { color: var(--muted); }
+  #edGen, #edBox .edRow { display: flex; flex-wrap: wrap; gap: 6px 10px;
+    align-items: center; }
+  #edGen { margin-bottom: 6px; }
+  #edGen.off { display: none; }
+  #edBox label { display: inline-flex; gap: 4px; align-items: center; }
+  #edBox input { width: 62px; font: inherit; color: var(--ink);
+    background: var(--page); border: 1px solid var(--border);
+    border-radius: 5px; padding: 2px 5px; }
+  #edBox button { font-size: 12px; padding: 3px 8px; }
+  #edNote { margin-top: 5px; color: var(--ink-2); }
+  #edNote.bad { color: var(--critical); }
   .legend {
     display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center;
     padding: 6px 12px; color: var(--ink-2); font-size: 12px;
@@ -199,7 +221,15 @@
   #ctlState { font-weight: 650; }
   #ctlState.run { color: var(--good); }
   #ctlNote { color: var(--ink-2); font-size: 12.5px; }
-  #ctlErr, #stErr, #phErr { color: var(--critical); font-size: 12.5px; }
+  #ctlErr, #stErr, #phErr, #wfErr { color: var(--critical); font-size: 12.5px; }
+  #ctlPrearm { font-size: 12.5px; color: var(--ink-2); }
+  #ctlPrearm.good { color: var(--good); }
+  #ctlPrearm.bad { color: var(--critical); }
+  #wfIps, #wfWarn { color: var(--muted); font-size: 11.5px; }
+  #wfWarn { margin-top: 6px; }
+  #wfList { max-width: 100%; }
+  #wfPass { font: inherit; color: var(--ink); background: var(--page);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
   #ctlLog {
     margin-top: 9px; background: var(--page); border: 1px solid var(--border);
     border-radius: 8px; padding: 7px 9px; font: 11.5px/1.4 ui-monospace,
@@ -225,15 +255,19 @@
   .strow.fail .dt { color: var(--critical); }
   .strow .dt { color: var(--ink-2); }
   #stNote { color: var(--muted); font-size: 12px; }
-  /* progress bar shown ONLY while the test runs; replaces the note text */
+  /* progress bar sits ON THE BUTTON'S ROW (user 2026-08-16), not below it,
+     and only while a test is running */
   #stBar {
-    display: none; margin-top: 10px; height: 10px; border-radius: 999px;
-    background: var(--grid); overflow: hidden;
+    display: none; flex: 1; min-width: 90px; height: 10px;
+    border-radius: 999px; background: var(--grid); overflow: hidden;
   }
   #stFill {
     height: 100%; width: 0; background: var(--det-dot);
-    border-radius: 999px; transition: width 2.9s linear;
+    border-radius: 999px; transition: width .4s linear;
   }
+  /* a component that has not reported yet: name visible, greyed, no verdict */
+  .strow.pend .nm, .strow.pend .dt { color: var(--muted); }
+  .strow.pend .nm { font-weight: 500; }
 
   /* ---------- photo browser panel ---------- */
   .galbtn.on { color: var(--det-dot); border-color: var(--det-dot); }
@@ -298,6 +332,24 @@
       <canvas id="map"></canvas>
       <div id="tip"></div>
       <div id="empty">No mission data yet</div>
+      <!-- editor box: only visible while drawing a route or a fence -->
+      <div id="edBox">
+        <div class="edHead"><b id="edTitle">Route</b>
+          <span id="edHint"></span></div>
+        <div id="edGen">
+          <label>rows <input id="genRows" type="number" min="1" max="25" value="3"></label>
+          <label>row length <input id="genLen" type="number" min="2" max="500" value="20"> m</label>
+          <label>spacing <input id="genSp" type="number" min="1" max="50" value="5"> m</label>
+          <label>heading <input id="genHdg" type="number" min="0" max="359" placeholder="nose"> &deg;</label>
+          <button id="genGo">Generate from aircraft</button>
+        </div>
+        <div class="edRow">
+          <button id="edUndo">Undo point</button>
+          <button id="edClear">Clear all</button>
+          <span id="edCount"></span>
+        </div>
+        <div id="edNote"></div>
+      </div>
     </div>
   </div>
   <div class="legend" id="legend-map">
@@ -335,6 +387,7 @@
         <span class="pill" id="ctlWp">waypoints ?</span>
         <span class="pill" id="ctlDrop">gate ?</span>
       </div>
+      <div class="ctlRow"><span id="ctlPrearm"></span></div>
       <div class="ctlRow">
         <button class="big" id="btnArm">Arm controls</button>
         <button class="big go" id="btnGo" disabled>START MISSION</button>
@@ -352,11 +405,33 @@
     <div id="stOn" style="display:none">
       <div class="ctlRow">
         <button class="big" id="btnTest">Test everything</button>
+        <button class="big" id="btnArmCheck" title="Ask the Pixhawk to run its prearm checks and report why it will not arm">Check arming</button>
+        <div id="stBar"><div id="stFill"></div></div>
         <span id="stNote"></span>
       </div>
       <div class="ctlRow"><span id="stErr"></span></div>
-      <div id="stBar"><div id="stFill"></div></div>
       <div id="stList"></div>
+    </div>
+  </div>
+
+  <div class="pad" id="body-settings">
+    <div id="wfOff">Flight control is off; Wi-Fi cannot be changed from here.</div>
+    <div id="wfOn" style="display:none">
+      <div class="ctlRow">
+        <b id="wfNow">Wi-Fi: …</b>
+        <button id="wfScan">Scan</button>
+      </div>
+      <div id="wfIps" class="sub"></div>
+      <div class="ctlRow" style="margin-top:8px">
+        <select id="wfList"></select>
+        <input id="wfPass" type="password" placeholder="password"
+               autocomplete="off" style="width:150px">
+        <button id="wfGo">Connect</button>
+      </div>
+      <div id="wfWarn" class="sub">Switching networks drops this page: the
+        board moves to a new address. The dashboard keeps running; reopen it
+        on the new IP (the phone hotspot's client list shows it).</div>
+      <div id="wfErr"></div>
     </div>
   </div>
 
@@ -364,12 +439,11 @@
     <div class="ctlRow">
       <button class="galbtn on" id="galAuto">Mission</button>
       <button class="galbtn" id="galManual">Manual</button>
+      <button id="btnPhoto" style="display:none" title="Capture one photo into the Manual tab; never processed by the detector">Take photo</button>
       <button id="galRefresh" title="Refresh list">&#10227;</button>
-      <button id="btnPhoto" style="display:none" title="Capture one photo to
-        the Manual tab; never processed by the detector">Take photo</button>
       <span id="galCount"></span>
+      <span id="phErr"></span>
     </div>
-    <div class="ctlRow"><span id="phErr"></span></div>
     <div id="galGrid"></div>
     <button id="galMore" style="display:none">Load more</button>
   </div>
@@ -433,7 +507,7 @@ function applyTheme(t) {
    "Reset layout" restores DEFAULTS.
    ===================================================================== */
 const DEFAULTS = {
-  order: ['map', 'status', 'control', 'selftest', 'gallery',
+  order: ['map', 'status', 'control', 'selftest', 'gallery', 'settings',
           'totals', 'profile', 'detections', 'events'],
   panels: {
     map:        { title: 'Site map',        sub: 'detections & treatments', w: 8, h: 6, on: true },
@@ -441,6 +515,7 @@ const DEFAULTS = {
     control:    { title: 'Flight control',  sub: 'launch & abort',          w: 4, h: 4, on: true },
     selftest:   { title: 'Self-test',       sub: 'no motors, no servos',    w: 4, h: 4, on: true },
     gallery:    { title: 'Photos',          sub: 'mission + manual, newest first', w: 4, h: 4, on: true },
+    settings:   { title: 'Settings',        sub: 'board Wi-Fi',             w: 4, h: 3, on: true },
     totals:     { title: 'Season totals',   sub: 'all data in scope',       w: 4, h: 3, on: true },
     profile:    { title: 'Altitude profile',sub: 'EKF alt + rangefinder',   w: 5, h: 3, on: true },
     detections: { title: 'Latest detections', sub: 'newest first',          w: 3, h: 3, on: true },
@@ -522,15 +597,19 @@ function buildPanels() {
   lay.innerHTML = `
     <label><input type="checkbox" id="ly-sat" checked> sat</label>
     <label><input type="checkbox" id="ly-wp" checked> route</label>
+    <label><input type="checkbox" id="ly-fence" checked> fence</label>
     <label><input type="checkbox" id="ly-heat" checked> heat</label>
     <label><input type="checkbox" id="ly-det" checked> det</label>
     <label><input type="checkbox" id="ly-drop" checked> drops</label>
     <label><input type="checkbox" id="ly-abort" checked> aborts</label>
     <label><input type="checkbox" id="ly-track" checked> track</label>
     <label id="ly-site-label" style="display:none"><input type="checkbox" id="ly-site" checked> site</label>
+    <span id="satNote" style="font-size:11.5px;color:var(--muted)"></span>
     <button id="wpEdit" style="display:none;font-size:12px;padding:2px 8px">Edit route</button>
-    <button id="wpSave" style="display:none;font-size:12px;padding:2px 8px">Save route</button>
-    <button id="wpRevert" style="display:none;font-size:12px;padding:2px 8px">Revert</button>
+    <button id="fnEdit" style="display:none;font-size:12px;padding:2px 8px">Draw fence</button>
+    <button id="fnPush" style="display:none;font-size:12px;padding:2px 8px">Push fence</button>
+    <button id="wpSave" style="display:none;font-size:12px;padding:2px 8px">Save</button>
+    <button id="wpRevert" style="display:none;font-size:12px;padding:2px 8px">Cancel</button>
     <span id="wpNote" style="font-size:11.5px;color:var(--muted)"></span>`;
   mapPh.insertBefore(lay, mapPh.querySelector('.x'));
   applyLayout();
@@ -652,20 +731,40 @@ const state = {
   lastEventsJson: '',
   // planned route (GET /api/waypoints): shown BEFORE any flight and
   // draggable in edit mode (user 2026-08-16)
-  wps: [], wpAvailable: false, wpEdit: false, wpDirty: false, wpDrag: null,
+  wps: [], wpAvailable: false, wpDirty: false, wpDrag: null,
+  // hand-drawn geofence polygon (user 2026-08-16: the field is a weird
+  // shape, not a cylinder), kept in the same edit machinery as the route
+  fence: [], fenceMeta: null,
 };
+
+/* Which layer the map clicks edit right now: null | 'route' | 'fence'. */
+const edit = { mode: null };
+const editPoints = () => edit.mode === 'route' ? state.wps
+                       : edit.mode === 'fence' ? state.fence : null;
+const editing = () => edit.mode !== null;
 
 async function loadWaypoints() {
   try {
     const j = await getJSON('/api/waypoints');
     state.wpAvailable = !!(j.available && j.exists);
-    if (!state.wpEdit) {            // never clobber an edit in progress
+    if (edit.mode !== 'route') {    // never clobber an edit in progress
       state.wps = state.wpAvailable ? j.waypoints : [];
       state.wpDirty = false;
     }
     if (j.errors && j.errors.length)
       $('wpNote').textContent = 'waypoint file: ' + j.errors[0];
   } catch { state.wpAvailable = false; }
+}
+
+async function loadFence() {
+  try {
+    const j = await getJSON('/api/fence');
+    state.fenceMeta = j;
+    if (edit.mode !== 'fence') {
+      state.fence = (j.polygon || []).map(p => [p[0], p[1]]);
+      state.wpDirty = false;
+    }
+  } catch { state.fenceMeta = null; }
 }
 
 async function loadSite() {
@@ -695,7 +794,8 @@ async function loadEvents() {
 }
 
 async function reload() {
-  await loadMissions(); await loadEvents(); await loadWaypoints();
+  await loadMissions(); await loadEvents();
+  await loadWaypoints(); await loadFence();
   render(); stats(); table(); status(); detList(); profile();
 }
 
@@ -947,50 +1047,134 @@ async function ctlPost(path, body, errEl) {
   }
 }
 
+/* Component names ALWAYS stay on screen (user 2026-08-16): a run greys the
+   whole list, drops every tick and cross, and then fills each verdict in as
+   test_everything publishes it (it rewrites selftest.json after every
+   component). Progress is the real ratio of components finished, not a
+   timer. DEFAULT_PLAN only covers the case where no run has ever happened
+   on this board; a real payload always carries its own plan. */
+const DEFAULT_PLAN = ['logs', 'disk', 'camera', 'pixhawk', 'gps', 'battery',
+                      'luna', 'ring', 'prearm'];
+
 function renderSelftest(c) {
-  $('btnTest').disabled = !!c.testing || ctl.running;
+  const st = c.selftest;
+  const running = !!c.testing || !!(st && st.running);
+  $('btnTest').disabled = running || ctl.running;
   const bar = $('stBar'), fill = $('stFill');
-  if (c.testing) {
-    // While the test runs, the PREVIOUS results disappear and a progress
-    // bar replaces the "about 30 s" text (user, 2026-08-16). The clock
-    // starts when this page first sees the run, so it is at most one 3 s
-    // poll behind the real start; the CSS width transition keeps the bar
-    // moving smoothly between polls.
+  const plan = (st && st.plan && st.plan.length) ? st.plan : DEFAULT_PLAN;
+  // While running, only results from THIS run count; a stale finished
+  // payload must not paint ticks onto a run that just started.
+  const done = (running && st && !st.running) ? [] : ((st && st.results) || []);
+  const byName = new Map(done.map(r => [r.name, r]));
+
+  if (running) {
     if (!ctl.testStart) ctl.testStart = Date.now();
-    $('stList').innerHTML = '';
-    $('stNote').textContent = 'testing…';
-    bar.style.display = 'block';
-    fill.style.width =
-      Math.min(97, (Date.now() - ctl.testStart) / 30000 * 100) + '%';
-    return;
-  }
-  if (ctl.testStart) {                     // the run we watched just ended
-    ctl.testStart = null;
-    fill.style.width = '100%';
-    setTimeout(() => {
-      bar.style.display = 'none'; fill.style.width = '0';
-    }, 400);
+    bar.style.display = '';
+    fill.style.width = Math.round(done.length / plan.length * 100) + '%';
+    $('stNote').textContent = `${done.length}/${plan.length}`;
   } else {
-    bar.style.display = 'none'; fill.style.width = '0';
+    if (ctl.testStart) {                   // the run we watched just ended
+      ctl.testStart = null;
+      fill.style.width = '100%';
+      setTimeout(() => { bar.style.display = 'none'; fill.style.width = '0'; }, 400);
+    } else {
+      bar.style.display = 'none'; fill.style.width = '0';
+    }
+    $('stNote').textContent = st
+      ? `last run ${Math.round(st.age_s)} s ago, took ${st.took_s} s, ` +
+        (st.ok_all ? 'ALL PASSED' : 'FAILURES BELOW')
+      : 'never run';
   }
-  $('stNote').textContent = c.selftest
-    ? `last run ${Math.round(c.selftest.age_s)} s ago, took ` +
-      `${c.selftest.took_s} s, ` +
-      (c.selftest.ok_all ? 'ALL PASSED' : 'FAILURES BELOW')
-    : 'never run';
+
   const box = $('stList');
-  if (!c.selftest) { box.innerHTML = '<div class="none">No results yet</div>'; return; }
   box.innerHTML = '';
-  for (const r of c.selftest.results) {
+  for (const name of plan) {
+    const r = byName.get(name);
     const row = document.createElement('div');
-    row.className = 'strow ' + (r.ok ? 'ok' : 'fail');
+    row.className = 'strow ' + (r ? (r.ok ? 'ok' : 'fail') : 'pend');
     const nm = document.createElement('span');
-    nm.className = 'nm'; nm.textContent = (r.ok ? '✓ ' : '✗ ') + r.name;
+    nm.className = 'nm';
+    nm.textContent = (r ? (r.ok ? '✓ ' : '✗ ') : '· ') + name;
     const dt = document.createElement('span');
-    dt.className = 'dt'; dt.textContent = r.detail;
+    dt.className = 'dt';
+    dt.textContent = r ? r.detail : (running ? 'testing…' : 'not run yet');
     row.append(nm, dt);
     box.appendChild(row);
   }
+  // components a run reported that the plan did not predict (e.g.
+  // mission-clash) still have to be visible
+  for (const r of done) {
+    if (plan.includes(r.name)) continue;
+    const row = document.createElement('div');
+    row.className = 'strow ' + (r.ok ? 'ok' : 'fail');
+    row.innerHTML = `<span class="nm">${r.ok ? '✓ ' : '✗ '}${r.name}</span>`;
+    const dt = document.createElement('span');
+    dt.className = 'dt'; dt.textContent = r.detail;
+    row.appendChild(dt);
+    box.appendChild(row);
+  }
+}
+
+/* ---------- arming: the prearm verdict, wherever it came from ----------
+   Two sources, because only one program at a time can own the Pixhawk's
+   USB: when idle, the Check arming button (test_everything --only prearm);
+   during a flight, run_mission's log, which now records every [ap]
+   STATUSTEXT the autopilot sends, prearm refusals included. */
+function renderPrearm(c) {
+  const el = $('ctlPrearm');
+  if (!el) return;
+  const r = ((c.selftest && c.selftest.results) || [])
+    .find(x => x.name === 'prearm');
+  if (ctl.running) {
+    // In flight the live truth is the mission log; the panel already shows
+    // it, so avoid contradicting it with a stale bench verdict.
+    el.textContent = 'in flight — see the mission log below for [ap] messages';
+    el.className = '';
+    return;
+  }
+  if (!r) {
+    el.textContent = 'arming: not checked yet (press Check arming)';
+    el.className = '';
+    return;
+  }
+  el.textContent = (r.ok ? '✓ ' : '✗ ') + r.detail;
+  el.className = r.ok ? 'good' : 'bad';
+}
+
+/* ---------- settings: board Wi-Fi ---------- */
+const wf = { nets: [], saved: [] };
+
+function wfRender(st) {
+  $('wfNow').textContent = 'Wi-Fi: ' +
+    (st.connection ? st.connection : (st.device ? 'not connected' : 'no Wi-Fi device'))
+    + (st.state ? ` (${st.state})` : '');
+  $('wfIps').textContent = st.ips && st.ips.length
+    ? 'address ' + st.ips.join(', ') : '';
+  if (st.error) $('wfErr').textContent = st.error;
+  wf.saved = (st.saved || []).map(s => s.name);
+  const sel = $('wfList'), keep = sel.value;
+  sel.innerHTML = '';
+  for (const s of st.saved || [])
+    sel.add(new Option(`${s.name} (saved)${s.active ? ' — connected' : ''}`,
+                       'saved:' + s.name));
+  for (const n of wf.nets) {
+    if (wf.saved.includes(n.ssid)) continue;
+    sel.add(new Option(`${n.ssid}  ${n.signal}%  ${n.security}`,
+                       'new:' + n.ssid));
+  }
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  // a saved network needs no password; a new one usually does
+  $('wfPass').style.display =
+    sel.value && sel.value.startsWith('saved:') ? 'none' : '';
+}
+
+async function wfRefresh() {
+  let st;
+  try { st = await getJSON('/api/wifi'); } catch { return; }
+  const on = !!st.enabled;
+  $('wfOff').style.display = on ? 'none' : '';
+  $('wfOn').style.display = on ? '' : 'none';
+  if (on) wfRender(st);
 }
 
 /* ---------- photo browser: pages of 12, newest first, lazy images ------- */
@@ -1024,19 +1208,60 @@ function galSwitch(which) {
   galLoad(true);
 }
 
-/* ---------- route editing: Edit -> drag markers -> Save / Revert -------- */
-function updateWpButtons() {
-  const can = ctl.enabled && state.wpAvailable && !ctl.running;
-  $('wpEdit').style.display = can && !state.wpEdit ? '' : 'none';
-  $('wpSave').style.display = state.wpEdit ? '' : 'none';
-  $('wpRevert').style.display = state.wpEdit ? '' : 'none';
-  $('wpSave').disabled = !state.wpDirty;
+/* ---------- map editing: route and fence share one machine --------------
+   Enter a mode, then: click empty map = add a point, drag a marker = move
+   it, right-click a marker = delete it. Save writes the file on the board;
+   Cancel re-reads it. Both are refused server-side while a mission runs. */
+function updateEditBox() {
+  const pts = editPoints();
+  const box = $('edBox');
+  box.classList.toggle('on', editing());
+  $('edGen').classList.toggle('off', edit.mode !== 'route');
+  if (!editing()) return;
+  $('edTitle').textContent = edit.mode === 'route' ? 'Route' : 'Geofence';
+  $('edHint').textContent =
+    'click map = add · drag = move · right-click = delete'
+    + (view.k > 1 ? ' (zoomed: shift-click to add)' : '');
+  const n = pts.length;
+  $('edCount').textContent = edit.mode === 'route'
+    ? `${n} waypoint${n === 1 ? '' : 's'}`
+    : `${n} corner${n === 1 ? '' : 's'}` +
+      (n && n < 3 ? ' — a fence needs at least 3' : '');
+  $('wpSave').disabled = !state.wpDirty
+    || (edit.mode === 'fence' && n > 0 && n < 3);
+  $('edUndo').disabled = !n;
+  $('edClear').disabled = !n;
 }
 
-function setWpEdit(on) {
-  state.wpEdit = on;
-  if (!on) canvasEl().style.cursor = '';
-  updateWpButtons();
+function updateEditButtons() {
+  const can = ctl.enabled && !ctl.running;
+  $('wpEdit').style.display = can && !editing() && state.wpAvailable ? '' : 'none';
+  $('fnEdit').style.display = can && !editing() ? '' : 'none';
+  $('fnPush').style.display =
+    can && !editing() && state.fence.length >= 3 ? '' : 'none';
+  $('wpSave').style.display = editing() ? '' : 'none';
+  $('wpRevert').style.display = editing() ? '' : 'none';
+  updateEditBox();
+}
+
+async function setMode(mode) {
+  edit.mode = mode;
+  state.wpDirty = false;
+  if (!mode) canvasEl().style.cursor = '';
+  if (mode === 'route') {
+    $('wpNote').textContent = 'editing the route';
+    $('edNote').textContent = 'Generate builds a serpentine from where the '
+      + 'aircraft is standing, rows to the RIGHT of its nose.';
+  } else if (mode === 'fence') {
+    $('wpNote').textContent = 'drawing the fence';
+    $('edNote').textContent = 'Trace the flyable area. Saving stores it; '
+      + 'Push sends it to the Pixhawk, which then enforces it in EVERY '
+      + 'mode, including manual RC.';
+  } else {
+    $('wpNote').textContent = '';
+  }
+  $('edNote').classList.remove('bad');
+  updateEditButtons();
   render();
 }
 
@@ -1049,7 +1274,7 @@ async function ctlRefresh() {
     $(on).style.display = ctl.enabled ? '' : 'none';
   }
   $('btnPhoto').style.display = ctl.enabled ? '' : 'none';
-  if (!ctl.enabled) { updateWpButtons(); return; }
+  if (!ctl.enabled) { updateEditButtons(); return; }
   ctl.running = !!c.mission_running;
 
   const st = $('ctlState');
@@ -1079,7 +1304,8 @@ async function ctlRefresh() {
   if (atBottom) log.scrollTop = log.scrollHeight;
 
   renderSelftest(c);
-  updateWpButtons();
+  renderPrearm(c);
+  updateEditButtons();
 }
 
 /* ---------- projection (equirectangular, meters, north-up) ---------- */
@@ -1133,9 +1359,40 @@ function applyView() {
    exactly as before. Esri's terms require visible attribution (drawn in
    chrome()). */
 const TILE_MAX_Z = 19, TILE_MIN_Z = 3, TILE_LIMIT = 64;
-const tiles = { cache: new Map(), drawn: false };
-const tileURL = (z, x, y) =>
-  `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+/* mode: 'direct' = fetch Esri from this browser; 'proxy' = ask the BOARD to
+   fetch and cache it (the laptop may have no route at the field, or the
+   board may be the one with the hotspot); 'off' = neither worked, say so
+   plainly instead of showing an empty map and no explanation. */
+const tiles = { cache: new Map(), drawn: false, mode: 'direct',
+                ok: 0, failed: 0 };
+const tileURL = (z, x, y) => tiles.mode === 'proxy'
+  ? `/api/tile/${z}/${x}/${y}`
+  : `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+
+function tileStatus() {
+  const el = $('satNote');
+  if (!el) return;
+  if (!layer('ly-sat')) { el.textContent = ''; return; }
+  el.textContent =
+    tiles.mode === 'off' ? 'sat: no imagery (no internet here or on the board)'
+    : tiles.ok ? `sat: ${tiles.ok} tiles${tiles.mode === 'proxy' ? ' via board' : ''}`
+    : 'sat: loading…';
+}
+
+/* One failure switches every future tile to the other source and forgets the
+   failed images, so a retry actually re-requests them. */
+function tileFailed() {
+  tiles.failed++;
+  if (tiles.mode === 'direct') {
+    tiles.mode = 'proxy';
+    tiles.cache.clear();
+    tiles.failed = 0;
+    renderSoon();
+  } else if (tiles.mode === 'proxy' && !tiles.ok && tiles.failed >= 3) {
+    tiles.mode = 'off';                 // both paths dead: stop hammering
+  }
+  tileStatus();
+}
 
 function tileXY(lat, lon, z) {
   const n = 2 ** z, la = lat * Math.PI / 180;
@@ -1157,6 +1414,7 @@ function renderSoon() {            // coalesce per-tile onloads into one draw
 
 function drawSat(ctx, w, h) {
   tiles.drawn = false;
+  if (tiles.mode === 'off') return;
   // zoom whose tile resolution best matches the screen (156543 m/px at z0)
   const mPerPx = 1 / proj.s;
   const zf = Math.log2(156543.03392 *
@@ -1175,7 +1433,8 @@ function drawSat(ctx, w, h) {
       let img = tiles.cache.get(key);
       if (!img) {
         img = new Image();
-        img.onload = renderSoon;
+        img.onload = () => { tiles.ok++; tileStatus(); renderSoon(); };
+        img.onerror = tileFailed;
         img.src = tileURL(z, wx, ty);
         tiles.cache.set(key, img);
         if (tiles.cache.size > 300) {                // bound memory: drop oldest
@@ -1215,9 +1474,10 @@ function render() {
   const sm = state.siteMeta;
   if (sm && layer('ly-site') && state.siteImg?.complete)
     pts.push([sm.lat_top, sm.lon_left], [sm.lat_bottom, sm.lon_right]);
-  // the planned route counts toward the view: the map is useful BEFORE the
-  // first flight, and editing needs the waypoints on screen
+  // the planned route and the fence count toward the view: the map is
+  // useful BEFORE the first flight, and editing needs them on screen
   if (layer('ly-wp')) for (const wp of state.wps) pts.push(wp);
+  if (layer('ly-fence')) for (const p of state.fence) pts.push(p);
   // While a waypoint is being dragged the projection must hold still:
   // re-fitting around the moving point would shift the map under the cursor
   // and the marker would chase its own projection.
@@ -1266,9 +1526,39 @@ function render() {
     }
   }
 
+  /* GEOFENCE: the hand-drawn inclusion polygon (user 2026-08-16 - the field
+     is an irregular shape hemmed in by trees, so no cylinder fits it). Drawn
+     under the route: it is the boundary, not the plan. */
+  if (layer('ly-fence') && state.fence.length) {
+    const fx = css('--critical');
+    ctx.beginPath();
+    state.fence.forEach((p, i) => {
+      const q = proj.px(p[0], p[1]);
+      i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y);
+    });
+    if (state.fence.length > 2) ctx.closePath();
+    ctx.fillStyle = fx; ctx.globalAlpha = 0.10; ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = fx; ctx.lineWidth = 2;
+    ctx.setLineDash(edit.mode === 'fence' ? [] : [7, 4]);
+    ctx.stroke(); ctx.setLineDash([]);
+    const fr = edit.mode === 'fence' ? 8 : 5;
+    for (const [i, p] of state.fence.entries()) {
+      const q = proj.px(p[0], p[1]);
+      ctx.fillStyle = edit.mode === 'fence' ? fx : css('--surface');
+      ctx.strokeStyle = fx; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(q.x, q.y, fr, 0, 7); ctx.fill(); ctx.stroke();
+      if (edit.mode !== 'fence')
+        state.hits.push({...q, r: fr + 4, html:
+          `<b>Fence corner ${i + 1}</b> of ${state.fence.length}<br>` +
+          `<span class="t">${p[0].toFixed(6)}, ${p[1].toFixed(6)}</span>`});
+    }
+  }
+
   /* planned route: numbered waypoints joined by a dashed line, in flight
      order. In edit mode the markers grow and fill so they read as handles. */
   if (layer('ly-wp') && state.wps.length) {
+    const ed = edit.mode === 'route';
     ctx.strokeStyle = css('--det-dot'); ctx.lineWidth = 1.8;
     ctx.setLineDash([6, 5]); ctx.globalAlpha = 0.9;
     ctx.beginPath();
@@ -1278,17 +1568,17 @@ function render() {
     });
     ctx.stroke();
     ctx.setLineDash([]); ctx.globalAlpha = 1;
-    const r = state.wpEdit ? 11 : 8;
-    ctx.font = '650 ' + (state.wpEdit ? 12 : 10) + 'px system-ui, sans-serif';
+    const r = ed ? 11 : 8;
+    ctx.font = '650 ' + (ed ? 12 : 10) + 'px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     state.wps.forEach((wp, i) => {
       const p = proj.px(wp[0], wp[1]);
-      ctx.fillStyle = state.wpEdit ? css('--det-dot') : css('--surface');
+      ctx.fillStyle = ed ? css('--det-dot') : css('--surface');
       ctx.strokeStyle = css('--det-dot'); ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = state.wpEdit ? '#fff' : css('--det-dot');
+      ctx.fillStyle = ed ? '#fff' : css('--det-dot');
       ctx.fillText(String(i + 1), p.x, p.y + 0.5);
-      if (!state.wpEdit)
+      if (!ed)
         state.hits.push({...p, r: r + 3, html:
           `<b>Waypoint ${i + 1}</b> of ${state.wps.length}<br>` +
           `<span class="t">${wp[0].toFixed(6)}, ${wp[1].toFixed(6)}</span>`});
@@ -1453,12 +1743,13 @@ function wireMap() {
     render();
   }, { passive: false });
 
-  // In edit mode a press on a waypoint marker grabs THAT; panning only
-  // happens off-marker. Grab radius is generous: these are drag handles.
-  const wpHit = (mx, my) => {
-    if (!state.wpEdit || !layer('ly-wp')) return null;
+  // In edit mode a press on a marker grabs THAT; panning only happens
+  // off-marker. Grab radius is generous: these are drag handles.
+  const ptHit = (mx, my) => {
+    const pts = editPoints();
+    if (!pts) return null;
     let best = null, bd = Infinity;
-    state.wps.forEach((wp, i) => {
+    pts.forEach((wp, i) => {
       const p = proj.px(wp[0], wp[1]);
       const d = Math.hypot(p.x - mx, p.y - my);
       if (d <= 14 && d < bd) { bd = d; best = i; }
@@ -1468,11 +1759,21 @@ function wireMap() {
 
   canvas.addEventListener('mousedown', ev => {
     const r = canvas.getBoundingClientRect();
-    const hit = wpHit(ev.clientX - r.left, ev.clientY - r.top);
+    const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+    const hit = ptHit(mx, my);
     if (hit != null) {
       state.wpDrag = hit;              // freezes proj.fit (see render)
       canvas.style.cursor = 'grabbing';
       $('tip').style.display = 'none';
+      return;
+    }
+    // empty map + edit mode = add a point here (user: waypoints must be
+    // creatable "manually and individually" from the dashboard). Only on a
+    // plain left click, so panning a zoomed map still works.
+    if (editing() && ev.button === 0 && (view.k === 1 || ev.shiftKey)) {
+      editPoints().push(unproject(mx, my));
+      state.wpDirty = true;
+      updateEditBox(); render();
       return;
     }
     if (view.k === 1) return;
@@ -1480,10 +1781,24 @@ function wireMap() {
     canvas.style.cursor = 'grabbing';
     $('tip').style.display = 'none';
   });
+
+  // right-click a marker to delete it (nothing else uses the context menu
+  // over the map, and a delete needs to be one gesture in the field)
+  canvas.addEventListener('contextmenu', ev => {
+    if (!editing()) return;
+    const r = canvas.getBoundingClientRect();
+    const hit = ptHit(ev.clientX - r.left, ev.clientY - r.top);
+    if (hit == null) return;
+    ev.preventDefault();
+    editPoints().splice(hit, 1);
+    state.wpDirty = true;
+    updateEditBox(); render();
+  });
   window.addEventListener('mousemove', ev => {
     if (state.wpDrag != null) {
       const r = canvas.getBoundingClientRect();
-      state.wps[state.wpDrag] =
+      const pts = editPoints();
+      if (pts) pts[state.wpDrag] =
         unproject(ev.clientX - r.left, ev.clientY - r.top);
       state.wpDirty = true;
       render();
@@ -1499,7 +1814,7 @@ function wireMap() {
     if (state.wpDrag != null) {
       state.wpDrag = null;
       canvas.style.cursor = '';
-      updateWpButtons();
+      updateEditBox();
       render();                        // unfrozen: re-fit around the new spot
       return;
     }
@@ -1515,8 +1830,8 @@ function wireMap() {
     if (dragging || state.wpDrag != null) return;
     const r = canvas.getBoundingClientRect();
     const mx = ev.clientX - r.left, my = ev.clientY - r.top;
-    if (state.wpEdit)
-      canvas.style.cursor = wpHit(mx, my) != null ? 'grab' : '';
+    if (editing())
+      canvas.style.cursor = ptHit(mx, my) != null ? 'grab' : 'crosshair';
     let best = null, bd = Infinity;
     for (const t of state.hits) {
       const d = Math.hypot(t.x - mx, t.y - my);
@@ -1542,6 +1857,13 @@ function wireEvents() {
   for (const id of ['ly-sat','ly-wp','ly-heat','ly-det','ly-drop','ly-abort',
                     'ly-track','ly-site'])
     $(id).addEventListener('change', render);
+  // re-ticking "sat" after a failure is the retry: forget the dead images
+  // and start again from the direct source
+  $('ly-sat').addEventListener('change', ev => {
+    if (!ev.target.checked) { tileStatus(); return; }
+    tiles.mode = 'direct'; tiles.cache.clear(); tiles.ok = tiles.failed = 0;
+    tileStatus(); render();
+  });
   $('refresh').addEventListener('click', reload);
   window.addEventListener('resize', () => { render(); profile(); });
   new ResizeObserver(() => { render(); profile(); })
@@ -1562,18 +1884,11 @@ function wireEvents() {
     await ctlPost('/api/control/stop'); ctlRefresh();
   });
   $('btnTest').addEventListener('click', async () => {
-    // The bar and the cleared list must appear NOW, not one poll later.
-    $('stList').innerHTML = '';
-    $('stNote').textContent = 'testing…';
+    // Grey the list and show the bar NOW, not one 3 s poll later.
     ctl.testStart = Date.now();
-    $('stBar').style.display = 'block';
-    $('stFill').style.width = '2%';
+    renderSelftest({ testing: true, selftest: null });
     const j = await ctlPost('/api/control/test', {}, $('stErr'));
-    if (!j.ok) {                       // refused: put the panel back
-      ctl.testStart = null;
-      $('stBar').style.display = 'none'; $('stFill').style.width = '0';
-      $('stNote').textContent = '';
-    }
+    if (!j.ok) ctl.testStart = null;   // refused: next refresh restores it
     ctlRefresh();
   });
   $('btnPhoto').addEventListener('click', async () => {
@@ -1584,30 +1899,118 @@ function wireEvents() {
     // the gallery's Manual tab shows the new shot first (newest-first sort)
     if (j.ok && j.file) galSwitch('manual');
   });
+  $('btnArmCheck').addEventListener('click', async () => {
+    ctl.testStart = Date.now();
+    renderSelftest({ testing: true, selftest: { running: true, plan: ['prearm'],
+                                                results: [] } });
+    const j = await ctlPost('/api/control/test', { only: 'prearm' }, $('stErr'));
+    if (!j.ok) ctl.testStart = null;
+    ctlRefresh();
+  });
+  $('wfScan').addEventListener('click', async () => {
+    const b = $('wfScan');
+    b.disabled = true; b.textContent = 'scanning…';
+    const j = await ctlPost('/api/wifi/scan', {}, $('wfErr'));
+    b.disabled = false; b.textContent = 'Scan';
+    if (j.ok) { wf.nets = j.networks; wfRefresh(); }
+  });
+  $('wfList').addEventListener('change', () => {
+    $('wfPass').style.display =
+      $('wfList').value.startsWith('saved:') ? 'none' : '';
+  });
+  $('wfGo').addEventListener('click', async () => {
+    const v = $('wfList').value;
+    if (!v) { $('wfErr').textContent = 'pick a network first'; return; }
+    const saved = v.startsWith('saved:');
+    const ssid = v.slice(v.indexOf(':') + 1);
+    const b = $('wfGo');
+    b.disabled = true; b.textContent = 'connecting…';
+    $('wfErr').textContent = '';
+    const j = await ctlPost('/api/wifi/connect',
+                            { ssid, saved, password: $('wfPass').value },
+                            $('wfErr'));
+    // The reply may never arrive: switching networks can kill this very
+    // request. Say so rather than leaving a button stuck on "connecting".
+    b.disabled = false; b.textContent = 'Connect';
+    $('wfPass').value = '';
+    if (j.ok) {
+      $('wfErr').textContent = '';
+      $('wfNow').textContent = 'Wi-Fi: ' + (j.connection || ssid);
+      wfRefresh();
+    } else if (!j.error) {
+      $('wfErr').textContent = 'no reply — the board most likely moved to '
+        + 'the new network and this page lost it. Reopen the dashboard on '
+        + 'the new address.';
+    }
+  });
   $('galAuto').addEventListener('click', () => galSwitch('auto'));
   $('galManual').addEventListener('click', () => galSwitch('manual'));
   $('galRefresh').addEventListener('click', () => galLoad(true));
   $('galMore').addEventListener('click', () => galLoad(false));
 
-  $('wpEdit').addEventListener('click', () => {
-    $('wpNote').textContent = 'drag a numbered waypoint, then Save';
-    setWpEdit(true);
-  });
+  $('wpEdit').addEventListener('click', () => setMode('route'));
+  $('fnEdit').addEventListener('click', () => setMode('fence'));
   $('wpSave').addEventListener('click', async () => {
-    const j = await ctlPost('/api/waypoints',
-                            { waypoints: state.wps }, $('wpNote'));
+    const mode = edit.mode;
+    const j = mode === 'route'
+      ? await ctlPost('/api/waypoints', { waypoints: state.wps }, $('wpNote'))
+      : await ctlPost('/api/fence', { polygon: state.fence }, $('wpNote'));
     if (!j.ok) return;                 // refusal reason is now in wpNote
-    $('wpNote').textContent = `route saved (${j.count} waypoints)`;
     state.wpDirty = false;
-    setWpEdit(false);
-    await loadWaypoints(); render();
+    await setMode(null);
+    if (mode === 'route') {
+      await loadWaypoints();
+      $('wpNote').textContent = `route saved (${j.count} waypoints)`;
+    } else {
+      await loadFence();
+      $('wpNote').textContent = `fence saved (${j.count} corners) — press `
+        + `Push fence to send it to the Pixhawk`;
+    }
+    updateEditButtons(); render();
   });
   $('wpRevert').addEventListener('click', async () => {
-    state.wpEdit = false;              // lets loadWaypoints overwrite wps
+    const mode = edit.mode;
+    edit.mode = null;                  // lets the loaders overwrite the copy
     state.wpDirty = false;
-    $('wpNote').textContent = '';
-    await loadWaypoints();
-    setWpEdit(false);
+    if (mode === 'route') await loadWaypoints(); else await loadFence();
+    await setMode(null);
+    $('wpNote').textContent = 'discarded';
+  });
+  $('edUndo').addEventListener('click', () => {
+    const pts = editPoints();
+    if (pts && pts.length) { pts.pop(); state.wpDirty = true; }
+    updateEditBox(); render();
+  });
+  $('edClear').addEventListener('click', () => {
+    const pts = editPoints();
+    if (pts) { pts.length = 0; state.wpDirty = true; }
+    updateEditBox(); render();
+  });
+  $('genGo').addEventListener('click', async () => {
+    const btn = $('genGo');
+    btn.disabled = true; btn.textContent = 'reading GPS…';
+    $('edNote').classList.remove('bad');
+    $('edNote').textContent = 'asking the aircraft where it is standing…';
+    const j = await ctlPost('/api/waypoints/generate', {
+      rows: +$('genRows').value, length: +$('genLen').value,
+      spacing: +$('genSp').value,
+      heading: $('genHdg').value === '' ? null : +$('genHdg').value,
+    }, $('edNote'));
+    btn.disabled = false; btn.textContent = 'Generate from aircraft';
+    if (!j.ok) { $('edNote').classList.add('bad'); return; }
+    state.wps = j.waypoints; state.wpDirty = true;
+    $('edNote').textContent =
+      `${j.waypoints.length} waypoints from ${j.from[0].toFixed(6)}, `
+      + `${j.from[1].toFixed(6)}, rows along ${j.heading}° — drag to adjust, `
+      + `then Save`;
+    updateEditBox(); render();
+  });
+  $('fnPush').addEventListener('click', async () => {
+    const btn = $('fnPush');
+    btn.disabled = true; btn.textContent = 'pushing…';
+    const j = await ctlPost('/api/fence/push', {}, $('wpNote'));
+    btn.disabled = false; btn.textContent = 'Push fence';
+    if (j.ok) $('wpNote').textContent = j.note || 'fence pushed';
   });
 
   $('panelBtn').addEventListener('click', ev => {
@@ -1664,6 +2067,7 @@ async function init() {
   await loadSite();
   await reload();
   ctlRefresh();
+  wfRefresh();
   galLoad(true);
 }
 init();

@@ -33,24 +33,33 @@ live, the ring params changed (PRX1_TYPE=2), and the gate got new endpoints
 ## THE NIGHT BEFORE, AT HOME
 
 - [ ] **Charge everything**: flight pack, transmitter, MacBook, both
-      phones, the filming camera, BOTH power banks (one films, one feeds
-      the MR3020).
+      phones, the filming camera, BOTH power banks (one films, one keeps
+      the hotspot phone alive).
 - [ ] **SD CARD SEATED IN THE PIXHAWK** (standing item, nearly forgotten
       2026-08-10 because it was still in the reader). No card, no log.
-- [ ] **PUSH THE PARAMS — this delivery now carries three changes:**
+- [ ] **PUSH THE PARAMS — this delivery now carries four changes:**
       `./python tools/parameters.py push` delivers **SERIAL5_PROTOCOL,-1**
-      (the shovel port, now dead), the **FENCE block** (cylinder 100 m /
-      30 m alt, RTL on breach), and re-asserts AVOID_ENABLE=0. Pixhawk on
-      the laptop by USB, or pull the Pixhawk plug from the hub and use it.
-      **After the push, power-cycle and confirm it still ARMS on the bench**
-      (FENCE_ENABLE adds a prearm check; fallback is FENCE_ENABLE,0).
-- [ ] **Set up the MR3020 in WISP mode (user call 2026-08-16):** admin page
-      -> WISP -> join a phone hotspot as upstream (iPhone needs Maximize
-      Compatibility ON so it broadcasts 2.4 GHz). Board + laptop then live
-      on the TP-Link ALL DAY with internet through the phone: NTP keeps the
-      board clock true, git pull works, dashboard works; if the phone dies
-      you lose internet, never the LAN. Check the MR3020's label for its
-      power plug (v1 mini-USB, later micro-USB) and pack THAT cable.
+      (the shovel port, now dead), the **FENCE block** now including
+      **FENCE_TYPE,7** (altitude + circle + the hand-drawn POLYGON), and
+      re-asserts AVOID_ENABLE=0. Pixhawk on the laptop by USB, or pull the
+      Pixhawk plug from the hub and use it. **After the push, power-cycle
+      and confirm it still ARMS on the bench.**
+- [ ] **Draw the geofence at home if you already know the field's shape**
+      (dashboard map -> Draw fence -> click the corners -> Save -> Push
+      fence). It is stored inside the Pixhawk and survives reboots, so this
+      can be done once and re-checked on site. IT IS NOT OPTIONAL AND THE
+      AIRCRAFT WILL NOT TELL YOU: with FENCE_TYPE,7 and no polygon loaded,
+      Copter 4.7 arms perfectly happily and simply has no polygon boundary
+      (tested in SITL 2026-08-16). The dashboard's **fence** self-test line
+      is the thing that catches it — treat a red 'fence' row as a no-fly.
+- [ ] **Board network: PHONE HOTSPOT DIRECTLY (user, 2026-08-16 — the
+      MR3020 kept failing to associate in WISP mode, so the router is OUT
+      of the plan).** Turn the hotspot on at home, then join the board to it
+      from the dashboard: **Settings panel -> Scan -> pick the hotspot ->
+      password -> Connect**. Do it at home so the profile is SAVED; at the
+      field the board then joins it on its own at boot. iPhone: Maximize
+      Compatibility ON (2.4 GHz). Note the board's new IP from the hotspot's
+      client list — the dashboard URL changes with the network.
 - [ ] **Full-system test at home, exactly as the field will run:** board on,
       dashboard up (`--enable-control`), press **Test everything** on the
       dashboard, all green except GPS indoors. This exercises the camera
@@ -87,14 +96,15 @@ Aircraft:
 Ground station:
 - [ ] Linux laptop + charger (primary field machine)
 - [ ] MacBook + charger (backup)
-- [ ] **TL-MR3020 (WISP router, pre-configured the night before)** + its
-      correct USB power cable (check label: v1 mini-USB, later micro-USB)
-- [ ] **Power bank for the MR3020** (separate from the filming power bank)
 - [ ] USB-C to USB-A adapter (MacBook's only route to the radio)
 - [ ] SiK telemetry radio (in the MacBook bag)
 - [ ] Known-good DATA USB cable for the Pixhawk (not a charge-only one)
 - [ ] SD card reader
-- [ ] Hotspot phone, charged, with data (the MR3020's upstream)
+- [ ] **Hotspot phone, charged, with DATA — this is now the whole network**
+      (the MR3020 is OUT: WISP mode kept failing to associate, user
+      2026-08-16). Board and laptop both join the phone directly.
+- [ ] **Power bank for the hotspot phone** — it will run all day serving
+      two clients and filming nothing; a dead phone is now a dead network.
 
 Target:
 - [ ] The dark tray
@@ -129,21 +139,29 @@ At home, NOT in the car:
 - [ ] 1. **Transmitter ON before anything.** RC FAIL with the TX off is the
       check working, not a fault.
 - [ ] 2. **Prop nuts with the pliers, every one.**
-- [ ] 3. **Network up first (WISP, pre-configured):** MR3020 on its power
-      bank, HIGH at the ground station, phone hotspot on (Maximize
-      Compatibility if iPhone). Laptop joins the TP-Link. Board joins on
-      power-up (it remembers). Internet through the phone means the board's
-      clock NTP-syncs and every log timestamp is true.
+- [ ] 3. **Network up first — PHONE HOTSPOT, no router:** hotspot ON
+      (Maximize Compatibility if iPhone), laptop joins it, board joins it on
+      power-up because the profile was saved at home. If the board does not
+      appear: plug the laptop into the board over USB/SSH on the old
+      network, or use the dashboard **Settings -> Scan -> Connect** from
+      whichever network still reaches it. Internet through the phone means
+      the board's clock NTP-syncs and every log timestamp is true.
 - [ ] 4. Power the aircraft, **do not arm for 2-5 min**. Meanwhile, from
-      the laptop, SSH in and start the dashboard, DETACHED:
-      `setsid nohup ~/venv/bin/python uno_q/basestation/dashboard.py --enable-control --waypoints wp_field.txt &`
-      Open `http://<board-ip>:8080` (IP from the MR3020 client list;
+      the laptop, SSH in and start the dashboard with the one command:
+      `bash ~/monsoonready-drone/uno_q/start_dashboard.sh`
+      Open `http://<board-ip>:8080` (IP from the hotspot's client list;
       `http://arduino-drone.local:8080` if mDNS cooperates).
 - [ ] 5. **Press TEST EVERYTHING on the dashboard.** 30 s, no motors, no
       servos: camera by name, Pixhawk USB heartbeat, GPS vs the arming
-      rules (10+ sats, HDOP <= 1.5, 3D), battery voltage, TF-Luna, ring.
-      Every failure prints its reason in the panel and in
-      ~/logs/test_everything.log. Do not arm until GPS goes green.
+      rules (10+ sats, HDOP <= 1.5, 3D), battery voltage, TF-Luna, ring,
+      **fence** (is the drawn polygon actually inside the Pixhawk?) and
+      **prearm** (the exact reason it would refuse to arm). Names stay on
+      screen and tick off live. Every failure prints its reason in the panel
+      and in ~/logs/test_everything.log. Do not arm until GPS goes green.
+- [ ] 5a. **Fence: draw it on the map for THIS field** if the shape changed
+      (map header -> Draw fence -> click corners -> Save -> Push fence), then
+      press **Check arming** (5 s) to confirm the aircraft holds it. Nothing
+      else will warn you if it does not.
 - [ ] 5b. **RC is a HARD GATE**: `./python tools/wiring_check.py` over the
       radio must show RC PASS with the TX on — an RC failsafe mid-mission
       is an RTL straight through the take. (Ring FAILs stay accepted.)

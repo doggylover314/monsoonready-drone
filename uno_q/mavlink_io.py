@@ -67,6 +67,24 @@ MASK_POSITION_ONLY = 0x0DF8  # ignore vel+accel+yaw+yaw_rate
 MASK_VELOCITY_ONLY = 0x0DC7  # ignore pos+accel+yaw+yaw_rate
 
 
+# STATUSTEXT cache depth and the MAV_SEVERITY names used when logging them.
+STATUSTEXT_KEEP = 40
+SEVERITY_NAMES = {0: 'EMERGENCY', 1: 'ALERT', 2: 'CRITICAL', 3: 'ERROR',
+                  4: 'WARNING', 5: 'NOTICE', 6: 'INFO', 7: 'DEBUG'}
+
+# SYS_STATUS sensor bits worth naming for a human. Values are MAVLink's
+# MAV_SYS_STATUS_SENSOR_* (verified against the aircraft's own firmware,
+# ArduCopter 4.7.0: libraries/GCS_MAVLink/GCS.cpp:429-623 and
+# ArduCopter/GCS_Copter.cpp:23-100). PREARM_CHECK (bit 28) is the one flag
+# that says "the prearm checks are passing right now".
+SENSOR_BITS = [
+    (1 << 0, 'gyro'), (1 << 1, 'accel'), (1 << 2, 'compass'),
+    (1 << 3, 'baro'), (1 << 5, 'GPS'), (1 << 8, 'rangefinder'),
+    (1 << 16, 'RC receiver'), (1 << 20, 'geofence'), (1 << 21, 'AHRS'),
+    (1 << 24, 'logging'), (1 << 25, 'battery'), (1 << 26, 'proximity'),
+]
+PREARM_OK_BIT = 1 << 28            # MAV_SYS_STATUS_PREARM_CHECK
+
 # Rest-voltage -> state-of-charge for one LiPo cell, the standard published
 # approximation. WHY this exists (user, 2026-08-16): ArduPilot's own
 # battery_remaining is a coulomb counter that RESETS TO ~100% at every boot,
@@ -126,6 +144,52 @@ class Telemetry:
         self.sats = None           # GPS_RAW_INT satellites_visible
         self.hdop = None           # GPS_RAW_INT eph / 100
         self.fix_type = None       # 3 = 3D fix
+        # Last STATUSTEXTs from the autopilot, newest last, capped at
+        # STATUSTEXT_KEEP. This is where ArduPilot puts the REASON it will
+        # not arm ("PreArm: ..."), which the dashboard has to show for the
+        # arming tests to be fixable at the field (user, 2026-08-16).
+        self.statustexts = []      # [{'t': monotonic, 'sev': int, 'text': str}]
+        # SYS_STATUS sensor bitmasks, None until the first SYS_STATUS.
+        self.sensors_present = None
+        self.sensors_enabled = None
+        self.sensors_health = None
+
+    def prearm_messages(self, since_t=None):
+        """Distinct arming-refusal texts, oldest first.
+
+        ArduCopter 4.7 prefixes them "PreArm: " while idle and "Arm: "
+        during an actual arm attempt (AP_Arming.cpp:336-387), at severity
+        CRITICAL. Matching the prefix (not a keyword search) keeps ordinary
+        chatter such as "EKF3 IMU0 is using GPS" out of the list.
+        """
+        out = []
+        for s in self.statustexts:
+            if since_t is not None and s['t'] < since_t:
+                continue
+            low = s['text'].lower()
+            if (low.startswith('prearm:') or low.startswith('arm:')) \
+                    and s['text'] not in out:
+                out.append(s['text'])
+        return out
+
+    def unhealthy_sensors(self):
+        """Names of sensors the autopilot reports as enabled but NOT healthy.
+
+        None if no SYS_STATUS has arrived yet (which is itself worth saying,
+        rather than claiming everything is fine).
+        """
+        if self.sensors_health is None or self.sensors_enabled is None:
+            return None
+        return [name for bit, name in SENSOR_BITS
+                if (self.sensors_enabled & bit) and not (self.sensors_health & bit)]
+
+    def prearm_ok(self):
+        """True/False from the PREARM_CHECK health bit, None if unknown."""
+        if self.sensors_health is None or self.sensors_present is None:
+            return None
+        if not (self.sensors_present & PREARM_OK_BIT):
+            return None                # firmware does not publish the bit
+        return bool(self.sensors_health & PREARM_OK_BIT)
 
     @property
     def batt_pct_est(self):
@@ -276,10 +340,27 @@ class MavIO:
                           if msg.voltage_battery != 65535 else None)
             tel.batt_pct = (msg.battery_remaining
                             if msg.battery_remaining >= 0 else None)
+            tel.sensors_present = msg.onboard_control_sensors_present
+            tel.sensors_enabled = msg.onboard_control_sensors_enabled
+            tel.sensors_health = msg.onboard_control_sensors_health
         elif t == 'GPS_RAW_INT':
             tel.sats = msg.satellites_visible
             tel.hdop = msg.eph / 100.0 if msg.eph != 65535 else None
             tel.fix_type = msg.fix_type
+        elif t == 'STATUSTEXT':
+            # EVERY autopilot message is logged (SCOPE RULES 1) and kept in
+            # the cache. Prearm refusals arrive here and nowhere else, so
+            # dropping them is how "it just will not arm" stays a mystery.
+            text = msg.text
+            if isinstance(text, (bytes, bytearray)):
+                text = text.decode('utf-8', 'replace')
+            text = text.split('\x00')[0].strip()
+            if text:
+                tel.statustexts.append(
+                    {'t': now, 'sev': int(msg.severity), 'text': text})
+                del tel.statustexts[:-STATUSTEXT_KEEP]
+                self.log(f"[ap] {SEVERITY_NAMES.get(msg.severity, msg.severity)}"
+                         f": {text}")
         elif t == 'HEARTBEAT':
             # Ignore heartbeats from other components (e.g. ESP32 compid 195).
             if (msg.get_srcSystem() == self.conn.target_system
@@ -299,7 +380,26 @@ class MavIO:
         mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM: 'ARM_DISARM',
         mavutil.mavlink.MAV_CMD_NAV_TAKEOFF: 'TAKEOFF',
         mavutil.mavlink.MAV_CMD_DO_SET_SERVO: 'DO_SET_SERVO',
+        mavutil.mavlink.MAV_CMD_RUN_PREARM_CHECKS: 'RUN_PREARM_CHECKS',
     }
+
+    def run_prearm_checks(self):
+        """Ask the autopilot to run its prearm checks and report NOW.
+
+        Copter 4.7 handles MAV_CMD_RUN_PREARM_CHECKS (401) in
+        GCS_Common.cpp:4995-5004: it calls pre_arm_checks(true), which
+        forces every failing check to be sent as STATUSTEXT immediately
+        instead of waiting out the normal 30 s display throttle
+        (AP_Arming.cpp:109-111). Without this, a ground station can sit for
+        half a minute before it learns why the aircraft will not arm.
+
+        ACCEPTED does NOT mean the checks passed: the handler returns
+        ACCEPTED unconditionally when disarmed (and TEMPORARILY_REJECTED
+        while armed). The verdict is in the STATUSTEXTs and in the
+        SYS_STATUS prearm bit.
+        """
+        return self.command_ack(mavutil.mavlink.MAV_CMD_RUN_PREARM_CHECKS,
+                                timeout=2.0, retries=1)
 
     def command_ack(self, cmd, p1=0, p2=0, p3=0, p4=0, p5=0, p6=0, p7=0,
                     timeout=3.0, retries=3, retry_failed=False):

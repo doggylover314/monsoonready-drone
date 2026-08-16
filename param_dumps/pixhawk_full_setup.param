@@ -121,6 +121,14 @@ AVOID_BACKUP_DZ,0.1
 #     is simply not driven by anything) and are left alone rather than
 #     "cleaned up", since ch14 drives nothing either way. ---
 SERVO9_FUNCTION,0
+# 500/560 are BELOW the 800-2200 us range ArduPilot documents for SERVOn_MIN
+# and _TRIM, and that is correct here, not an oversight (re-verified
+# 2026-08-16 after an audit flagged it): with FUNCTION=0 (k_none),
+# MAV_CMD_DO_SET_SERVO writes the raw pulse straight through
+# (AP_ServoRelayEvents.cpp do_set_servo -> SRV_Channel::set_output_pwm,
+# no constrain), so the documented range is GCS slider metadata, not
+# enforcement. Raising MIN to 800 would not make anything safer; it would
+# only misdescribe the gate, whose measured closed position is 560 us.
 SERVO9_MIN,500
 SERVO9_MAX,1800
 SERVO9_TRIM,560
@@ -184,9 +192,15 @@ BATT_VOLT_MULT,10.802477
 NTF_DISPLAY_TYPE,2
 
 # --- Fence: flyaway backstop, ENABLED 2026-08-15 for the autonomous flight ---
-# WHY A CYLINDER AND NOT A POLYGON: a polygon has to be uploaded as a mission
-# item and validated, which is time and a new failure mode on a one-run day.
-# Altitude + circle needs nothing but these five numbers.
+# POLYGON ADDED 2026-08-16 (user): "I will set the geofence manually so that
+# the drone doesnt go into any trees. The field is not a cylinder or a
+# rectangle, it is a weird shape I have to draw myself." The circle stays as
+# a coarse outer backstop; the hand-drawn polygon is the one that keeps the
+# aircraft off the treeline. The polygon itself is NOT a parameter: it is
+# uploaded as fence mission items and lives in the flight controller's own
+# fence storage, so it survives reboots and is not in this file. Draw and
+# push it from the dashboard (map header: Draw fence -> Push fence), or with
+# uno_q/fence.py push.
 #
 # THE ARDUINO CANNOT OVERRIDE THIS, and that is structural rather than a
 # promise. The fence lives inside the Pixhawk, downstream of every command the
@@ -203,10 +217,25 @@ NTF_DISPLAY_TYPE,2
 # NOT re-command a mode (STANDDOWN is deliberately excluded from the
 # end_mode branch), so the fence's RTL is left alone to run.
 FENCE_ENABLE,1
-# 1 = max altitude, 2 = circle, 4 = polygon (so 3 = alt + circle).
-# Deliberately NOT 7: enabling the polygon bit with no polygon loaded is a
-# way to fail a prearm check on the day.
-FENCE_TYPE,3
+# 1 = max altitude, 2 = circle, 4 = polygon+circle inclusion/exclusion areas
+# (verified in the aircraft's own firmware: AC_Fence.h:15-18, Copter-4.7.0).
+# 7 = all three, chosen 2026-08-16 when the hand-drawn polygon replaced the
+# cylinder as the real boundary.
+#
+# READ THIS BEFORE THE NEXT FLIGHT (tested in SITL 2026-08-16, and the result
+# was the OPPOSITE of what the source reads like at a glance): setting bit 2
+# with NO polygon uploaded does NOT block arming. AC_Fence's polygon prearm
+# check asks _poly_loader.loaded(), and loaded() is `_load_time_ms != 0`
+# (AC_PolyFence_loader.h:165) - an EMPTY fence loads successfully, so the
+# check passes and the aircraft arms with no polygon boundary in force at
+# all. Proven live: FENCE_TYPE=7, FENCE_ENABLE=1, fence cleared to 0 corners,
+# "Arming motors", no PreArm complaint.
+# So the failure mode is SILENT, and the guard has to be ours: the
+# dashboard's self-test reads the fence back out of the aircraft and FAILS
+# the 'fence' check when the Pixhawk holds no polygon, or holds a different
+# one from the one drawn. Field order stays: push params, draw the fence,
+# Push fence, then check arming.
+FENCE_TYPE,7
 FENCE_ACTION,1            # 1 = RTL (falls back to LAND if RTL is impossible)
 FENCE_ALT_MAX,30          # m. Survey is 15 m, RTL_ALT_M is 15, so 2x margin.
 FENCE_RADIUS,100          # m FROM HOME (= where it arms), not from the plot.
