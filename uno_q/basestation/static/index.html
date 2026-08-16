@@ -1038,7 +1038,7 @@ function profile() {
    served the satellite fix), so every /api/control poll carries
    index.html's mtime and a change turns the header stamp into a reload
    demand. */
-const UI_VER = '2026-08-16f';
+const UI_VER = '2026-08-16g';
 let uiSrvMtime = null;
 function uiStaleCheck(m) {
   if (!m) return;
@@ -1889,7 +1889,14 @@ function wireMap() {
     ev.preventDefault();
     const r = canvas.getBoundingClientRect();
     const mx = ev.clientX - r.left, my = ev.clientY - r.top;
-    const k2 = Math.min(64, Math.max(1, view.k * (ev.deltaY < 0 ? 1.25 : 0.8)));
+    // Zoom-out floor was 1 (= the auto-fit frame, so you could never see
+    // wider than your own data or the 400 m site box). Now symmetric with
+    // the 64x zoom-in ceiling: 1/64 of the fit, ~25 km across from a 400 m
+    // anchor, enough to find a neighbouring field and pan to it (user,
+    // 2026-08-16). Tiles follow automatically: the zoom picker walks down to
+    // TILE_MIN_Z and the 64-tile budget steps it down further if needed.
+    const k2 = Math.min(64, Math.max(1 / 64,
+                                     view.k * (ev.deltaY < 0 ? 1.25 : 0.8)));
     const g = k2 / view.k;
     view.tx = mx * (1 - g) + view.tx * g;
     view.ty = my * (1 - g) + view.ty * g;
