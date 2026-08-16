@@ -1038,7 +1038,7 @@ function profile() {
    served the satellite fix), so every /api/control poll carries
    index.html's mtime and a change turns the header stamp into a reload
    demand. */
-const UI_VER = '2026-08-16e';
+const UI_VER = '2026-08-16f';
 let uiSrvMtime = null;
 function uiStaleCheck(m) {
   if (!m) return;
@@ -1277,8 +1277,8 @@ function updateEditBox() {
   if (!editing()) return;
   $('edTitle').textContent = edit.mode === 'route' ? 'Route' : 'Geofence';
   $('edHint').textContent =
-    'click map = add · drag = move · right-click = delete'
-    + (view.k > 1 ? ' (zoomed: shift-click to add)' : '');
+    'click map = add · drag corner = move · drag map = pan · '
+    + 'right-click = delete';
   const n = pts.length;
   $('edCount').textContent = edit.mode === 'route'
     ? `${n} waypoint${n === 1 ? '' : 's'}`
@@ -1549,6 +1549,7 @@ const SITE_SPAN_M = 400;
 let siteAnchor = null;
 try { siteAnchor = JSON.parse(localStorage.getItem(SITE_KEY) || 'null'); } catch {}
 let siteAskOpen = false;   // chip clicked: form shown over a working map
+let baseFit = null;        // frozen projection base while editing (render)
 function anchorPts() {
   if (!siteAnchor) return [];
   const dLat = (SITE_SPAN_M / 2) / 111320;
@@ -1615,13 +1616,22 @@ function render() {
   // drawing (without it the first placed corner would refit to a 10 m box).
   const anchorOnly = !pts.length && !!siteAnchor;
   if (siteAnchor && (!pts.length || edit.mode)) pts.push(...anchorPts());
-  // While a waypoint is being dragged the projection must hold still:
-  // re-fitting around the moving point would shift the map under the cursor
-  // and the marker would chase its own projection.
-  if (state.wpDrag == null) {
+  // The projection BASE holds still while a marker is dragged OR an edit is
+  // in progress: re-fitting around points that are being placed makes the
+  // map lurch under the cursor on every corner (user, 2026-08-16: "very
+  // glitchy"). Pan/zoom (applyView) still applies every frame on top of the
+  // frozen base, so the map stays navigable while drawing.
+  const frozen = state.wpDrag != null || !!edit.mode;
+  if (!frozen || !baseFit) {
     proj.fit(pts, w, h, 44);
-    if (proj.ok) applyView();
+    if (proj.ok) baseFit = {lat0: proj.lat0, lon0: proj.lon0,
+                            mLon: proj.mLon, s: proj.s,
+                            ox: proj.ox, oy: proj.oy};
+  } else {
+    Object.assign(proj, baseFit);
+    proj.ok = true;
   }
+  if (proj.ok) applyView();
 
   $('empty').style.display = (proj.ok && !siteAskOpen) ? 'none' : 'grid';
   $('siteCancel').style.display = proj.ok ? '' : 'none';
@@ -1913,20 +1923,16 @@ function wireMap() {
       $('tip').style.display = 'none';
       return;
     }
-    // empty map + edit mode = add a point here (user: waypoints must be
-    // creatable "manually and individually" from the dashboard). Only on a
-    // plain left click, so panning a zoomed map still works.
-    if (editing() && ev.button === 0 && (view.k === 1 || ev.shiftKey)) {
-      editPoints().push(unproject(mx, my));
-      state.wpDirty = true;
-      updateEditBox(); render();
-      return;
-    }
-    // Pan at ANY zoom (2026-08-16): with a typed site anchor the world
-    // extends past the fitted frame, so base zoom must pan too. dbl-click
-    // still resets to the fit. (Zooming out no longer zeroes the pan for
-    // the same reason.)
-    dragging = { x: ev.clientX, y: ev.clientY };
+    // A press can be a corner-add (stationary click) or a pan (drag); the
+    // decision falls on mouseup with a 5 px dead zone, so drawing and
+    // panning coexist at any zoom. 2026-08-16 ("very glitchy"): before
+    // this, at base zoom every attempted pan dropped a corner the moment
+    // the button went down. Pan itself works at ANY zoom because a typed
+    // site anchor means the world extends past the fitted frame; dbl-click
+    // still resets to the fit.
+    dragging = { x: ev.clientX, y: ev.clientY,
+                 sx: ev.clientX, sy: ev.clientY, moved: false,
+                 add: (editing() && ev.button === 0) ? {mx, my} : null };
     canvas.style.cursor = 'grabbing';
     $('tip').style.display = 'none';
   });
@@ -1954,9 +1960,14 @@ function wireMap() {
       return;
     }
     if (!dragging) return;
+    if (!dragging.moved) {
+      if (Math.hypot(ev.clientX - dragging.sx, ev.clientY - dragging.sy) < 5)
+        return;                        // inside the dead zone: still a click
+      dragging.moved = true;
+    }
     view.tx += ev.clientX - dragging.x;
     view.ty += ev.clientY - dragging.y;
-    dragging = { x: ev.clientX, y: ev.clientY };
+    dragging.x = ev.clientX; dragging.y = ev.clientY;
     render();
   });
   window.addEventListener('mouseup', () => {
@@ -1967,7 +1978,16 @@ function wireMap() {
       render();                        // unfrozen: re-fit around the new spot
       return;
     }
-    if (dragging) { dragging = null; canvas.style.cursor = 'grab'; }
+    if (dragging) {
+      if (!dragging.moved && dragging.add) {    // stationary click = add
+        editPoints().push(unproject(dragging.add.mx, dragging.add.my));
+        state.wpDirty = true;
+        updateEditBox();
+      }
+      dragging = null;
+      canvas.style.cursor = 'grab';
+      render();
+    }
   });
   canvas.addEventListener('dblclick', () => {
     view.k = 1; view.tx = view.ty = 0;
