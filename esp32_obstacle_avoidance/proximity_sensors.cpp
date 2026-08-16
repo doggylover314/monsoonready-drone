@@ -35,6 +35,36 @@ static void tcaselect(uint8_t ch) {
 #endif // !USE_FAKE_SENSORS
 
 // -----------------------------------------------------------------------------
+// Full bring-up of one channel: select, init, timing budget, continuous mode.
+// Shared by begin() (boot) and maintain() (self-healing re-init), so the two
+// paths can never configure a sensor differently.
+bool ProximitySensors::initChannel(uint8_t ch) {
+#if USE_FAKE_SENSORS
+  (void)ch;
+  return true;
+#else
+  tcaselect(ch);
+  g_sensor[ch].setTimeout(SENSOR_TIMEOUT_MS);
+  if (!g_sensor[ch].init()) return false;
+
+  // Timing budget MUST be set before startContinuous() or it has no effect.
+  g_sensor[ch].setMeasurementTimingBudget(SENSOR_TIMING_BUDGET_US);
+
+#if VL53L0X_LONG_RANGE
+  // Longer reach (~2 m) at the cost of speed / low-IR requirement.
+  g_sensor[ch].setSignalRateLimit(0.1);
+  g_sensor[ch].setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
+  g_sensor[ch].setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);
+#endif
+
+  // Back-to-back continuous ranging. All sensors integrate in parallel; the
+  // mux only time-shares who we can *read*, not who is *measuring*.
+  g_sensor[ch].startContinuous();
+  return true;
+#endif
+}
+
+// -----------------------------------------------------------------------------
 bool ProximitySensors::begin() {
 #if USE_FAKE_SENSORS
   for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) _ok[ch] = isFitted(ch);
@@ -58,31 +88,15 @@ bool ProximitySensors::begin() {
                           "reported as unknown\n", ch);
       continue;
     }
-    tcaselect(ch);
-    g_sensor[ch].setTimeout(SENSOR_TIMEOUT_MS);
-
-    if (!g_sensor[ch].init()) {
-      _ok[ch] = false;
+    _ok[ch] = initChannel(ch);
+    if (_ok[ch]) {
+      DEBUG_SERIAL.printf("[sensors] ch%u: VL53L0X OK\n", ch);
+    } else {
       all_ok = false;
-      DEBUG_SERIAL.printf("[sensors] ch%u: VL53L0X init FAILED (check wiring/mux)\n", ch);
-      continue;
+      DEBUG_SERIAL.printf("[sensors] ch%u: VL53L0X init FAILED (check "
+                          "wiring/mux); will keep retrying every %u ms\n",
+                          ch, (unsigned)SENSOR_RETRY_PERIOD_MS);
     }
-
-    // Timing budget MUST be set before startContinuous() or it has no effect.
-    g_sensor[ch].setMeasurementTimingBudget(SENSOR_TIMING_BUDGET_US);
-
-#if VL53L0X_LONG_RANGE
-    // Longer reach (~2 m) at the cost of speed / low-IR requirement.
-    g_sensor[ch].setSignalRateLimit(0.1);
-    g_sensor[ch].setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
-    g_sensor[ch].setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);
-#endif
-
-    // Back-to-back continuous ranging. All sensors integrate in parallel; the
-    // mux only time-shares who we can *read*, not who is *measuring*.
-    g_sensor[ch].startContinuous();
-    _ok[ch] = true;
-    DEBUG_SERIAL.printf("[sensors] ch%u: VL53L0X OK\n", ch);
   }
   return all_ok;
 #endif
@@ -103,7 +117,47 @@ void ProximitySensors::readAll(uint16_t out_mm[NUM_SENSORS]) {
     uint16_t mm = g_sensor[ch].readRangeContinuousMillimeters();
     // A read timeout means the transaction failed (dead sensor / bus glitch);
     // distinguish it from a valid "no target" reading (large mm value).
-    out_mm[ch] = g_sensor[ch].timeoutOccurred() ? SENSOR_MM_ERROR : mm;
+    if (g_sensor[ch].timeoutOccurred()) {
+      out_mm[ch] = SENSOR_MM_ERROR;
+      // Enough consecutive timeouts = the sensor's continuous mode is gone
+      // (brown-out or contact bounce); flag it for maintain() to re-init.
+      if (_err[ch] < 255) _err[ch]++;
+    } else {
+      out_mm[ch] = mm;
+      _err[ch] = 0;
+    }
+  }
+#endif
+}
+
+// -----------------------------------------------------------------------------
+void ProximitySensors::maintain() {
+#if !USE_FAKE_SENSORS
+  uint32_t now = millis();
+  if (now - _last_retry_ms < SENSOR_RETRY_PERIOD_MS) return;
+
+  // One attempt per period, round-robin, so a permanently dead chip (ch2)
+  // costs one bounded init attempt every few periods, never a tight loop.
+  for (uint8_t i = 0; i < NUM_SENSORS; i++) {
+    uint8_t ch = _retry_ch;
+    _retry_ch = (uint8_t)((_retry_ch + 1) % NUM_SENSORS);
+    if (!isFitted(ch)) continue;
+    bool needs = !_ok[ch] || _err[ch] >= SENSOR_RETRY_ERR_READS;
+    if (!needs) continue;
+
+    _last_retry_ms = now;      // only a real attempt consumes the period
+    bool was_ok = _ok[ch];
+    if (initChannel(ch)) {
+      _ok[ch] = true;
+      _err[ch] = 0;
+      DEBUG_SERIAL.printf("[sensors] ch%u: re-init OK%s\n", ch,
+                          was_ok ? " (was timing out)" : " (was dead)");
+    } else {
+      _ok[ch] = false;
+      DEBUG_SERIAL.printf("[sensors] ch%u: re-init failed, next try in "
+                          "%u ms\n", ch, (unsigned)SENSOR_RETRY_PERIOD_MS);
+    }
+    return;
   }
 #endif
 }

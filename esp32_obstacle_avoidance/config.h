@@ -177,6 +177,15 @@ static const bool RING_SENSOR_FITTED[NUM_RING_SENSORS] __attribute__((unused)) =
 // Sentinel returned by the sensor layer for an I2C timeout / absent sensor.
 #define SENSOR_MM_ERROR 0xFFFF
 
+// SELF-HEALING (2026-08-16, after the farm: sectors only ever DIED across a
+// powered afternoon because nothing ever re-ran init). maintain() attempts to
+// re-init at most ONE failed channel per period; a channel counts as failed
+// when boot init failed or SENSOR_RETRY_ERR_READS consecutive reads timed out
+// (its continuous-ranging mode is gone and only init brings it back). A failed
+// attempt changes nothing: the sector keeps reporting "unknown", never "clear".
+#define SENSOR_RETRY_PERIOD_MS 5000
+#define SENSOR_RETRY_ERR_READS 20
+
 // -----------------------------------------------------------------------------
 // REPORTED RANGE (centimetres) -- goes into OBSTACLE_DISTANCE min/max_distance
 // -----------------------------------------------------------------------------

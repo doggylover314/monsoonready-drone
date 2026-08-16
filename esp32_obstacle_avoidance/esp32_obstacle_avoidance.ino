@@ -155,6 +155,11 @@ void loop() {
   // we send. The VL53L0X units keep ranging continuously in the background.
   sensors.readAll(latest_mm);
 
+  // Self-healing: re-init channels that failed at boot or stopped answering
+  // (rate-limited inside; at most one bounded attempt per 5 s). Before this,
+  // a mid-session dropout was dead until the next power cycle.
+  sensors.maintain();
+
   uint32_t now = millis();
 
   // Fake-mode flight guard: without the bench jumper, fake data never

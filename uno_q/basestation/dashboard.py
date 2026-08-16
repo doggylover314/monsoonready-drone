@@ -385,6 +385,35 @@ def make_app(data_dir, control=None):
             abort(404)
         return send_from_directory(manual_dir, name)
 
+    # ---------------- photo browser (read-only, user 2026-08-16) -----------
+    # 'auto' = every frame the worker captured (future training data);
+    # 'manual' = the dashboard button's shots. Names are IST timestamps, so
+    # reverse-sorted = newest first. Available without --enable-control:
+    # viewing photos is as read-only as viewing missions.
+    photo_dirs = {'auto': os.path.join(data_dir, 'photos'),
+                  'manual': manual_dir}
+
+    @app.get('/api/photos/<which>')
+    def api_photos_list(which):
+        d = photo_dirs.get(which)
+        if not d:
+            abort(404)
+        try:
+            names = sorted((f for f in os.listdir(d) if f.endswith('.jpg')),
+                           reverse=True)
+        except OSError:
+            names = []
+        off = max(0, request.args.get('offset', 0, type=int))
+        lim = min(60, max(1, request.args.get('limit', 12, type=int)))
+        return jsonify({'total': len(names), 'files': names[off:off + lim]})
+
+    @app.get('/api/photos/<which>/<name>')
+    def api_photos_file(which, name):
+        d = photo_dirs.get(which)
+        if not d or not re.match(r'^[A-Za-z0-9_.\-]+\.jpg$', name):
+            abort(404)
+        return send_from_directory(d, name)
+
     return app
 
 
@@ -418,6 +447,12 @@ def main():
 
     log = BoardLog('dashboard')
     log(f"===== dashboard starting: {' '.join(sys.argv)} =====")
+
+    # No per-request lines (user, 2026-08-16): werkzeug logs every GET at
+    # INFO, which is 1200 poll lines an hour into the captured log. Errors
+    # still surface. Control actions are logged explicitly above.
+    import logging
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
     control = None
     if args.enable_control:

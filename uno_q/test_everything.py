@@ -149,7 +149,8 @@ def main():
 
     io.setup_streams()
     ring_orients = set()
-    luna = None                 # (distance_m, valid)
+    luna = None                 # (distance_m, rated_min_m, rated_max_m)
+    up_m = None                 # ring's upward sensor (RNGFND2, orient 24)
     listen_until = deadline
     while time.monotonic() < listen_until:
         msg = io.step()
@@ -158,15 +159,17 @@ def main():
         if msg.get_type() == 'DISTANCE_SENSOR':
             if msg.orientation == 25:                  # PITCH_270 = down
                 luna = (msg.current_distance / 100.0,
-                        msg.min_distance < msg.current_distance
-                        < msg.max_distance)
+                        msg.min_distance / 100.0, msg.max_distance / 100.0)
+            elif msg.orientation == 24:                # PITCH_90 = up
+                up_m = msg.current_distance / 100.0
             else:
                 ring_orients.add(msg.orientation)
         # Stop early once every answer is in: GPS+battery arrive at 1 Hz,
-        # the ring's orientations within a couple of seconds.
+        # the ring's orientations within a couple of seconds. 5 bins is the
+        # ring's healthy ceiling (6 sensors, ch2 dead chip).
         tel = io.tel
         if (luna is not None and tel.sats is not None
-                and tel.batt_v is not None and len(ring_orients) >= 6
+                and tel.batt_v is not None and len(ring_orients) >= 5
                 and time.monotonic() - t_start > 10):
             break
 
@@ -196,20 +199,45 @@ def main():
         report('luna', False,
                'no downward DISTANCE_SENSOR: TF-Luna silent (SERIAL4)')
     else:
-        d, valid = luna
-        state = ('valid' if valid
-                 else 'OUT OF RANGE, normal on the bench past 8 m or at sky')
-        report('luna', valid, f'{d:.2f} m ({state})')
+        # THE ON-GROUND RULE (same rule wiring_check has carried since the
+        # bench: an aircraft on its legs LEGITIMATELY reads below the rated
+        # minimum). Landed, the lens sits ~0.13 m over the floor
+        # (RNGFND1_GNDCLR) and the TF-Luna's rated minimum is 0.2 m, so
+        # ArduPilot flags the reading out-of-range BY DESIGN while the sensor
+        # is in fact alive and measuring. That is a PASS: the failure this
+        # test exists to catch is silence, not sitting on the ground.
+        d, dmin, dmax = luna
+        if 0.0 < d < dmin:
+            report('luna', True,
+                   f'{d:.2f} m ON-GROUND reading (alive; below the rated '
+                   f'{dmin:.2f} m minimum because the aircraft is sitting '
+                   f'{d:.2f} m over the floor; valid again in flight)')
+        elif dmin <= d <= dmax:
+            report('luna', True, f'{d:.2f} m (valid return)')
+        else:
+            report('luna', False,
+                   f'{d:.2f} m: no usable return (past {dmax:.0f} m or at '
+                   f'the sky); point it at the floor to prove it')
 
+    up_note = (f'; up sensor {up_m:.2f} m' if up_m is not None
+               else '; up sensor SILENT (RNGFND2, known-flaky power plug)')
     if not ring_orients:
         report('ring', False,
                'no ring DISTANCE_SENSOR messages: ESP32 silent or dead '
-               '(power-cycle re-runs its boot probe)')
+               '(cold power cycle)' + up_note)
     else:
-        report('ring', True,
-               f'{len(ring_orients)} orientation(s) reporting: '
-               f'{sorted(ring_orients)} (boot-latched; a missing sector '
-               f'needs a cold power cycle)')
+        n = len(ring_orients)
+        # 6 sensors land in 6 of ArduPilot's eight 45-deg bins; ch2 (120
+        # deg) is a KNOWN DEAD CHIP (proven at four bus speeds 2026-08-14),
+        # so 5 bins is the healthy ceiling, 4 = one more sensor out. The
+        # 2026-08-16 firmware re-inits dropped sensors every 5 s, so a bin
+        # that stays missing across minutes is hardware, not the old
+        # boot-latch.
+        report('ring', n >= 4,
+               f'{n} of ~5 achievable bearing bins: {sorted(ring_orients)} '
+               f'(6 fitted, ch2 dead chip = permanently blind 120deg'
+               + (', self-heal firmware NOT yet flashed'
+                  if n < 4 else '') + ')' + up_note)
 
     code = _finish(out_path, results, log, t_start)
     return code

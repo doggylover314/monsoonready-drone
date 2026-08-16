@@ -234,6 +234,20 @@
   }
   #phName { color: var(--muted); font-size: 11.5px; margin-top: 3px; }
 
+  /* ---------- photo browser panel ---------- */
+  .galbtn.on { color: var(--det-dot); border-color: var(--det-dot); }
+  #galGrid {
+    display: grid; gap: 6px; margin-top: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+  #galGrid img {
+    width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block;
+    border: 1px solid var(--border); border-radius: 6px; cursor: zoom-in;
+    background: var(--page);
+  }
+  #galCount { color: var(--muted); font-size: 12px; }
+  #galMore { margin-top: 8px; }
+
   /* ---------- profile + detections + events ---------- */
   #prof { width: 100%; height: 100%; display: block; }
   #detList { font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -358,6 +372,17 @@
     </div>
   </div>
 
+  <div class="pad" id="body-gallery">
+    <div class="ctlRow">
+      <button class="galbtn on" id="galAuto">Mission</button>
+      <button class="galbtn" id="galManual">Manual</button>
+      <button id="galRefresh" title="Refresh list">&#10227;</button>
+      <span id="galCount"></span>
+    </div>
+    <div id="galGrid"></div>
+    <button id="galMore" style="display:none">Load more</button>
+  </div>
+
   <div class="pad" id="body-totals">
     <div class="tiles">
       <div class="tile"><div class="v" id="s-flights">&ndash;</div><div class="k">Flights</div></div>
@@ -417,14 +442,15 @@ function applyTheme(t) {
    "Reset layout" restores DEFAULTS.
    ===================================================================== */
 const DEFAULTS = {
-  order: ['map', 'status', 'control', 'selftest', 'photo', 'totals',
-          'profile', 'detections', 'events'],
+  order: ['map', 'status', 'control', 'selftest', 'photo', 'gallery',
+          'totals', 'profile', 'detections', 'events'],
   panels: {
     map:        { title: 'Site map',        sub: 'detections & treatments', w: 8, h: 6, on: true },
     status:     { title: 'Mission status',  sub: 'live',                    w: 4, h: 3, on: true },
     control:    { title: 'Flight control',  sub: 'launch & abort',          w: 4, h: 4, on: true },
     selftest:   { title: 'Self-test',       sub: 'no motors, no servos',    w: 4, h: 4, on: true },
     photo:      { title: 'Manual photo',    sub: 'saved, never processed',  w: 4, h: 4, on: true },
+    gallery:    { title: 'Photos',          sub: 'mission + manual, newest first', w: 4, h: 4, on: true },
     totals:     { title: 'Season totals',   sub: 'all data in scope',       w: 4, h: 3, on: true },
     profile:    { title: 'Altitude profile',sub: 'EKF alt + rangefinder',   w: 5, h: 3, on: true },
     detections: { title: 'Latest detections', sub: 'newest first',          w: 3, h: 3, on: true },
@@ -943,6 +969,37 @@ function renderPhoto(c) {
   }
 }
 
+/* ---------- photo browser: pages of 12, newest first, lazy images ------- */
+const gal = { which: 'auto', shown: 0, total: 0 };
+
+async function galLoad(reset) {
+  if (reset) { gal.shown = 0; $('galGrid').innerHTML = ''; }
+  let j;
+  try {
+    j = await getJSON(`/api/photos/${gal.which}?offset=${gal.shown}&limit=12`);
+  } catch { return; }
+  gal.total = j.total;
+  for (const name of j.files) {
+    const img = document.createElement('img');
+    img.loading = 'lazy';                 // field wifi: fetch only what shows
+    img.src = `/api/photos/${gal.which}/${name}`;
+    img.title = name;
+    img.addEventListener('click', () => window.open(img.src, '_blank'));
+    $('galGrid').appendChild(img);
+    gal.shown++;
+  }
+  $('galCount').textContent =
+    gal.total ? `${gal.shown} of ${gal.total}` : 'no photos yet';
+  $('galMore').style.display = gal.shown < gal.total ? '' : 'none';
+}
+
+function galSwitch(which) {
+  gal.which = which;
+  $('galAuto').classList.toggle('on', which === 'auto');
+  $('galManual').classList.toggle('on', which === 'manual');
+  galLoad(true);
+}
+
 async function ctlRefresh() {
   let c;
   try { c = await getJSON('/api/control'); } catch { return; }
@@ -1320,8 +1377,13 @@ function wireEvents() {
       img.src = '/api/manual_photos/' + j.file;
       img.style.display = '';
       $('phName').textContent = j.file;
+      if (gal.which === 'manual') galLoad(true);  // browser shows it at once
     }
   });
+  $('galAuto').addEventListener('click', () => galSwitch('auto'));
+  $('galManual').addEventListener('click', () => galSwitch('manual'));
+  $('galRefresh').addEventListener('click', () => galLoad(true));
+  $('galMore').addEventListener('click', () => galLoad(false));
   $('phImg').addEventListener('click', () =>
     window.open($('phImg').src, '_blank'));
 
@@ -1379,6 +1441,7 @@ async function init() {
   await loadSite();
   await reload();
   ctlRefresh();
+  galLoad(true);
 }
 init();
 </script>
