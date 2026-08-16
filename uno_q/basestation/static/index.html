@@ -140,6 +140,19 @@
     position: absolute; inset: 0; display: none; place-items: center;
     color: var(--muted); font-size: 15px;
   }
+  #empty input, #empty button {
+    font-size: 13px; padding: 5px 8px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--ink);
+  }
+  #empty button { cursor: pointer; }
+  /* tiny "view anchored at typed coords" chip; click = change them */
+  #siteChip {
+    position: absolute; left: 8px; bottom: 8px; z-index: 5; display: none;
+    background: var(--surface); color: var(--muted); cursor: pointer;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 3px 8px; font-size: 11.5px;
+  }
   /* route / fence editor, floats over the map only while editing */
   #edBox {
     position: absolute; left: 10px; top: 10px; z-index: 6; display: none;
@@ -341,7 +354,18 @@
     <div id="wrap">
       <canvas id="map"></canvas>
       <div id="tip"></div>
-      <div id="empty">No mission data yet</div>
+      <div id="empty"><div style="text-align:center">
+        <div>No mission data yet</div>
+        <div style="margin-top:10px;font-size:13px">
+          show the site anyway: paste its coordinates from Google Maps</div>
+        <div style="margin-top:7px">
+          <input id="siteIn" size="22" placeholder="26.912345, 75.787654">
+          <button id="siteGo">Show site</button>
+        </div>
+        <div id="siteErr" style="margin-top:6px;font-size:12.5px;color:#d64545"></div>
+        <a id="siteCancel" href="#" style="display:none;font-size:12.5px">keep the current view</a>
+      </div></div>
+      <div id="siteChip"></div>
       <!-- editor box: only visible while drawing a route or a fence -->
       <div id="edBox">
         <div class="edHead"><b id="edTitle">Route</b>
@@ -1014,7 +1038,7 @@ function profile() {
    served the satellite fix), so every /api/control poll carries
    index.html's mtime and a change turns the header stamp into a reload
    demand. */
-const UI_VER = '2026-08-16c';
+const UI_VER = '2026-08-16d';
 let uiSrvMtime = null;
 function uiStaleCheck(m) {
   if (!m) return;
@@ -1511,6 +1535,60 @@ function drawSat(ctx, w, h) {
 /* ---------- map rendering ---------- */
 function layer(id) { const el = $(id); return el ? el.checked : true; }
 
+/* MANUAL SITE ANCHOR. How the map knows WHERE ON EARTH to look before any
+   data exists. 2026-08-16: a brand-new board has no flights, no route and
+   no fence, so proj.fit had zero points, the map sat on "No mission data
+   yet" forever, Draw fence clicks were swallowed by that overlay, and the
+   satellite imagery looked broken while every server piece was healthy.
+   The anchor is typed once (Google Maps "lat, lon"), kept in localStorage,
+   and only ever fills a vacuum: any real geometry replaces it in the fit,
+   except while drawing, when it keeps holding the frame so the view cannot
+   leap to a 10 m fit around the first corner placed. */
+const SITE_KEY = 'mr-site-anchor-v1';
+const SITE_SPAN_M = 400;
+let siteAnchor = null;
+try { siteAnchor = JSON.parse(localStorage.getItem(SITE_KEY) || 'null'); } catch {}
+let siteAskOpen = false;   // chip clicked: form shown over a working map
+function anchorPts() {
+  if (!siteAnchor) return [];
+  const dLat = (SITE_SPAN_M / 2) / 111320;
+  const dLon = (SITE_SPAN_M / 2) /
+               (111320 * Math.cos(siteAnchor.lat * Math.PI / 180));
+  return [[siteAnchor.lat - dLat, siteAnchor.lon - dLon],
+          [siteAnchor.lat + dLat, siteAnchor.lon + dLon]];
+}
+function siteApply() {
+  const m = $('siteIn').value.trim()
+    .match(/^(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)$/);
+  const lat = m ? parseFloat(m[1]) : NaN, lon = m ? parseFloat(m[2]) : NaN;
+  if (!m || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    $('siteErr').textContent =
+      'need "lat, lon", e.g. 26.912345, 75.787654 (right-click the spot ' +
+      'in Google Maps and click the numbers to copy them)';
+    return;
+  }
+  siteAnchor = {lat, lon};
+  try { localStorage.setItem(SITE_KEY, JSON.stringify(siteAnchor)); } catch {}
+  $('siteErr').textContent = '';
+  siteAskOpen = false;
+  view.k = 1; view.tx = view.ty = 0;    // fresh fit at the new place
+  render();
+}
+$('siteGo').addEventListener('click', siteApply);
+$('siteIn').addEventListener('keydown', ev => {
+  if (ev.key === 'Enter') siteApply();
+});
+$('siteCancel').addEventListener('click', ev => {
+  ev.preventDefault();
+  siteAskOpen = false; $('siteErr').textContent = ''; render();
+});
+$('siteChip').addEventListener('click', () => {
+  siteAskOpen = true;
+  $('siteIn').value = siteAnchor
+    ? siteAnchor.lat.toFixed(6) + ', ' + siteAnchor.lon.toFixed(6) : '';
+  render();
+});
+
 function render() {
   const canvas = canvasEl();
   if (!canvas || canvas.clientWidth === 0) return;
@@ -1533,6 +1611,10 @@ function render() {
   // useful BEFORE the first flight, and editing needs them on screen
   if (layer('ly-wp')) for (const wp of state.wps) pts.push(wp);
   if (layer('ly-fence')) for (const p of state.fence) pts.push(p);
+  // Typed site anchor: fills a vacuum, and keeps steadying the frame while
+  // drawing (without it the first placed corner would refit to a 10 m box).
+  const anchorOnly = !pts.length && !!siteAnchor;
+  if (siteAnchor && (!pts.length || edit.mode)) pts.push(...anchorPts());
   // While a waypoint is being dragged the projection must hold still:
   // re-fitting around the moving point would shift the map under the cursor
   // and the marker would chase its own projection.
@@ -1541,7 +1623,16 @@ function render() {
     if (proj.ok) applyView();
   }
 
-  $('empty').style.display = proj.ok ? 'none' : 'grid';
+  $('empty').style.display = (proj.ok && !siteAskOpen) ? 'none' : 'grid';
+  $('siteCancel').style.display = proj.ok ? '' : 'none';
+  const chip = $('siteChip');
+  if (anchorOnly && proj.ok && !siteAskOpen && !edit.mode) {
+    chip.textContent = 'site ' + siteAnchor.lat.toFixed(4) + ', '
+                     + siteAnchor.lon.toFixed(4) + ' · change';
+    chip.style.display = 'block';   // '' would fall back to the CSS none
+  } else {
+    chip.style.display = 'none';
+  }
   if (!proj.ok) return;
 
   if (layer('ly-sat')) drawSat(ctx, w, h);
@@ -1813,6 +1904,7 @@ function wireMap() {
   };
 
   canvas.addEventListener('mousedown', ev => {
+    if (!proj.ok) return;   // no fit = unproject() would produce NaN points
     const r = canvas.getBoundingClientRect();
     const mx = ev.clientX - r.left, my = ev.clientY - r.top;
     const hit = ptHit(mx, my);
