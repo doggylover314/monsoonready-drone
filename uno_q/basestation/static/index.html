@@ -399,7 +399,7 @@
       </div>
       <div class="ctlRow"><span id="ctlPrearm"></span></div>
       <div class="ctlRow">
-        <button class="big" id="btnArm">Arm</button>
+        <button class="big" id="btnArm">ARM</button>
         <button class="big go" id="btnGo" disabled>START MISSION</button>
         <button class="big stop" id="btnStop" disabled>STOP (RTL)</button>
       </div>
@@ -1004,7 +1004,7 @@ function profile() {
 }
 
 /* =====================================================================
-   FLIGHT CONTROL. Two-step on purpose: "Arm" unlocks START for
+   FLIGHT CONTROL. Two-step on purpose: "ARM" unlocks START for
    8 seconds, so no single stray click can launch an aircraft. STOP is
    never gated - an abort must always be one click.
    ===================================================================== */
@@ -1014,7 +1014,7 @@ function profile() {
    served the satellite fix), so every /api/control poll carries
    index.html's mtime and a change turns the header stamp into a reload
    demand. */
-const UI_VER = '2026-08-16b';
+const UI_VER = '2026-08-16c';
 let uiSrvMtime = null;
 function uiStaleCheck(m) {
   if (!m) return;
@@ -1051,7 +1051,7 @@ function setArmed(on) {
   const go = $('btnGo'), arm = $('btnArm');
   go.disabled = !goEnabled();
   go.classList.toggle('armed', goEnabled());
-  arm.textContent = ctl.armed ? 'Armed – click START' : 'Arm';
+  arm.textContent = ctl.armed ? 'ARMED – click START' : 'ARM';
   if (!ctl.armed && on) {
     $('ctlErr').textContent = ctl.running
       ? 'a mission is already running'

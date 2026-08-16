@@ -110,7 +110,14 @@ a working flight. Filming moves to the nearby field.
   nothing else does.
 - NO COMMANDS ON THE USER'S MACHINES (user, 2026-08-01): the assistant runs
   nothing on the laptop or the UNO Q without explicit per-instance
-  permission. ALL git commands are pre-authorised. Every command the user
+  permission. HARDENED (user, 2026-08-16, after the assistant curl-probed
+  the board): PROBES COUNT AS COMMANDS. The assistant runs NOTHING that
+  terminates at the board - no ssh, no scp, no curl to its IP or tunnel,
+  read-only included, and "check the logs" is NOT permission. Assistant-run
+  commands stay on this laptop and inside the repo directory (the session
+  scratchpad for temp files). Board evidence comes from scripts committed
+  to the repo and RUN BY THE USER (e.g. uno_q/diag_dashboard.sh).
+  ALL git commands are pre-authorised. Every command the user
   needs to run goes in batched blocks at the END of the reply: ONE block PER
   MACHINE, labeled BOARD or LAPTOP in bold above the block, never mixed.
   NEVER prefix laptop commands with `cd "/media/sleuther/Stuff/Robu AI
