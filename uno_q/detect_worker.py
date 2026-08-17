@@ -247,6 +247,11 @@ def main():
         t_frame, w, h, rows, frame = res
         payload = {'seq': seq, 't_frame': t_frame, 'camera_ok': True,
                    'w': w, 'h': h,
+                   # Blur metric for every frame, detection or not (see
+                   # OnnxDetector.infer_rows). Nothing acts on it yet; it is
+                   # here so the pre-take flight produces the numbers a
+                   # threshold would have to be chosen from.
+                   'sharpness': getattr(det, 'last_sharpness', None),
                    'rows': [[float(v) for v in r[:5]] for r in rows]}
 
         try:
@@ -265,10 +270,16 @@ def main():
         if args.save_dir and payload['rows']:
             save_annotated(args.save_dir, seq, frame, payload['rows'], w, h)
         write_atomic(out, payload)
+        sharp = payload['sharpness']
+        sharp_txt = f', sharpness {sharp:.0f}' if sharp is not None else ''
         if payload['rows']:
             best = max(r[4] for r in payload['rows'])
             log(f'[worker] seq {seq}: {len(payload["rows"])} detection(s), '
-                f'best {best:.2f}')
+                f'best {best:.2f}{sharp_txt}')
+        elif sharp is not None and seq % 10 == 0:
+            # Every tenth blank frame, so a whole flight's blur profile is in
+            # the log without a line per frame.
+            log(f'[worker] seq {seq}: no detections{sharp_txt}')
         time.sleep(max(0.0, args.interval - (time.time() - t0)))
 
 

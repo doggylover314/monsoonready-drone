@@ -127,6 +127,16 @@ def main():
     ap.add_argument('--data-dir', default='~/monsoonready_data')
     ap.add_argument('--survey-alt', type=float, default=15.0)
     ap.add_argument('--drop-alt', type=float, default=3.0)
+    # DESCEND-BESIDE OFFSET, in metres from the detected puddle centre. The
+    # TF-Luna cannot range still water, so the descent happens this far to one
+    # side, on dry ground, before the aircraft crosses over the water to
+    # release (mission.py). North by default; which side is a site decision,
+    # so it is a flag rather than a constant. 0 0 restores the old
+    # descend-directly-overhead behaviour.
+    ap.add_argument('--offset-n', type=float, default=3.0,
+                    help='metres north of the puddle to descend over')
+    ap.add_argument('--offset-e', type=float, default=0.0,
+                    help='metres east of the puddle to descend over')
     ap.add_argument('--conf', type=float, default=0.5)
     # 'auto' = resolve the camera BY NAME (camera.py). Bare indexes are an
     # enumeration race with the Venus codecs and losing that race is exactly
@@ -255,7 +265,10 @@ def main():
         bs_cmd = [sys.executable, bs, '--data-dir', args.data_dir]
 
     cfg = MissionConfig(waypoints=wps, survey_alt_m=args.survey_alt,
-                        drop_alt_m=args.drop_alt, basestation_cmd=bs_cmd)
+                        drop_alt_m=args.drop_alt,
+                        lateral_offset_n_m=args.offset_n,
+                        lateral_offset_e_m=args.offset_e,
+                        basestation_cmd=bs_cmd)
 
     stop = {'why': None}
 

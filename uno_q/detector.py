@@ -298,6 +298,20 @@ class OnnxDetector(_RowResolver):
             import cv2
             self._cv2 = cv2
         boxed[top:top + nh, left:left + nw] = self._cv2.resize(frame, (nw, nh))
+        # SHARPNESS, MEASURED NOT GUESSED (2026-08-17). Motion and vibration
+        # blur is the one failure mode nothing in this repo could see: the
+        # camera picks its own exposure, and a smeared frame is inferred on
+        # exactly like a sharp one. Variance of the Laplacian on the very
+        # image the model receives is the cheap standard proxy (~1 ms against
+        # a ~500 ms inference), and it is DELIBERATELY NOT A GATE: no frame is
+        # skipped and no detection is suppressed. A threshold picked without
+        # in-flight numbers would silently blind the aircraft, so the number
+        # is logged now and the pre-take flight supplies the distribution to
+        # choose from. Absolute values mean nothing across scenes; compare
+        # sharp and blurred frames from the SAME flight.
+        self.last_sharpness = float(self._cv2.Laplacian(
+            self._cv2.cvtColor(boxed, self._cv2.COLOR_BGR2GRAY),
+            self._cv2.CV_64F).var())
         x = boxed[:, :, ::-1].transpose(2, 0, 1)[None].astype(np.float32) / 255
         out = self.sess.run(None, {self._in: x})[0][0]
         rows = [r for r in out if float(r[4]) >= self.conf]

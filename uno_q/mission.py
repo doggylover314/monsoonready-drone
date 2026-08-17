@@ -1,8 +1,14 @@
 """Detect -> descend -> treat mission state machine (UNO Q onboard logic).
 
 States:
-  IDLE -> TAKEOFF -> SURVEY -> APPROACH -> DESCEND -> DROP -> CLIMB -> SURVEY
-  ... -> DONE (RTL). ABORT_CLIMB re-joins SURVEY. Any external mode change
+  IDLE -> TAKEOFF -> SURVEY -> APPROACH -> DESCEND -> CROSS -> DROP -> RETURN
+  -> CLIMB -> SURVEY ... -> DONE (RTL). DESCEND happens BESIDE the water,
+  where the TF-Luna can range dry ground; CROSS translates over the puddle at
+  the altitude captured there, and RETURN goes back beside it so the Luna has
+  a target again before the climb. With both lateral offsets at 0 the two
+  cross steps collapse and the sequence is the old vertical one.
+  ABORT_CLIMB re-approaches the same site cfg.site_retries times before it
+  gives up and re-joins SURVEY. Any external mode change
   away from GUIDED => STANDDOWN (pilot has the aircraft; never fight them).
   A should_stop() request from the runner => STOPPED, which still commands
   end_mode: nobody has taken the aircraft, we are just leaving.
@@ -78,9 +84,29 @@ class MissionConfig:
     # holding, which is the same place the old code dropped from).
     settle_vd_mps: float = 0.15
     settle_max_s: float = 3.0
-    # descend-beside knobs; stay 0 until TF-Luna-over-water bench (TODO 6)
-    lateral_offset_n_m: float = 0.0
+    # DESCEND BESIDE, CROSS OVER, RELEASE, CROSS BACK (user, 2026-08-17).
+    # The TF-Luna cannot range still water, so the descent happens over dry
+    # ground this far from the puddle centre, where the rangefinder works
+    # normally. The AGL it reports at drop height is the honest one; the
+    # aircraft then translates over the water HOLDING THE REL_ALT IT HAD AT
+    # THAT MOMENT, releases, and translates back beside so the Luna has a
+    # target again before the climb. Nothing aborts on a rangefinder dropout
+    # while over the water, because a dropout there is the expected reading.
+    # Direction is a site choice, not a physical constant: north by default,
+    # override with run_mission's --offset-n / --offset-e when the ground
+    # beside the water is only good on one side. Set both to 0 and the cross
+    # steps collapse to nothing, which is the old descend-directly-overhead
+    # behaviour and is what the SITL drills still exercise.
+    lateral_offset_n_m: float = 3.0
     lateral_offset_e_m: float = 0.0
+    cross_timeout_s: float = 20.0  # per translate; then abort (out) or climb (back)
+    # An abort used to burn the site for the whole flight: the detector latches
+    # a puddle when it FIRES, so an aborted descent left a site that could
+    # never be retried, and a one-target flight ended with zero drops. The
+    # mission now re-approaches the SAME latched coordinates this many times
+    # before giving up, which needs no detector change because the coordinates
+    # are already held here.
+    site_retries: int = 1
     end_mode: str = 'RTL'
     # argv to launch the base station after the mission ends (None = don't).
     # The onboard runner sets this; SITL tests leave it off.
@@ -109,9 +135,15 @@ class Mission:
         self.state = 'IDLE'
         self.history = []          # (t, state, note)
         self.wp_i = 0
-        self.target = None         # latched (lat, lon)
+        self.target = None         # latched (lat, lon): the DESCENT point, beside
+        self.puddle = None         # the water itself: where the gate opens
         self.target_area_m2 = None # estimated puddle area at latch time
         self.abort_reason = None
+        self._retries_left = 0     # re-approaches remaining for this site
+        # Rel-alt captured beside the water at the moment the Luna said we
+        # were at drop height. It is the altitude reference for everything
+        # that happens over the water, where the Luna reads nothing.
+        self._drop_rel_alt = None
         self._t_state = 0.0        # time of last state entry
         self._rng_acquired = False # ground return seen during current descent
         self._t_dropped = None     # monotonic time the gate finished cycling
@@ -293,10 +325,12 @@ class Mission:
         if det is not None:
             # TARGET LATCH: lock now, at survey altitude; ignore later detections.
             self.rec.detection(det.lat, det.lon, det.confidence)
+            self.puddle = (det.lat, det.lon)
             self.target = offset_latlon(det.lat, det.lon,
                                         self.cfg.lateral_offset_n_m,
                                         self.cfg.lateral_offset_e_m)
             self.target_area_m2 = getattr(det, 'area_m2', None)
+            self._retries_left = self.cfg.site_retries
             self.rec.latch(*self.target)
             self.io.goto(*self.target, self.cfg.survey_alt_m)
             self._set('APPROACH',
@@ -338,9 +372,59 @@ class Mission:
             # once the aircraft has actually stopped.
             self.io.velocity_ned(0, 0, 0, force=True)
             self._t_dropped = None
-            self._set('DROP', f"rng={tel.rng_m:.2f}m, stopping before release")
+            # THE LAST TRUSTWORTHY AGL. Everything over the water is flown
+            # against this number, because the Luna will read nothing there.
+            self._drop_rel_alt = tel.rel_alt_m
+            note = f"rng={tel.rng_m:.2f}m"
+            if self._cross_m() <= cfg.wp_radius_m:
+                self._set('DROP', note + ", stopping before release")
+            elif self._drop_rel_alt is None:
+                # No altitude reference means no safe way to hold height over
+                # water. Release beside it rather than fly blind across.
+                self._set('DROP', note + ", no rel_alt: releasing beside the "
+                                         "water rather than crossing blind")
+            else:
+                self.io.goto(*self.puddle, self._drop_rel_alt)
+                self._set('CROSS', note + f", crossing {self._cross_m():.1f} m "
+                                          f"to the water at "
+                                          f"{self._drop_rel_alt:.1f} m")
             return
         self.io.velocity_ned(0, 0, +cfg.descent_mps)
+
+    def _cross_m(self):
+        """Ground distance from the descent point to the water itself."""
+        if self.puddle is None or self.target is None:
+            return 0.0
+        return dist_m(self.target[0], self.target[1],
+                      self.puddle[0], self.puddle[1])
+
+    def _st_cross(self):
+        """Beside the water -> over its centre, holding the captured altitude.
+
+        No rangefinder test here on purpose: still water returns nothing, and
+        treating that as a fault is exactly the abort that used to end the
+        flight with zero drops.
+        """
+        if self._at_wp(*self.puddle, alt=self._drop_rel_alt):
+            self.io.velocity_ned(0, 0, 0, force=True)
+            self._t_dropped = None
+            self._set('DROP', 'over the water, stopping before release')
+            return
+        if self._elapsed() >= self.cfg.cross_timeout_s:
+            self._abort(f'did not reach the water in '
+                        f'{self.cfg.cross_timeout_s:.0f}s')
+
+    def _st_return(self):
+        """Over the water -> back beside it, so the Luna has ground again.
+
+        Never aborts: the granules are already gone and the only thing left to
+        do is get out. A timeout here just climbs from where it is.
+        """
+        if (self._at_wp(*self.target, alt=self._drop_rel_alt)
+                or self._elapsed() >= self.cfg.cross_timeout_s):
+            self._set('CLIMB', 'beside the water again'
+                      if self._at_wp(*self.target, alt=self._drop_rel_alt)
+                      else 'return timed out, climbing from here')
 
     def _below_floor(self):
         tel, cfg = self.io.tel, self.cfg
@@ -411,7 +495,13 @@ class Mission:
             return
 
         if time.monotonic() - self._t_dropped >= self.cfg.drop_dwell_s:
-            self._set('CLIMB', 'treated' if self._drop_ok else 'drop failed')
+            note = 'treated' if self._drop_ok else 'drop failed'
+            if self._cross_m() > self.cfg.wp_radius_m \
+                    and self._drop_rel_alt is not None:
+                self.io.goto(*self.target, self._drop_rel_alt)
+                self._set('RETURN', note + ', crossing back beside the water')
+            else:
+                self._set('CLIMB', note)
 
     def _st_climb(self):
         self._climb_then_resume()
@@ -423,8 +513,25 @@ class Mission:
         cfg, tel = self.cfg, self.io.tel
         if (tel.rel_alt_m is not None
                 and tel.rel_alt_m >= cfg.survey_alt_m - cfg.alt_tol_m):
+            # RETRY BEFORE GIVING UP. An aborted descent is usually a moment
+            # of bad luck (a dropout, a gust), not a verdict on the site, and
+            # the detector will never offer this puddle again: it latched the
+            # coordinates when it fired. Re-approach the SAME point, and only
+            # abandon it once the retries are spent.
+            if (self.state == 'ABORT_CLIMB' and self._retries_left > 0
+                    and self.target is not None):
+                self._retries_left -= 1
+                self._drop_rel_alt = None
+                self._rng_acquired = False
+                self.io.goto(*self.target, cfg.survey_alt_m)
+                self._set('APPROACH', f"retrying the site, "
+                                      f"{self._retries_left} retry left "
+                                      f"after this")
+                return
             self.target = None
+            self.puddle = None
             self.target_area_m2 = None
+            self._drop_rel_alt = None
             self._goto_current_wp()   # resume survey where we left off
             return
         self.io.velocity_ned(0, 0, -cfg.climb_mps)

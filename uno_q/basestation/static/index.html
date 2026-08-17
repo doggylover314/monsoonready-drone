@@ -876,6 +876,9 @@ function stats() {
 const STATE_COLORS = {
   SURVEY: 'var(--det-dot)', APPROACH: 'var(--det-dot)',
   DESCEND: '#e8b23c', DROP: 'var(--good)', CLIMB: '#e8b23c',
+  // Crossing to the water and back: same amber as the rest of the low-level
+  // work, because that is what an observer needs to read them as.
+  CROSS: '#e8b23c', RETURN: '#e8b23c',
   ABORT_CLIMB: 'var(--critical)', STANDDOWN: 'var(--critical)',
   DONE: 'var(--good)', TAKEOFF: 'var(--ink)', STOPPED: 'var(--muted)',
 };
