@@ -6,6 +6,12 @@ replaces prior chat context. Git discipline: THE ASSISTANT NEVER RUNS `git pull`
 (user, 2026-08-15, emphatic, after being told before). The user pulls. The
 assistant may commit and push its own edits. NEVER `cd` into the repo in any
 command, ever, on any machine. Update PROJECT_STATE.md as part of every change.
+CLARIFIED (user, 2026-08-16): "never runs" does NOT mean never mentions. When a
+pull is needed, GIVE HIM THE COMMAND TO RUN, on its own line, as a bare
+one-liner. What is banned is chaining: no `git pull --rebase && git add ... &&
+git commit ... && git push`, no multi-step `&&` pipelines of any kind. One
+command per block, he runs it, he says what happened. Same for anything else he
+must run.
 
 ## Response defaults (every reply, unless the user overrides)
 
@@ -15,7 +21,16 @@ command, ever, on any machine. Update PROJECT_STATE.md as part of every change.
   ~200 words. Every problem, finding, or item is ONE bullet, one or two
   sentences. Never a paragraph of prose per item. Detail belongs in
   PROJECT_STATE.md, not in the reply. If the user wants more, they ask.
-- If a task is simple (formatting, grammar, short translation), note once that Haiku may suffice.
+- ANSWER THE FIELDS ASKED FOR, AND ONLY THOSE (user, 2026-08-14, after the
+  submission ML section: he asked for model / training platform / accuracy /
+  dataset and got six rows, the extra two being inference platform and
+  on-device speed). When the user enumerates what he wants, that list is
+  EXHAUSTIVE, not a starting point. Do not add a field because it is
+  impressive, available, or "worth mentioning": an unasked-for row in a
+  submission form is work he has to read and then delete. Same failure family
+  as the unrequested tables and the servo_jog warnings. If something genuinely
+  omitted seems load-bearing, say so in ONE line BELOW the deliverable, never
+  by widening the deliverable itself.
 - At 15+ messages, offer once to summarize key context for a fresh chat.
 - If the user requests a correction, note once that editing their last message saves tokens.
 - Explain how things work while doing them; the user wants to understand, not just delegate.
