@@ -18,6 +18,11 @@ Reports, in the order they can stop the project:
               cumulative since boot, so the raw value includes bench handling.
   GPS         worst sats/HDOP BEFORE the motors spun (the arming window, which
               is the one the C3 crash was about) and again while flying.
+  COMPASS     magnetic field strength per instance, split BEFORE the motors
+              spin and while flying. The split is the diagnosis: high at rest
+              means the calibration is stale or something magnetic sits near
+              the compass, while low at rest and high under throttle means
+              current in nearby wiring. Recalibrating only fixes the first.
   HOVER       learned hover throttle from CTUN.ThH. Not from PARM: PARM only
               carries the value at log start, and hover learning never writes
               a PARM record, so reading it there always reports the old value.
@@ -34,6 +39,7 @@ arming window is exactly what the GPS rule exists to police.
 """
 
 import argparse
+import math
 import statistics
 import sys
 
@@ -43,6 +49,13 @@ VIBE_GATE = 15.0          # VibeZ median, PROJECT_STATE flight gate
 MIN_SATS = 10             # CRASH LESSONS rule
 MAX_HDOP = 1.5
 MAX_HOVER_THR = 0.5       # above this the thrust margin is too thin
+# Milligauss. NOT a universal constant: ArduPilot's arming check compares the
+# measured field against the field expected at YOUR location, and 875 is the
+# ceiling this aircraft itself printed at the farm ("Check mag field (1038,
+# max 875)", logs 43 and 45). Somewhere with a different earth field the
+# board will quote a different number, so treat this as the site figure the
+# aircraft gave us rather than a rule from the wiki.
+MAG_FIELD_GATE = 875.0
 
 # ArduPilot LogErrorSubsystem, the ones worth naming. Unlisted codes print raw.
 ERR_SUBSYS = {
@@ -97,6 +110,7 @@ def main():
     ctun_seen = False
     hover = []
     gps_pre, gps_fly = [], []   # (sats, hdop) before motors / while flying
+    mag_pre, mag_fly = {}, {}   # instance -> [|B| mG] before motors / flying
     errs, msgs = [], []
     volt_min, consumed, energy = None, None, None
     peak_amp = 0.0
@@ -159,6 +173,15 @@ def main():
             ns, hd = getattr(msg, 'NSats', None), getattr(msg, 'HDop', None)
             if ns is not None and hd is not None:
                 (gps_fly if flying else gps_pre).append((ns, hd))
+        elif t == 'MAG':
+            # |B| from the RAW field, which is what the arming check tests.
+            # Offsets are logged separately and must not be subtracted here.
+            x = getattr(msg, 'MagX', None)
+            y = getattr(msg, 'MagY', None)
+            z = getattr(msg, 'MagZ', None)
+            if None not in (x, y, z):
+                (mag_fly if flying else mag_pre).setdefault(
+                    getattr(msg, 'I', 0), []).append(math.sqrt(x*x + y*y + z*z))
         elif t == 'ERR':
             errs.append((msg.Subsys, msg.ECode))
         elif t == 'MSG':
@@ -248,6 +271,45 @@ def main():
     if not gps_pre and not gps_fly:
         print("  NO GPS DATA AT ALL in this log: GPS-dependent modes cannot "
               "be cleared from it.")
+
+    # --- compass field strength ----------------------------------------------
+    # Finding 8 of the 2026-08-17 scan: the farm logs read 1038 and 1058
+    # against a stated max of 875 and the CAUSE was never established. The
+    # before/after-throttle split below is what separates the two candidates,
+    # because a recalibration is wasted effort against a current-driven field.
+    print(f"\nCOMPASS    |B| in mG, gate {MAG_FIELD_GATE:.0f} (this site's "
+          f"figure, from the aircraft's own arming message)")
+    if not mag_pre and not mag_fly:
+        print("  NO MAG messages in this log, so the compass cannot be judged "
+              "from it. LOG_BITMASK's COMPASS bit is the thing to check.")
+    for imu in sorted(set(mag_pre) | set(mag_fly)):
+        for label, data in (('at rest ', mag_pre.get(imu, [])),
+                            ('flying  ', mag_fly.get(imu, []))):
+            if not data:
+                print(f"  MAG{imu} {label}: no samples")
+                continue
+            med = statistics.median(data)
+            flag = '' if med <= MAG_FIELD_GATE else '   <-- OVER THE GATE'
+            print(f"  MAG{imu} {label}: median {med:6.0f}  95th "
+                  f"{pct(data, 95):6.0f}  max {max(data):6.0f}{flag}")
+
+    rest_bad = [i for i, d in mag_pre.items()
+                if d and statistics.median(d) > MAG_FIELD_GATE]
+    fly_only_bad = [i for i, d in mag_fly.items()
+                    if d and statistics.median(d) > MAG_FIELD_GATE
+                    and i not in rest_bad]
+    if rest_bad:
+        print(f"  MAG{','.join(map(str, rest_bad))} is already over the gate "
+              f"with the motors stopped, so this is calibration or something "
+              f"magnetic parked near the compass, not motor current. "
+              f"Recalibrate outdoors, away from metal, and re-read this line.")
+        failed.append('compass field at rest')
+    if fly_only_bad:
+        print(f"  MAG{','.join(map(str, fly_only_bad))} is fine at rest and "
+              f"over the gate under throttle: that is current in wiring near "
+              f"the compass, and no amount of recalibration fixes it. Route "
+              f"the battery leads away from the compass instead.")
+        failed.append('compass field under throttle')
 
     # --- hover throttle, learned ---------------------------------------------
     if hover:

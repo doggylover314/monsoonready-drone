@@ -25,6 +25,26 @@ RTL_ALT_M,15              # m return altitude (4.7 renamed + re-united); raise i
 RTL_ALT_FINAL_M,0         # 0 = land at the end of RTL
 DISARM_DELAY,10           # s auto-disarm after landing
 
+# --- Survey speed (2026-08-17) ---
+# THE NAME AND THE UNITS ARE BOTH 4.7 THINGS, and both were wrong in the
+# 2026-08-17 problem scan, which asked for "WPNAV_SPEED ~3 m/s". This
+# firmware has NO WPNAV_* parameters at all: a push of WPNAV_SPEED would
+# have come back as a no-echo and changed nothing. The board's own dump
+# (param_dumps/board_dump_20260817-*.param) carries WP_SPD, WP_SPD_UP 2.5,
+# WP_SPD_DN 1.5 and WP_ACC 2.5, i.e. the renamed set in m/s and m/s2, not
+# the old centimetre units. WP_SPD read 10 there, so the aircraft has been
+# flying its GUIDED legs at 10 m/s while every coverage, footprint and
+# motion-blur figure in PROJECT_STATE.md assumed 3.
+# WHY 3 m/s: at 12.5 mm/px ground sampling and ~0.5-1 s per inference, 10 m/s
+# leaves a 2.5 m puddle with about one frame on it and smears each frame
+# roughly three times as far as 3 m/s does. Slower is the single cheapest
+# improvement to both detection recall and image sharpness.
+# VERIFY FROM THE NEXT LOG, not from this line: GUIDED position targets are
+# flown by the waypoint navigation controller, which is why this parameter is
+# expected to govern them, but that expectation has not been confirmed on
+# this aircraft. Check the achieved ground speed in the log before trusting it.
+WP_SPD,3                  # m/s survey speed (was 10 on the board)
+
 # --- Flight modes + switches (reconstructed after factory reset from the
 #     pre-reset QGC summary + handoff; ch5 arm, ch7 3-pos modes, ch8 kill) ---
 FLTMODE_CH,7              # mode switch on ch7 (3-pos -> hits modes 1/4/6)
