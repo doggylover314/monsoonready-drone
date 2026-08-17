@@ -6,6 +6,12 @@ replaces prior chat context. Git discipline: THE ASSISTANT NEVER RUNS `git pull`
 (user, 2026-08-15, emphatic, after being told before). The user pulls. The
 assistant may commit and push its own edits. NEVER `cd` into the repo in any
 command, ever, on any machine. Update PROJECT_STATE.md as part of every change.
+CLARIFIED (user, 2026-08-16): "never runs" does NOT mean never mentions. When a
+pull is needed, GIVE HIM THE COMMAND TO RUN, on its own line, as a bare
+one-liner. What is banned is chaining: no `git pull --rebase && git add ... &&
+git commit ... && git push`, no multi-step `&&` pipelines of any kind. One
+command per block, he runs it, he says what happened. Same for anything else he
+must run.
 
 ## Response defaults (every reply, unless the user overrides)
 
