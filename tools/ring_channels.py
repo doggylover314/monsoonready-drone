@@ -19,6 +19,12 @@ HOW IT TELLS DEAD FROM CLEAR (config.h, this build):
     a real number. Alive and clear is therefore distinguishable from dead.
   * a channel with an object sends its distance in cm.
 
+CHANNEL 6, the UPWARD sensor, is not in OBSTACLE_DISTANCE at all: it travels
+as its own DISTANCE_SENSOR with orientation 24 (up), which the Pixhawk sees as
+RNGFND2. It is reported here anyway, because "which channels are alive" is the
+question and ch6 is a channel. Orientation 25 on the same message is the
+downward TF-Luna and is deliberately ignored.
+
 So: 65535 = DEAD, anything else = ALIVE. That is the whole trick.
 
 Sampling over several seconds rather than reading one message is deliberate:
@@ -42,6 +48,7 @@ NUM_RING = 6
 INCREMENT_DEG = 60
 NO_DATA = 65535
 RANGE_MAX_CM = 200          # config.h; "clear" arrives as RANGE_MAX_CM + 1
+UP_ORIENT = 24              # MAV_SENSOR_ROTATION_PITCH_90; 25 is the TF-Luna
 
 
 def main():
@@ -57,12 +64,20 @@ def main():
     alive = defaultdict(int)     # channel -> samples that were not 65535
     total = 0
     near = {}                    # channel -> closest cm seen
+    up_n = 0                     # DISTANCE_SENSOR orientation 24 seen
+    up_cm = None                 # last upward reading
     print(f"\nlistening {args.seconds:g}s for OBSTACLE_DISTANCE ...")
 
     deadline = time.monotonic() + args.seconds
     while time.monotonic() < deadline:
-        msg = m.recv_match(type='OBSTACLE_DISTANCE', blocking=True, timeout=1)
+        msg = m.recv_match(type=['OBSTACLE_DISTANCE', 'DISTANCE_SENSOR'],
+                           blocking=True, timeout=1)
         if msg is None:
+            continue
+        if msg.get_type() == 'DISTANCE_SENSOR':
+            if msg.orientation == UP_ORIENT:
+                up_n += 1
+                up_cm = msg.current_distance
             continue
         total += 1
         for ch in range(NUM_RING):
@@ -95,6 +110,12 @@ def main():
             note = (f"closest {near[ch]} cm" if ch in near
                     else 'clear (nothing in range)')
         print(f"{ch:>2}  {bearing:>5} deg  {verdict:>12}  {note} ({pct:.0f}%)")
+
+    if up_n:
+        print(f"{6:>2}     up      {'alive':>12}  {up_cm} cm ({up_n} msgs)")
+    else:
+        print(f"{6:>2}     up      {'SILENT':>12}  no DISTANCE_SENSOR "
+              f"orientation {UP_ORIENT} (this is RNGFND2 on the Pixhawk)")
 
     print()
     if dead:
