@@ -119,15 +119,28 @@ def main():
 
     print()
     if dead:
+        live = [c for c in range(NUM_RING) if alive[c]]
         print(f"DEAD: channel(s) {dead} at bearing(s) "
               f"{[c * INCREMENT_DEG for c in dead]} deg clockwise from the nose.")
-        print("Next: meter 3V3 AT THAT SENSOR'S OWN VIN PIN while running, and "
-              "wiggle its connector while watching this again. config.h records "
-              "this fault as loose contact / sagging 3V3, NOT bus speed, and "
-              "records one case where an unpowered sensor also killed a "
-              "neighbouring channel. If power is clean, swap that sensor onto a "
-              "known-good mux channel: fault follows the sensor = bad chip, "
-              "fault stays on the channel = mux or wiring.")
+        if live or up_n:
+            # The live channels ARE the control experiment. They sit on the
+            # same common 3V3/GND and the same mux as the dead ones, so if they
+            # report, a sagging rail or a broken bus cannot be the explanation.
+            # Saying so matters: this project has twice chased a shared-supply
+            # theory that the evidence already ruled out.
+            print(f"  Channels {live}{' plus the up sensor' if up_n else ''} "
+                  f"report on the SAME shared 3V3/GND and the same mux, so the "
+                  f"rail and the bus are EXONERATED by this run. A fault that "
+                  f"spares them is LOCAL to the dead channel: its own sensor, "
+                  f"its own 4-wire bundle, or its own mux channel.")
+            print("  DECISIVE TEST: move the dead channel's sensor to a mux "
+                  "channel known to work, and re-run. Reports there = the "
+                  "sensor is fine and the fault is that mux channel or its "
+                  "wiring. Still dead = that sensor is bad, replace it.")
+        else:
+            print("  NOTHING is reporting, so this is not a per-channel fault: "
+                  "suspect the ESP32, the shared 3V3/GND, or the mux itself "
+                  "before touching any individual sensor.")
     if flaky:
         print(f"FLAKY: channel(s) {flaky} came and went, which is the same "
               f"loose-contact signature as DEAD but caught earlier.")
