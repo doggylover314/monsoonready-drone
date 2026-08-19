@@ -1045,7 +1045,7 @@ function profile() {
    served the satellite fix), so every /api/control poll carries
    index.html's mtime and a change turns the header stamp into a reload
    demand. */
-const UI_VER = '2026-08-18a';
+const UI_VER = '2026-08-18b';
 let uiSrvMtime = null;
 function uiStaleCheck(m) {
   if (!m) return;
@@ -1357,11 +1357,13 @@ async function ctlRefresh() {
 
   ctl.canFly = !!c.waypoints_exist;
   $('btnStop').disabled = !ctl.running;
-  // A dry run needs what a real one needs MINUS the arming: a waypoint file
-  // and a free Pixhawk link. It deliberately does NOT wait behind the ARM
-  // step, because the two-step arm guard exists to stop an accidental
-  // FLIGHT, and this can never produce one.
-  $('btnDry').disabled = ctl.running || !ctl.canFly;
+  // NEVER DISABLED (user, 2026-08-18: "clicking the Dry Run button does
+  // absolutely nothing"). A disabled button is silent about WHY, and the
+  // reason is always something the operator can fix: no waypoint file yet,
+  // or a mission already running. The server states that reason in plain
+  // words, so let the click happen and show the answer instead of swallowing
+  // it. START stays disabled-until-armed, because there the two-step guard
+  // is the point.
   // Re-derive through setArmed so the button state and the armed flag can
   // never disagree (they did before: arming ignored these preconditions).
   setArmed(ctl.armed);
@@ -2072,8 +2074,16 @@ function wireEvents() {
     // no_drop travels WITH dry_run, always. --dry-run only refuses to arm;
     // on its own it would still cycle the gate when the detector fires, and
     // this runs on a bench with a loaded hopper.
+    const btn = $('btnDry');
     setArmed(false);
-    await ctlPost('/api/control/start', {dry_run: true, no_drop: true});
+    $('ctlErr').textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'starting…';
+    const j = await ctlPost('/api/control/start', {dry_run: true, no_drop: true});
+    btn.textContent = 'DRY RUN (never arms)';
+    btn.disabled = false;
+    if (j.ok) $('ctlNote').textContent = 'dry run started: never arms, gate '
+      + 'disabled. Watch the state above and ~/logs/run_mission.log';
     ctlRefresh();
   });
   $('btnStop').addEventListener('click', async () => {

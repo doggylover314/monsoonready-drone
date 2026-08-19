@@ -189,12 +189,36 @@ def clear(io, log=print, timeout=10.0):
     raise RuntimeError(f'no MISSION_ACK to the clear in {timeout:.0f}s')
 
 
-def read_back(io, log=print, timeout=20.0):
+def read_back(io, log=print, timeout=20.0, attempts=3, settle_s=1.5):
     """Download the fence the Pixhawk actually holds. [[lat, lon], ...].
 
     This is the only honest proof that an upload worked: the ACK says the
     autopilot liked the exchange, the read-back says what it stored.
+
+    WHY IT RETRIES ON AN EMPTY ANSWER (2026-08-18, observed twice on the real
+    aircraft): a MISSION_COUNT of 0 arrives from a Pixhawk that demonstrably
+    holds a fence. The user's own paste shows `fence.py read` returning
+    nothing and then, seconds later and unchanged, all seven corners; the
+    dashboard's verify-after-push hit the same thing and reported "sent 7 but
+    the Pixhawk holds 0" for a fence that was in storage. A single zero is
+    therefore not evidence of an empty fence, and treating it as evidence is
+    what made a working fence look broken. A NON-empty answer is trusted
+    immediately; only zero is retried, so a genuinely empty fence costs
+    attempts * settle_s seconds to confirm and nothing else changes.
     """
+    for attempt in range(attempts):
+        got = _read_back_once(io, timeout)
+        if got:
+            return got
+        if attempt < attempts - 1:
+            log(f'[fence] read-back came back empty ({attempt + 1}/{attempts}), '
+                f'retrying in {settle_s:g}s')
+            time.sleep(settle_s)
+    return []
+
+
+def _read_back_once(io, timeout=20.0):
+    """One download attempt. Returns [] for an empty or unanswered fence."""
     conn = io.conn
     ts, tc = conn.target_system, conn.target_component
     conn.mav.mission_request_list_send(ts, tc, MISSION_TYPE_FENCE)
