@@ -63,7 +63,12 @@ def main():
 
     alive = defaultdict(int)     # channel -> samples that were not 65535
     total = 0
-    near = {}                    # channel -> closest cm seen
+    # RANGE, not just the minimum (user, 2026-08-18): one number cannot tell a
+    # sensor pinned at a fixed distance from one that is tracking the world.
+    # 5-5 cm across a whole run is a stuck or blocked sensor; 39-125 cm is a
+    # sensor doing its job. Clear readings (RANGE_MAX_CM + 1) are counted
+    # separately so a real object never hides inside the "clear" sentinel.
+    lo, hi, clear_n = {}, {}, defaultdict(int)
     up_n = 0                     # DISTANCE_SENSOR orientation 24 seen
     up_cm = None                 # last upward reading
     print(f"\nlistening {args.seconds:g}s for OBSTACLE_DISTANCE ...")
@@ -85,14 +90,30 @@ def main():
             if cm != NO_DATA:
                 alive[ch] += 1
                 if cm <= RANGE_MAX_CM:
-                    near[ch] = min(near.get(ch, cm), cm)
+                    lo[ch] = min(lo.get(ch, cm), cm)
+                    hi[ch] = max(hi.get(ch, cm), cm)
+                else:
+                    clear_n[ch] += 1
 
     if not total:
-        sys.exit("no OBSTACLE_DISTANCE at all: the ESP32 is silent, or its "
-                 "TELEM2 link is down. This tool cannot see individual "
-                 "channels until the ring is transmitting something.")
+        sys.exit(
+            "no OBSTACLE_DISTANCE at all. The ESP32 sits on TELEM1 (SERIAL1), "
+            "not TELEM2, which is the SiK radio. Three things can produce "
+            "this silence and they are told apart in one step: run "
+            "`tools/bench.py nodes --seconds 20`. Component 195 present = the "
+            "ESP32 is alive and talking, so the fault is in what the Pixhawk "
+            "does with its packets. Component 195 absent = the ESP32 is "
+            "unpowered, not booted, or its TELEM1 wiring is disturbed, which "
+            "is the same class of fault as every other silence this project "
+            "has had.")
 
     print(f"{total} messages\n")
+    print("bearings below are what the FIRMWARE CLAIMS (config.h "
+          "SECTOR_FOR_CHANNEL is the identity map, SENSOR_ANGLE_OFFSET_DEG 0), "
+          "NOT something this tool can verify. To check it for real: put one "
+          "object about 50 cm from ONE sensor, re-run, and see which channel "
+          "moves. If the wrong one moves, the wiring order and the map "
+          "disagree and SECTOR_FOR_CHANNEL is what to fix.\n")
     print(f"{'ch':>2}  {'bearing':>7}  {'alive':>12}  what it saw")
     dead, flaky = [], []
     for ch in range(NUM_RING):
@@ -107,8 +128,13 @@ def main():
             flaky.append(ch)
         else:
             verdict = 'alive'
-            note = (f"closest {near[ch]} cm" if ch in near
-                    else 'clear (nothing in range)')
+            if ch in lo:
+                span = hi[ch] - lo[ch]
+                note = (f"{lo[ch]}-{hi[ch]} cm"
+                        + (f", SPAN {span} cm" if span else ", NEVER CHANGED")
+                        + (f", clear on {clear_n[ch]}" if clear_n[ch] else ""))
+            else:
+                note = 'clear throughout (nothing within range)'
         print(f"{ch:>2}  {bearing:>5} deg  {verdict:>12}  {note} ({pct:.0f}%)")
 
     if up_n:
