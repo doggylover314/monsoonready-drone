@@ -2,16 +2,17 @@
 
 FIRST ACTION every session: read PROJECT_STATE.md completely, and PRIVATE.md if present (gitignored machine/account details; on a new machine copy PRIVATE.sample.md and fill it in). It is the single
 source of truth (project state, decisions, TODO, session continuity) and
-replaces prior chat context. Git discipline: THE ASSISTANT NEVER RUNS `git pull`
-(user, 2026-08-15, emphatic, after being told before). The user pulls. The
-assistant may commit and push its own edits. NEVER `cd` into the repo in any
-command, ever, on any machine. Update PROJECT_STATE.md as part of every change.
-CLARIFIED (user, 2026-08-16): "never runs" does NOT mean never mentions. When a
-pull is needed, GIVE HIM THE COMMAND TO RUN, on its own line, as a bare
-one-liner. What is banned is chaining: no `git pull --rebase && git add ... &&
-git commit ... && git push`, no multi-step `&&` pipelines of any kind. One
-command per block, he runs it, he says what happened. Same for anything else he
-must run.
+replaces prior chat context. Git discipline, full history because each stage
+was an explicit user ruling: 2026-08-15 the assistant was BANNED from `git
+pull` (after a conflict incident; user pulled, assistant only committed and
+pushed). 2026-08-16: clarified that mentioning the command is fine, chained
+multi-step `&&` pipelines are not. 2026-08-17 and again 2026-08-18 (user,
+emphatic, tired of repeating it): THE BAN IS LIFTED FOR THIS LAPTOP. The
+assistant runs ALL git commands itself ON THIS LAPTOP ONLY, including pull
+(merge, never rebase-rewrite of pushed history, never force push). Board-side
+git stays user-run, because the assistant runs NOTHING on the board (see the
+probe ban below). NEVER `cd` into the repo in any command, ever, on any
+machine. Update PROJECT_STATE.md as part of every change.
 
 ## Response defaults (every reply, unless the user overrides)
 
@@ -98,8 +99,9 @@ answer delivered confidently is worse than no answer. In every response:
    invent tasks.
 4. NO GIANT COMMAND BLOCKS. Multi-step procedures become SCRIPTS, committed to
    the repo and meticulously tested before the user runs them. Only one or
-   two-liner commands are ever pasted into a shell. No `git pull` from the
-   assistant, no `cd <dir>` in any command.
+   two-liner commands are ever pasted into a shell. No `cd <dir>` in any
+   command. (The 2026-08-15 git-pull ban that lived here was lifted
+   2026-08-18: laptop git is fully assistant-run now, see the header.)
 5. NOTHING BUT PROGRAMMING unless explicitly asked. No analysis, no research,
    no planning documents, no state-of-the-world reports, unless the user asks
    for them. (The STATE-FIRST rule below still applies: recording facts and
@@ -173,9 +175,11 @@ a working flight. Filming moves to the nearby field.
 
 ## Multi-machine coordination (owner + friend, both with AIs)
 
-- Two people push to main, so a stale push can conflict. The USER runs the pull
-  (see SCOPE RULES 4: the assistant never runs `git pull`). If an assistant push
-  is rejected as non-fast-forward, say so and stop; do not pull to fix it.
+- Two people push to main, so a stale push can conflict. On this laptop the
+  assistant pulls (merge) and pushes itself (user grant, 2026-08-18). On a
+  non-fast-forward: pull-merge, resolve honestly, push; never rewrite pushed
+  history, never force push. After any pull, READ the incoming
+  PROJECT_STATE/CLAUDE.md changes before acting on stale beliefs.
 - Never rewrite pushed history (no force push, no amend of pushed commits).
 - Decision log entries: append-only, dated, and tagged with who made them,
   e.g. "2026-07-26 (friend): ...". Never edit or delete existing entries.
