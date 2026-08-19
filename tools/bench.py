@@ -69,8 +69,9 @@ def cmd_mode(m, args):
 # rather than blending into a list of numbers.
 KNOWN_COMPONENTS = {
     1:   'autopilot (the Pixhawk itself)',
-    191: 'UNO Q  <-- TODO 7: this appearing IS the D0/D1 pass',
-    195: 'ESP32 obstacle ring (parked, may be unplugged)',
+    191: 'UNO Q (only heartbeats while a MavIO process runs: mission, '
+         'test_everything, test_mission_link)',
+    195: 'ESP32 obstacle ring',
     250: 'this script',
 }
 
