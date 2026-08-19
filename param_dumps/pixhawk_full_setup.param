@@ -35,15 +35,22 @@ DISARM_DELAY,10           # s auto-disarm after landing
 # the old centimetre units. WP_SPD read 10 there, so the aircraft has been
 # flying its GUIDED legs at 10 m/s while every coverage, footprint and
 # motion-blur figure in PROJECT_STATE.md assumed 3.
-# WHY 3 m/s: at 12.5 mm/px ground sampling and ~0.5-1 s per inference, 10 m/s
-# leaves a 2.5 m puddle with about one frame on it and smears each frame
-# roughly three times as far as 3 m/s does. Slower is the single cheapest
-# improvement to both detection recall and image sharpness.
+# WHY 3 m/s WAS PICKED (2026-08-17): at 12.5 mm/px ground sampling and
+# ~0.5-1 s per inference, 10 m/s leaves a 2.5 m puddle with about one frame
+# on it and smears each frame roughly three times as far as 3 m/s does.
+# 3 -> 2 (user, 2026-08-18), THE RING'S REACTION CEILING: with AVOID_ENABLE
+# back at 7 the ring must be able to STOP the aircraft inside its ~2 m
+# trusted range. Braking from 3 m/s at AVOID_ACCEL_MAX 3 needs ~1.5 m plus
+# ~0.3 m of 10 Hz sensor latency = ~1.8 m: no margin. From 2 m/s the same
+# sum is ~0.9 m, which leaves the AVOID_MARGIN 1 m standoff workable. The
+# two params move together (PROJECT_STATE 2026-08-18): raising WP_SPD above
+# 2 makes the ring cosmetic again. Blur only improves at 2; each survey leg
+# takes 1.5x as long as at 3.
 # VERIFY FROM THE NEXT LOG, not from this line: GUIDED position targets are
 # flown by the waypoint navigation controller, which is why this parameter is
 # expected to govern them, but that expectation has not been confirmed on
 # this aircraft. Check the achieved ground speed in the log before trusting it.
-WP_SPD,3                  # m/s survey speed (was 10 on the board)
+WP_SPD,2                  # m/s survey speed (was 10; 3 for blur; 2 = ring ceiling)
 
 # --- Flight modes + switches (reconstructed after factory reset from the
 #     pre-reset QGC summary + handoff; ch5 arm, ch7 3-pos modes, ch8 kill) ---
@@ -124,7 +131,7 @@ PRX1_YAW_CORR,0
 # against the ring's ~2 m ceiling, so avoidance cannot protect cruise at
 # WP_SPD 3. Cruise is at 15 m AGL, above the obstacle field; the ring earns
 # its keep in the slow low phases (descent 0.5 m/s, short cross legs).
-# Ring-protected CRUISE would need WP_SPD <= 2, a deliberate trade not made.
+# Ring-protected CRUISE needs WP_SPD <= 2: TRADE MADE 2026-08-18, WP_SPD,2.
 AVOID_ENABLE,7            # 7 = proximity ring steers again (user 2026-08-18)
 AVOID_MARGIN,1            # m stand-off in GPS modes; sensor max is ~1.2-2 m
 AVOID_BEHAVE,0            # 0 = slide
