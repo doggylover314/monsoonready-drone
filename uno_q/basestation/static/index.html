@@ -427,6 +427,10 @@
         <button class="big go" id="btnGo" disabled>START MISSION</button>
         <button class="big stop" id="btnStop" disabled>STOP (RTL)</button>
       </div>
+      <div class="ctlRow">
+        <button id="btnDry" title="Fly the whole software loop on the bench: camera, detector, telemetry and logging, with the autopilot never armed and the gate never moved">DRY RUN (never arms)</button>
+        <span class="chip">no arming &middot; no gate &middot; proves the loop before the field</span>
+      </div>
       <div class="ctlRow"><span id="ctlNote"></span></div>
       <div class="ctlRow"><span id="ctlErr"></span></div>
       <div id="ctlLog"></div>
@@ -1041,7 +1045,7 @@ function profile() {
    served the satellite fix), so every /api/control poll carries
    index.html's mtime and a change turns the header stamp into a reload
    demand. */
-const UI_VER = '2026-08-16g';
+const UI_VER = '2026-08-18a';
 let uiSrvMtime = null;
 function uiStaleCheck(m) {
   if (!m) return;
@@ -1353,6 +1357,11 @@ async function ctlRefresh() {
 
   ctl.canFly = !!c.waypoints_exist;
   $('btnStop').disabled = !ctl.running;
+  // A dry run needs what a real one needs MINUS the arming: a waypoint file
+  // and a free Pixhawk link. It deliberately does NOT wait behind the ARM
+  // step, because the two-step arm guard exists to stop an accidental
+  // FLIGHT, and this can never produce one.
+  $('btnDry').disabled = ctl.running || !ctl.canFly;
   // Re-derive through setArmed so the button state and the armed flag can
   // never disagree (they did before: arming ignored these preconditions).
   setArmed(ctl.armed);
@@ -2057,6 +2066,14 @@ function wireEvents() {
   $('btnGo').addEventListener('click', async () => {
     setArmed(false);
     await ctlPost('/api/control/start');
+    ctlRefresh();
+  });
+  $('btnDry').addEventListener('click', async () => {
+    // no_drop travels WITH dry_run, always. --dry-run only refuses to arm;
+    // on its own it would still cycle the gate when the detector fires, and
+    // this runs on a bench with a loaded hopper.
+    setArmed(false);
+    await ctlPost('/api/control/start', {dry_run: true, no_drop: true});
     ctlRefresh();
   });
   $('btnStop').addEventListener('click', async () => {
