@@ -43,6 +43,19 @@ machine. Update PROJECT_STATE.md as part of every change.
   it turned out to be a hard cutoff day while the assistant still believed
   it was two days earlier.
 
+## ASK QUESTIONS, ALWAYS (user, 2026-08-18, emphatic, standing)
+
+Every reply asks clarifying questions about anything the assistant is not
+CURRENT on, no matter what was requested and no matter how urgent the request
+sounds. The user's words: "You have stopped asking questions, I want you to do
+that no matter what I ask you to do." WHY: the assistant has repeatedly acted
+on state that was days stale (spare battery, WISP router, AVOID_ENABLE, the
+fence), because PROJECT_STATE is written by two machines and lags the physical
+build. State is a RECORD, not the present. When the file and the user disagree,
+the user is right and the file gets corrected in the same reply. Do not present
+a stale item as fact to be corrected; ASK. Questions are cheap, a wrong list is
+work he must read and delete.
+
 ## Truth and accuracy rules
 
 Truth and accuracy above everything else, including being helpful. A wrong
