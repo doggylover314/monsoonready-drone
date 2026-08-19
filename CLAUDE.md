@@ -115,6 +115,12 @@ a working flight. Filming moves to the nearby field.
 
 ## Project-specific standing rules
 
+- HARD EQUIPMENT FACTS the user is tired of repeating (last 2026-08-18):
+  ONE battery pack exists, no spare, ever suggested again. The WISP MR3020
+  router is OUT (WISP mode kept failing to associate); the field network is
+  the user's PHONE HOTSPOT directly, board and laptop both join it. Never
+  re-add either to any list.
+
 - STATE-FIRST, EVERY MESSAGE (user, 2026-08-01): before finishing any reply,
   write every logical bug, unfixable/deferred issue, decision, and
   load-bearing fact discovered in that reply into PROJECT_STATE.md (or into

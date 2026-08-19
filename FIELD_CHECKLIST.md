@@ -246,5 +246,6 @@ Running order (~8 min):
 6. **6:30-8:00 — Result and honesty.** The treated target, the dashboard
    map, then state plainly what was autonomous and what was piloted.
 
-Stage a charged spare pack (if one exists) where the pilot can reach it
-without leaving frame. Single takes fail on forgetting, not on flying.
+THERE IS NO SPARE PACK (user, repeated, last 2026-08-18): one 3S pack,
+~13 min usable. Plan every rehearsal against the take's energy budget.
+Single takes fail on forgetting, not on flying.
