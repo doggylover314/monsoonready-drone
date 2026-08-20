@@ -136,8 +136,25 @@ def collect(m, seconds, show=True):
 
 
 def report_stream(gaps, total, elapsed):
-    """The arming-relevant line: did the stream ever go quiet for 500 ms?"""
-    print(f"\nstream: longest silence {gaps['any']:.2f}s across both messages "
+    """The arming-relevant lines: how much of the stream arrived, and did it
+    ever go quiet for 500 ms?
+
+    The RATE belongs here and not only in --sensor mode, because it is what
+    exposed the fault on 2026-08-20: a 60 s survey took 446 messages, 7.4 Hz
+    against the 10 Hz config.h sends, while 10 s runs the same evening ran at
+    full rate. A short run cannot see a stall that happens once a minute.
+    """
+    rate = total / elapsed if elapsed else 0.0
+    pct = 100.0 * rate / FIRMWARE_HZ
+    print(f"\nstream: {total} messages in {elapsed:.0f}s = {rate:.1f} Hz, "
+          f"{pct:.0f}% of the {FIRMWARE_HZ:g} Hz the firmware sends")
+    if pct < 90:
+        print(f"  ** {100 - pct:.0f}% of the packets never arrived. They are "
+              f"lost between the ESP32 and here: the ESP32 stalling, TELEM1, "
+              f"or the autopilot's serial buffer. It is NOT a sensor fault, "
+              f"because a dead sensor still occupies its slot in a message "
+              f"that does arrive.")
+    print(f"        longest silence {gaps['any']:.2f}s across both messages "
           f"(obstacle {gaps['obst']:.2f}s, upward {gaps['up']:.2f}s)")
     if gaps['any'] > PRX_TIMEOUT_S:
         print(f"  ** THIS IS THE ARMING REFUSAL. ArduPilot declares 'PRX1: No "
