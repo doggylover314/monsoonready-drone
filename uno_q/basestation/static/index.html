@@ -1045,7 +1045,7 @@ function profile() {
    served the satellite fix), so every /api/control poll carries
    index.html's mtime and a change turns the header stamp into a reload
    demand. */
-const UI_VER = '2026-08-18b';
+const UI_VER = '2026-08-19a';
 let uiSrvMtime = null;
 function uiStaleCheck(m) {
   if (!m) return;
@@ -2212,10 +2212,20 @@ function wireEvents() {
     updateEditBox(); render();
   });
   $('fnPush').addEventListener('click', async () => {
+    // A silent "pushing…" for up to a minute reads as a hang (user,
+    // 2026-08-19). The server does two named stages, upload then verify on a
+    // fresh link, so the button walks the same stages on a timer. It is a
+    // progress INDICATION, not a report from the server: the truth is
+    // whatever comes back, and the timings only decide when the label moves.
     const btn = $('fnPush');
-    btn.disabled = true; btn.textContent = 'pushing…';
+    const label = t => { btn.textContent = t; };
+    btn.disabled = true;
+    label('uploading…');
+    const t1 = setTimeout(() => label('verifying…'), 4000);
+    const t2 = setTimeout(() => label('still verifying…'), 12000);
     const j = await ctlPost('/api/fence/push', {}, $('wpNote'));
-    btn.disabled = false; btn.textContent = 'Push fence';
+    clearTimeout(t1); clearTimeout(t2);
+    btn.disabled = false; label('Push fence');
     if (j.ok) $('wpNote').textContent = j.note || 'fence pushed';
   });
 

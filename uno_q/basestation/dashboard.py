@@ -646,30 +646,66 @@ def make_app(data_dir, control=None):
         bad = fence.validate(poly)
         if bad:
             return jsonify({'ok': False, 'error': bad}), 400
-        io = None
+        # VERIFY ON A FRESH LINK, NOT THE ONE THAT JUST UPLOADED (2026-08-19).
+        # The dashboard's push kept reporting "the Pixhawk holds 0" while
+        # `fence.py read` on the SAME board, the SAME link and the SAME code
+        # listed every corner seconds later. The one structural difference was
+        # the connection: the CLI reads down a socket that has just been
+        # opened, the dashboard re-used the socket that had just finished a
+        # mission-item exchange. So the verify step now does what the working
+        # path does, and each stage is logged and named in the error, because
+        # the previous message ("sent 7 but holds 0") could not distinguish an
+        # upload that failed from a read that did.
+        stage, io = 'connect', None
         try:
             from mavlink_io import MavIO
             io = MavIO(ctl['conn'], log=log)
             io.wait_ready(timeout=15)
+            stage = 'upload'
             note = fence.push(io, poly, log=log)
-            back = fence.read_back(io, log=log)
+            log(f'FENCE: {note}; reopening the link to verify')
         except Exception as exc:                        # noqa: BLE001
-            log.error(f'FENCE push failed: {exc}')
-            return jsonify({'ok': False, 'error': str(exc)}), 500
+            log.error(f'FENCE {stage} failed: {exc}')
+            return jsonify({'ok': False,
+                            'error': f'{stage}: {exc}'}), 500
         finally:
             if io is not None:
                 try:
                     io.conn.close()
                 except Exception:                       # noqa: BLE001
                     pass
+
+        stage, io = 'verify', None
+        time.sleep(1.0)                 # let the port settle before reopening
+        try:
+            from mavlink_io import MavIO
+            io = MavIO(ctl['conn'], log=log)
+            io.wait_ready(timeout=15)
+            back = fence.read_back(io, log=log)
+        except Exception as exc:                        # noqa: BLE001
+            log.error(f'FENCE verify failed after a good upload: {exc}')
+            return jsonify({'ok': False,
+                            'error': f'the upload was accepted but the '
+                                     f'read-back could not run ({exc}). The '
+                                     f'fence may well be loaded; check with '
+                                     f'the fence read on the board.'}), 500
+        finally:
+            if io is not None:
+                try:
+                    io.conn.close()
+                except Exception:                       # noqa: BLE001
+                    pass
+
         if len(back) != len(poly):
             log.error(f'FENCE read-back mismatch: sent {len(poly)}, '
                       f'stored {len(back)}')
             return jsonify({'ok': False,
-                            'error': f'sent {len(poly)} corners but the '
-                                     f'Pixhawk holds {len(back)}: the fence '
-                                     f'is NOT what you drew'}), 500
-        log(f'FENCE: {note}; read back {len(back)} corners')
+                            'error': f'the Pixhawk ACCEPTED {len(poly)} '
+                                     f'corners but reads back {len(back)}. '
+                                     f'The upload itself was not refused, so '
+                                     f'this is storage or read-back, not your '
+                                     f'drawing.'}), 500
+        log(f'FENCE: {note}; read back {len(back)} corners on a fresh link')
         return jsonify({'ok': True, 'count': len(back),
                         'note': f'{len(back)} corners are in the Pixhawk '
                                 f'(read back and matched)'})
