@@ -1011,3 +1011,18 @@ USER TRIAGE OF THE SCAN, 2026-08-17 (user, primary source; whys kept per truth r
 - DEEP-U TEST (a fence pinched into two arms joined only by a spine): 13 pieces, 0 dropped. The traversal sweeps one arm, crosses the spine at the top and comes back down the other, and the leg check proves it never crosses the notch. My first version dropped 6 pieces here and I predicted in the test that it must; the multi-start fixed it, and the assertion now demands full coverage.
 - TEST SUITE (scratchpad t_cov.py) now checks EVERY LEG, not just the waypoints: rectangle, hexagon, deep U, the user's real fence at 4/3/2 m keep-out, plus both refusal paths. Worst clearance measured 4.00-4.01 m for a 4 m ask.
 - BROWSER-VERIFIED on the local replica loaded with the board's actual fence.json: 26 waypoints, 13 rows along 270.7 deg, 4 m clear, 476 m, no dropped-piece warning. UI_VER 2026-08-20b.
+
+### 2026-08-20 23:05 IST: THE BOARD'S OWN COMMAND WRAPPERS (user; use these in every board block from now on)
+- The board has home-directory wrappers and they are what the user actually runs. Assistant command blocks must use THESE, not raw git or script paths:
+  - `./git-pull` - pulls the board's repo (remote is github.com/doggylover314/monsoonready-drone, fast-forward on main).
+  - `./start_dashboard` - starts the dashboard with flight control enabled; prints the tailnet/LAN URLs and the log path ~/logs/dashboard.log.
+  - `./dashboard_stop` - SIGTERMs the dashboard by PID and confirms it stopped.
+- The board's repo directory is ~/monsoonready-drone. I had written `git -C ~/monsoonready pull` in an earlier block; that path does not exist and his first run failed on it. Both errors are mine and are now fixed at the source: use the wrappers.
+- Pull order that works and that he used: dashboard_stop, git-pull, start_dashboard.
+- CONFIRMED LIVE ON THE BOARD 2026-08-20 23:05: commit 88d8d88 (05d066a -> 88d8d88, fast-forward, 5 files) with the concave-fence coverage and the per-sensor lidar mode, dashboard restarted after it.
+
+### 2026-08-20 23:10 IST: the 50 cm object test was HALF done - the sensors were measured, the ARMING question was not
+- User asked whether the arming test is the same as the per-sensor run he already did. It is the same object at the same 50 cm, but it is a different measurement and the missing half is the one that matters:
+  - WHAT HE DID: ring_channels --sensor all --truth 50 reads OBSTACLE_DISTANCE and judges the SENSORS. It proved ch0 and ch5 see a 50 cm target on every sample.
+  - WHAT IS STILL MISSING: nobody asked the PIXHAWK for its prearm verdict while that target was in front of a sensor. "PreArm: PRX1: No Data" is the autopilot's opinion of the proximity library, not of the wire, and it can only be changed by running the prearm check with a real in-range return present.
+- THE TEST, 10 seconds: hold the object 50 cm from ch0 or ch5, and WITH IT STILL THERE press Check arming on the dashboard. PRX1 quiet = the driver only counts in-range returns and an all-clear ring reads as no data. PRX1 still complaining = the 201-is-clear hypothesis is dead and the fault is elsewhere in the proximity setup.
