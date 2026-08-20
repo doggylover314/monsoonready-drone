@@ -334,36 +334,66 @@ def make_app(data_dir, control=None):
 
     @app.post('/api/waypoints/generate')
     def api_waypoints_generate():
-        """Run the serpentine generator from where the aircraft IS.
+        """Build a survey route, from the FENCE when there is one.
 
-        Same maths as make_waypoints.py (imported, not duplicated): rows run
-        along the nose heading, stepping RIGHT. Needs the Pixhawk link and a
-        3D fix, so it refuses whenever another program owns the port. Does
-        NOT write the file: the route comes back for the operator to look at
-        (and drag) on the map, and only Save writes it.
+        Two generators, same maths as make_waypoints.py (imported, not
+        duplicated):
+
+          * a fence is saved -> build_coverage fills its inside with rows,
+            every waypoint at least `inset` m from the boundary, rows along
+            `heading`, arranged to begin at the point the operator clicked.
+            This needs NO LINK and NO GPS, so the route can be planned at
+            home the night before, which is exactly what the from-aircraft
+            generator could not do (user, 2026-08-19).
+          * no fence -> the old from-where-it-stands serpentine, which does
+            need the link and a 3D fix.
+
+        Does NOT write the file either way: the route comes back for the
+        operator to look at (and drag) on the map, and only Save writes it.
         """
         if not ctl:
             abort(403)
+        b = request.get_json(silent=True) or {}
+        try:
+            rows = int(b.get('rows', 3))
+            spacing = float(b.get('spacing', 5))
+            length = float(b.get('length', 20))
+            inset = float(b.get('inset', 4))
+            heading = b.get('heading')
+            heading = None if heading in (None, '') else float(heading)
+            start = b.get('start') or None
+            if start is not None:
+                start = (float(start[0]), float(start[1]))
+        except (TypeError, ValueError, IndexError):
+            return jsonify({'ok': False, 'error': 'bad numbers'}), 400
+        if not (1 <= rows <= 25) or not (1 <= spacing <= 50) \
+                or not (2 <= length <= 500) or not (0 <= inset <= 50):
+            return jsonify({'ok': False,
+                            'error': 'rows 1-25, spacing 1-50 m, '
+                                     'row length 2-500 m, keep-out 0-50 m'}), 400
+
+        poly = fence.load(fence_path)
+        if len(poly) >= 3:
+            from make_waypoints import build_coverage
+            wps, info = build_coverage(poly, heading, spacing, inset, start)
+            if info.get('problem'):
+                log.warn(f"GENERATE refused: {info['problem']}")
+                return jsonify({'ok': False, 'error': info['problem']}), 400
+            log(f"GENERATE: {len(wps)} waypoints covering the {len(poly)}-corner "
+                f"fence, {info['rows']} rows {spacing:g} m apart along "
+                f"{info['heading']} deg, {inset:g} m keep-out, "
+                f"{info['path_m']} m of path (not saved yet)")
+            return jsonify({'ok': True, 'waypoints': [list(p) for p in wps],
+                            'heading': info['heading'], 'source': 'fence',
+                            'rows': info['rows'], 'path_m': info['path_m'],
+                            'inset': inset})
+
         busy = find_pids('run_mission.py') or find_pids('test_everything.py')
         if busy:
             log.warn(f'GENERATE refused: port busy (pids {busy})')
             return jsonify({'ok': False,
                             'error': 'the Pixhawk link is busy (mission or '
                                      'self-test running)'}), 409
-        b = request.get_json(silent=True) or {}
-        try:
-            rows = int(b.get('rows', 3))
-            spacing = float(b.get('spacing', 5))
-            length = float(b.get('length', 20))
-            heading = b.get('heading')
-            heading = None if heading in (None, '') else float(heading)
-        except (TypeError, ValueError):
-            return jsonify({'ok': False, 'error': 'bad numbers'}), 400
-        if not (1 <= rows <= 25) or not (1 <= spacing <= 50) \
-                or not (2 <= length <= 500):
-            return jsonify({'ok': False,
-                            'error': 'rows 1-25, spacing 1-50 m, '
-                                     'row length 2-500 m'}), 400
         try:
             from make_waypoints import build_serpentine
             from mavlink_io import MavIO
@@ -398,7 +428,7 @@ def make_app(data_dir, control=None):
         log(f'GENERATE: {len(wps)} waypoints, {rows} rows x {length:g} m, '
             f'{spacing:g} m apart, heading {head:.0f} (not saved yet)')
         return jsonify({'ok': True, 'waypoints': [list(p) for p in wps],
-                        'heading': round(head, 1),
+                        'heading': round(head, 1), 'source': 'aircraft',
                         'from': [round(t.lat, 7), round(t.lon, 7)]})
 
     @app.post('/api/control/start')
