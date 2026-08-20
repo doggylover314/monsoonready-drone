@@ -67,6 +67,9 @@ NO_DATA = 65535
 RANGE_MAX_CM = 200          # config.h; "clear" arrives as RANGE_MAX_CM + 1
 UP_ORIENT = 24              # MAV_SENSOR_ROTATION_PITCH_90; 25 is the TF-Luna
 FIRMWARE_HZ = 10.0          # config.h TX_RATE_HZ, this build
+# ArduPilot 4.7 source, libraries/AP_Proximity/AP_Proximity_MAV.cpp:27.
+# Read from the tree at /media/sleuther/Stuff/ardupilot-SITL, not remembered.
+PRX_TIMEOUT_S = 0.5
 
 # PASS/FAIL GATES for --sensor. These are OUR numbers for a 2 m ring on an
 # aircraft flown at <= 2 m/s, NOT VL53L0X datasheet figures, and they are not
@@ -82,11 +85,20 @@ DETECT_GATE_PCT = 90.0      # with a target in front, this fraction must SEE it
 
 
 def collect(m, seconds, show=True):
-    """Listen for `seconds` and return (elapsed, msg count, raw, up).
+    """Listen for `seconds` and return (elapsed, msg count, raw, up, gaps).
 
     `raw[ch]` is every value that channel sent, in order, sentinels included,
     because the ORDER is what separates a sensor that flickers evenly from one
     that vanishes for a second at a time.
+
+    `gaps` is the longest SILENCE in seconds, for each message type and for
+    the two combined. That number is the arming blocker, measured: ArduPilot's
+    AP_Proximity_MAV declares PRX No Data when BOTH the obstacle message and
+    the upward one have been absent for PROXIMITY_MAV_TIMEOUT_MS, which is 500
+    ms in 4.7 source (libraries/AP_Proximity/AP_Proximity_MAV.cpp:27). Note
+    "both": either message alone keeps the sensor healthy, so gaps['any'] is
+    the one that decides, and the per-type numbers only say which stream
+    stalled.
     """
     raw = {ch: [] for ch in range(NUM_RING)}
     up = []
@@ -94,6 +106,14 @@ def collect(m, seconds, show=True):
     if show:
         print(f"\nlistening {seconds:g}s for OBSTACLE_DISTANCE ...")
     t0 = time.monotonic()
+    last = {'any': t0, 'obst': t0, 'up': t0}
+    gaps = {'any': 0.0, 'obst': 0.0, 'up': 0.0}
+
+    def mark(kind, now):
+        for k in ('any', kind):
+            gaps[k] = max(gaps[k], now - last[k])
+            last[k] = now
+
     deadline = t0 + seconds
     while time.monotonic() < deadline:
         msg = m.recv_match(type=['OBSTACLE_DISTANCE', 'DISTANCE_SENSOR'],
@@ -103,11 +123,33 @@ def collect(m, seconds, show=True):
         if msg.get_type() == 'DISTANCE_SENSOR':
             if msg.orientation == UP_ORIENT:
                 up.append(msg.current_distance)
+                mark('up', time.monotonic())
             continue
         total += 1
+        mark('obst', time.monotonic())
         for ch in range(NUM_RING):
             raw[ch].append(msg.distances[ch])
-    return time.monotonic() - t0, total, raw, up
+    end = time.monotonic()
+    for k in gaps:                        # silence at the end counts too
+        gaps[k] = max(gaps[k], end - last[k])
+    return end - t0, total, raw, up, gaps
+
+
+def report_stream(gaps, total, elapsed):
+    """The arming-relevant line: did the stream ever go quiet for 500 ms?"""
+    print(f"\nstream: longest silence {gaps['any']:.2f}s across both messages "
+          f"(obstacle {gaps['obst']:.2f}s, upward {gaps['up']:.2f}s)")
+    if gaps['any'] > PRX_TIMEOUT_S:
+        print(f"  ** THIS IS THE ARMING REFUSAL. ArduPilot declares 'PRX1: No "
+              f"Data' after {PRX_TIMEOUT_S:g}s with neither message "
+              f"(AP_Proximity_MAV.cpp:27). A gap this long means the ESP32's "
+              f"stream stopped, not that the sensors saw nothing: an all-clear "
+              f"ring still refreshes the timer, because the driver stamps "
+              f"_last_update_ms on EVERY message it decodes, before it checks "
+              f"any sector for range.")
+    else:
+        print(f"  never quiet for {PRX_TIMEOUT_S:g}s, so proximity stayed "
+              f"healthy for this whole run and would not have blocked arming.")
 
 
 def stats(vals, elapsed, sentinels=True):
@@ -246,7 +288,7 @@ def sensor_mode(m, args):
             if ans.startswith('s'):
                 continue
 
-        elapsed, total, raw, up = collect(m, args.seconds)
+        elapsed, total, raw, up, gaps = collect(m, args.seconds)
         if not total and ch != UP_CH:
             print(silence_help())
             return 1
@@ -273,6 +315,7 @@ def sensor_mode(m, args):
               f"(firmware sends {FIRMWARE_HZ:g} Hz; a lower number here is the "
               f"LINK losing packets, which hits every channel equally and is "
               f"not a sensor fault)")
+        report_stream(gaps, total, elapsed)
         d = stats(raw[ch], elapsed)
         report(label + f" ({ch * INCREMENT_DEG} deg)", d, args.truth,
                verdict(d, args.truth))
@@ -303,7 +346,7 @@ def silence_help():
 
 
 def survey(m, args):
-    elapsed, total, raw, up = collect(m, args.seconds)
+    elapsed, total, raw, up, gaps = collect(m, args.seconds)
     alive, lo, hi, clear_n = defaultdict(int), {}, {}, defaultdict(int)
     # RANGE, not just the minimum (user, 2026-08-18): one number cannot tell a
     # sensor pinned at a fixed distance from one that is tracking the world.
@@ -320,7 +363,9 @@ def survey(m, args):
     if not total:
         sys.exit(silence_help())
 
-    print(f"{total} messages\n")
+    print(f"{total} messages")
+    report_stream(gaps, total, elapsed)
+    print()
     print("bearings below are what the FIRMWARE CLAIMS (config.h "
           "SECTOR_FOR_CHANNEL is the identity map, SENSOR_ANGLE_OFFSET_DEG 0), "
           "NOT something this tool can verify. To check it for real: put one "
