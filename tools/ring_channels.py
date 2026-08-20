@@ -113,17 +113,37 @@ def collect(m, seconds, show=True):
 def stats(vals, elapsed, sentinels=True):
     """Everything derivable from one channel's raw sample list.
 
-    `sentinels=False` for the up sensor, whose DISTANCE_SENSOR encoding of a
-    failed reading this tool has NOT verified, so nothing is assumed about it.
+    `sentinels=False` for the up sensor, which carries no 65535 convention of
+    its own. The RANGE_MAX_CM + 1 "clear" value applies to it EITHER WAY, and
+    that is a correction, not a detail: the first version of this tool fed the
+    up sensor's 201s into the distance statistics, and a sensor alternating
+    between a real 54 cm and the clear sentinel came out as "mean 97.5 cm,
+    jitter 68.1 cm, NOISY", which is a fabricated fault. The real reading was
+    "sees the target half the time".
+
+    Clear samples are also counted as RUNS, because 30 scattered single misses
+    and 3 bursts of 10 are different faults: scattered ones are individual
+    reads returning no-target (weak return, ambient light, low reflectance),
+    bursts are the object or the sensor dropping out for a stretch.
     """
     reported = [v for v in vals if v != NO_DATA] if sentinels else list(vals)
-    ranged = [v for v in reported if v <= RANGE_MAX_CM] if sentinels else reported
+    ranged = [v for v in reported if v <= RANGE_MAX_CM]
     gap = run = 0
     for v in vals:
         run = run + 1 if (sentinels and v == NO_DATA) else 0
         gap = max(gap, run)
+    cruns = cgap = crun = 0
+    prev = False
+    for v in reported:
+        c = v > RANGE_MAX_CM
+        if c and not prev:
+            cruns += 1
+        crun = crun + 1 if c else 0
+        cgap = max(cgap, crun)
+        prev = c
     d = {'n': len(vals), 'reported': len(reported), 'ranged': ranged,
          'clear': len(reported) - len(ranged), 'gap': gap,
+         'clear_runs': cruns, 'clear_gap': cgap,
          'hz': len(reported) / elapsed if elapsed else 0.0}
     if ranged:
         d['lo'], d['hi'] = min(ranged), max(ranged)
@@ -176,7 +196,9 @@ def report(label, d, truth, verb):
               f"{d['gap']} sample(s)")
         if d['clear']:
             print(f"  in range   {len(d['ranged'])}, "
-                  f"'clear' (nothing within {RANGE_MAX_CM} cm) {d['clear']}")
+                  f"'clear' (nothing within {RANGE_MAX_CM} cm) {d['clear']}, "
+                  f"in {d['clear_runs']} run(s), longest {d['clear_gap']} "
+                  f"in a row")
     if d['ranged']:
         print(f"  distance   {d['lo']}-{d['hi']} cm, mean {d['mean']:.1f}, "
               f"median {d['median']:.0f}, jitter (sd) {d['sd']:.1f} cm")
@@ -237,10 +259,13 @@ def sensor_mode(m, args):
                       f"orientation {UP_ORIENT} in {elapsed:.0f}s)")
                 continue
             report(label, d, args.truth, verdict(d, args.truth))
-            print("  NOTE       the up sensor's DISTANCE_SENSOR encoding of a "
-                  "FAILED reading is not verified by this tool, so a stuck "
-                  "value here is not distinguishable from a real one except "
-                  "by moving the target and re-running.")
+            print(f"  NOTE       {RANGE_MAX_CM + 1} cm from this sensor is "
+                  f"read as 'clear', same as a ring channel: the 2026-08-20 "
+                  f"bench run showed it alternating between ~54 cm and "
+                  f"exactly {RANGE_MAX_CM + 1}, which is the firmware's clear "
+                  f"sentinel and not a distance. A sensor that is FAILING "
+                  f"outright is still not distinguishable from one reading "
+                  f"correctly except by moving the target and re-running.")
             continue
 
         link_hz = total / elapsed if elapsed else 0.0
