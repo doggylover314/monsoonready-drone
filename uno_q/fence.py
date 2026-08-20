@@ -207,7 +207,7 @@ def read_back(io, log=print, timeout=20.0, attempts=3, settle_s=1.5):
     attempts * settle_s seconds to confirm and nothing else changes.
     """
     for attempt in range(attempts):
-        got = _read_back_once(io, timeout)
+        got = _read_back_once(io, timeout, log=log)
         if got:
             return got
         if attempt < attempts - 1:
@@ -217,22 +217,45 @@ def read_back(io, log=print, timeout=20.0, attempts=3, settle_s=1.5):
     return []
 
 
-def _read_back_once(io, timeout=20.0):
-    """One download attempt. Returns [] for an empty or unanswered fence."""
+def _read_back_once(io, timeout=20.0, log=print, count_wait=1.5, count_tries=3):
+    """One download attempt. Returns [] for an empty or unanswered fence.
+
+    TWO WAITS, NOT ONE, because they fail differently and the operator was
+    left staring at a stuck button for over a minute (user, 2026-08-19).
+    The opening MISSION_COUNT comes back in well under a second on a healthy
+    link, so waiting the FULL download timeout for it is how an unanswered
+    request turned into a 20 s hang per attempt. Now the request is RE-SENT
+    every count_wait seconds up to count_tries times, which also fixes the
+    likelier cause: a single lost MISSION_REQUEST_LIST on a link that is
+    already carrying the ring's 10 Hz stream looks exactly like an empty
+    fence. Only once a COUNT has landed does the longer timeout apply, and
+    that part is real work (one round trip per corner).
+    """
     conn = io.conn
     ts, tc = conn.target_system, conn.target_component
     conn.mav.mission_request_list_send(ts, tc, MISSION_TYPE_FENCE)
     total, got = None, {}
+    asked, next_ask = 1, time.monotonic() + count_wait
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         msg = conn.recv_match(type=['MISSION_COUNT', 'MISSION_ITEM_INT'],
-                              blocking=True, timeout=1.0)
+                              blocking=True, timeout=0.5)
         if msg is None:
+            if total is None and time.monotonic() >= next_ask:
+                if asked >= count_tries:
+                    log(f'[fence] no MISSION_COUNT after {asked} requests')
+                    break
+                asked += 1
+                next_ask = time.monotonic() + count_wait
+                log(f'[fence] no MISSION_COUNT yet, asking again '
+                    f'({asked}/{count_tries})')
+                conn.mav.mission_request_list_send(ts, tc, MISSION_TYPE_FENCE)
             continue
         if getattr(msg, 'mission_type', MISSION_TYPE_FENCE) != MISSION_TYPE_FENCE:
             continue
         if msg.get_type() == 'MISSION_COUNT':
             total = msg.count
+            log(f'[fence] Pixhawk reports {total} stored corner(s)')
             if total == 0:
                 break
             conn.mav.mission_request_int_send(ts, tc, 0, MISSION_TYPE_FENCE)
