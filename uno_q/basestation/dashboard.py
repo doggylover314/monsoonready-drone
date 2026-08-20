@@ -380,13 +380,15 @@ def make_app(data_dir, control=None):
                 log.warn(f"GENERATE refused: {info['problem']}")
                 return jsonify({'ok': False, 'error': info['problem']}), 400
             log(f"GENERATE: {len(wps)} waypoints covering the {len(poly)}-corner "
-                f"fence, {info['rows']} rows {spacing:g} m apart along "
-                f"{info['heading']} deg, {inset:g} m keep-out, "
-                f"{info['path_m']} m of path (not saved yet)")
+                f"fence, {info['rows']} rows on {info['lines']} lines "
+                f"{spacing:g} m apart along {info['heading']} deg, "
+                f"{inset:g} m keep-out, {info['path_m']} m of path, "
+                f"{info['dropped']} piece(s) dropped as unreachable "
+                f"(not saved yet)")
             return jsonify({'ok': True, 'waypoints': [list(p) for p in wps],
                             'heading': info['heading'], 'source': 'fence',
                             'rows': info['rows'], 'path_m': info['path_m'],
-                            'inset': inset})
+                            'dropped': info['dropped'], 'inset': inset})
 
         busy = find_pids('run_mission.py') or find_pids('test_everything.py')
         if busy:

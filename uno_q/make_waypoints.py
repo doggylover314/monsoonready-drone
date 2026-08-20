@@ -93,15 +93,22 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
                the start is the southwest-most row end (deterministic, so the
                same fence always generates the same route).
 
-    HOW THE INSET IS ENFORCED, and its one honest limitation: each scan line
-    is sampled every step_m, a sample is kept only if it is inside the polygon
-    AND at least inset_m from every edge, and the row becomes the longest
-    unbroken run of kept samples. That is exact for any polygon shape to
-    within step_m, with no polygon-offsetting maths to get wrong. The
-    limitation is the "longest run": on a fence pinched into two lobes, a
-    scan line crossing both keeps only the bigger lobe's part, so coverage is
-    incomplete rather than unsafe. A field fence is not that shape, and
-    failing toward "flies less" is the right way to fail.
+    HOW THE INSET IS ENFORCED: each scan line is sampled every step_m, a
+    sample is kept only if it is inside the polygon AND at least inset_m from
+    every edge, and the kept samples become runs. That is exact for any
+    polygon shape to within step_m, with no polygon-offsetting maths to get
+    wrong.
+
+    CONCAVE FENCES (user's is one: it has a corner that turns back on itself,
+    so a scan line through the pinch has TWO separate pieces). Every piece is
+    flown, not just the longest, because the dropped ones are real ground the
+    camera never sees. What makes that safe is the leg check: the straight
+    line the aircraft flies from one piece to the next must itself stay
+    inset_m inside the fence, sampled the same way. A piece whose entry leg
+    would cut across the notch is DROPPED and counted in info['dropped'],
+    never flown and never silently omitted. On a convex fence the check
+    costs nothing: the inset region of a convex polygon is convex, so a leg
+    between two points inside it is inside it.
 
     Returns (waypoints, info). waypoints is [(lat, lon), ...], empty if the
     inset leaves no room, in which case info['problem'] says so.
@@ -157,50 +164,102 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
                 return False
         return True
 
-    rows = []
+    _legs = {}
+
+    def leg_ok(p, q):
+        """Is the straight flight from p to q inside the keep-out everywhere?
+
+        Memoised because the traversal below is tried from every possible
+        starting end, and the same legs come up again and again.
+        """
+        v = _legs.get((p, q))
+        if v is not None:
+            return v
+        d = math.hypot(q[0] - p[0], q[1] - p[1])
+        steps = max(2, int(d / step_m) + 1)
+        v = True
+        for i in range(steps + 1):
+            t = i / steps
+            if not clear(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t):
+                v = False
+                break
+        _legs[(p, q)] = v
+        return v
+
+    lines = []                   # [[(near_pt, far_pt), ...] per scan line]
     for k in range(n_lines):
         c = clo + pad + k * spacing_m
-        run, best = None, None
+        segs, run = [], None
         a = alo
         while a <= ahi + step_m / 2:
             if clear(*back(a, c)):
                 run = (a, a) if run is None else (run[0], a)
             else:
-                if run and (best is None or run[1] - run[0] > best[1] - best[0]):
-                    best = run
+                if run and run[1] - run[0] >= min_row_m:
+                    segs.append(run)
                 run = None
             a += step_m
-        if run and (best is None or run[1] - run[0] > best[1] - best[0]):
-            best = run
-        if best and best[1] - best[0] >= min_row_m:
-            rows.append((back(best[0], c), back(best[1], c)))
+        if run and run[1] - run[0] >= min_row_m:
+            segs.append(run)
+        if segs:
+            lines.append([(back(s[0], c), back(s[1], c)) for s in segs])
 
-    if not rows:
+    if not lines:
         return [], {'problem': f'no row survived a {inset_m:g} m keep-out at '
                                f'{spacing_m:g} m spacing'}
 
-    def assemble(rev, flip):
-        seq = rows[::-1] if rev else rows
-        out = []
-        for i, (p0, p1) in enumerate(seq):
-            out.extend([p0, p1] if (i % 2 == 0) != flip else [p1, p0])
-        return out
+    # NEAREST-REACHABLE, not a fixed line-by-line sweep. On a rectangle the
+    # two are identical: after flying a row, the nearest unflown end IS the
+    # next row's near end, which is the serpentine. They differ exactly where
+    # the fence is concave, and there the sweep is wrong: it would either fly
+    # a leg through the notch or drop pieces it could have reached by going
+    # round. Greedy also makes the start point mean what it says, since the
+    # first row is simply the end nearest the click.
+    segs = [s for line in lines for s in line]
+
+    def greedy(from_pt):
+        used = [False] * len(segs)
+        out, cur, first = [], from_pt, True
+        while True:
+            best = None
+            for i, (p0, p1) in enumerate(segs):
+                if used[i]:
+                    continue
+                for a, b in ((p0, p1), (p1, p0)):
+                    d = math.hypot(a[0] - cur[0], a[1] - cur[1])
+                    if best is not None and d >= best[0]:
+                        continue
+                    if not first and not leg_ok(cur, a):
+                        continue      # would cut a corner outside the fence
+                    best = (d, i, a, b)
+            if best is None:
+                break
+            _, i, a, b = best
+            used[i] = True
+            out.extend([a, b])
+            cur, first = b, False
+        return (out, used.count(False),
+                sum(math.hypot(q[0] - p[0], q[1] - p[1])
+                    for p, q in zip(out, out[1:])))
 
     if start is not None:
-        sn, se = to_m(start[0], start[1])
+        pts, dropped, length = greedy(to_m(start[0], start[1]))
     else:
-        # southwest-most row end: no operator choice, but a repeatable one
-        ends = [p for r in rows for p in r]
-        sn, se = min(ends, key=lambda p: (p[0] + p[1]))
-    cand = [assemble(r, f) for r in (False, True) for f in (False, True)]
-    pts = min(cand, key=lambda w: math.hypot(w[0][0] - sn, w[0][1] - se))
+        # No click, so no operator intent to honour: try starting from EVERY
+        # row end and keep the best route. The old rule (southwest-most end)
+        # is arbitrary once the fence is concave - on the user's own fence it
+        # began in the middle and paid a 64 m dead leg to come back for the
+        # pieces below the notch.
+        pts, dropped, length = min((greedy(p) for s in segs for p in s),
+                                   key=lambda r: (r[1], r[2]))
+    if not pts:
+        return [], {'problem': f'no row survived a {inset_m:g} m keep-out at '
+                               f'{spacing_m:g} m spacing'}
 
-    length = sum(math.hypot(b[0] - a[0], b[1] - a[1])
-                 for a, b in zip(pts, pts[1:]))
     return ([to_ll(n, e) for n, e in pts],
-            {'heading': round(heading_deg % 360, 1), 'rows': len(rows),
-             'spacing': spacing_m, 'inset': inset_m,
-             'path_m': round(length), 'problem': None})
+            {'heading': round(heading_deg % 360, 1), 'rows': len(pts) // 2,
+             'spacing': spacing_m, 'inset': inset_m, 'dropped': dropped,
+             'lines': len(lines), 'path_m': round(length), 'problem': None})
 
 
 def main():

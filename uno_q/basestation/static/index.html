@@ -1054,7 +1054,7 @@ function profile() {
    served the satellite fix), so every /api/control poll carries
    index.html's mtime and a change turns the header stamp into a reload
    demand. */
-const UI_VER = '2026-08-20a';
+const UI_VER = '2026-08-20b';
 let uiSrvMtime = null;
 function uiStaleCheck(m) {
   if (!m) return;
@@ -2276,8 +2276,12 @@ function wireEvents() {
     state.wps = j.waypoints; state.wpDirty = true;
     $('edNote').textContent = j.source === 'fence'
       ? `${j.waypoints.length} waypoints, ${j.rows} rows along ${j.heading}°, `
-        + `${j.inset} m clear of the fence, ${j.path_m} m of path — drag to `
-        + `adjust, then Save`
+        + `${j.inset} m clear of the fence, ${j.path_m} m of path`
+        // never a silent omission: a piece of the field the aircraft cannot
+        // reach without flying outside the fence is said out loud
+        + (j.dropped ? ` — ${j.dropped} piece(s) of the field left out: `
+            + `reaching them would need a leg outside the keep-out. Lower it `
+            + `or fly them separately.` : ` — drag to adjust, then Save`)
       : `${j.waypoints.length} waypoints from ${j.from[0].toFixed(6)}, `
         + `${j.from[1].toFixed(6)}, rows along ${j.heading}° — drag to adjust, `
         + `then Save`;
