@@ -1045,7 +1045,7 @@ function profile() {
    served the satellite fix), so every /api/control poll carries
    index.html's mtime and a change turns the header stamp into a reload
    demand. */
-const UI_VER = '2026-08-19a';
+const UI_VER = '2026-08-19b';
 let uiSrvMtime = null;
 function uiStaleCheck(m) {
   if (!m) return;
@@ -1299,7 +1299,14 @@ function updateEditBox() {
 
 function updateEditButtons() {
   const can = ctl.enabled && !ctl.running;
-  $('wpEdit').style.display = can && !editing() && state.wpAvailable ? '' : 'none';
+  // CHICKEN AND EGG, fixed 2026-08-19: this button used to require
+  // state.wpAvailable, i.e. a waypoint FILE already on the board, so the only
+  // way to get a route was make_waypoints.py at the field with a GPS fix.
+  // There was no way to CREATE one from the dashboard at all, which is what
+  // the user asked for and what I wrongly told him already existed. It now
+  // shows whenever control is on, and says which job it is doing.
+  $('wpEdit').style.display = can && !editing() ? '' : 'none';
+  $('wpEdit').textContent = state.wpAvailable ? 'Edit route' : 'Draw route';
   $('fnEdit').style.display = can && !editing() ? '' : 'none';
   $('fnPush').style.display =
     can && !editing() && state.fence.length >= 3 ? '' : 'none';
@@ -1313,9 +1320,14 @@ async function setMode(mode) {
   state.wpDirty = false;
   if (!mode) canvasEl().style.cursor = '';
   if (mode === 'route') {
-    $('wpNote').textContent = 'editing the route';
-    $('edNote').textContent = 'Generate builds a serpentine from where the '
-      + 'aircraft is standing, rows to the RIGHT of its nose.';
+    $('wpNote').textContent = state.wpAvailable
+      ? 'editing the route' : 'drawing a new route';
+    $('edNote').textContent = state.wpAvailable
+      ? 'Generate builds a serpentine from where the aircraft is standing, '
+        + 'rows to the RIGHT of its nose.'
+      : 'No route on the board yet. Click the map to place waypoints in the '
+        + 'order you want them flown, then Save. Generate does the same from '
+        + 'the aircraft’s own position once it has a GPS fix.';
   } else if (mode === 'fence') {
     $('wpNote').textContent = 'drawing the fence';
     $('edNote').textContent = 'Trace the flyable area. Saving stores it; '
