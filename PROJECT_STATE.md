@@ -1093,3 +1093,17 @@ USER TRIAGE OF THE SCAN, 2026-08-17 (user, primary source; whys kept per truth r
 - WHY CH6 DIED NOW: its power connection has a recorded history of coming loose. config.h:172-175 records 2026-08-14, "ch6 had simply been DISCONNECTED FROM POWER... 20/20 after its power was reconnected", and the first test_everything of 2026-08-18 called it the "known-flaky power plug" before a cold power cycle brought it back. The flash required unplugging the ESP32 from TELEM1, carrying it to the Mac and reconnecting it, which is exactly the handling that would disturb that plug.
 - NEXT ACTION IS MECHANICAL, NOT FIRMWARE: reseat ch6's power connector and re-run the 60 s test. If ch6 reports and the stalls go with it, the chain is fully closed. Marking UP_SENSOR_FITTED 0 would also stop the stall but COSTS THE UPWARD SENSOR ENTIRELY and needs another reflash; try the connector first.
 - CH6 IS ALSO RNGFND2, so its silence is independently an arming blocker ("Rangefinder 2: No Data") regardless of the stall.
+
+### 2026-08-21 CHANNEL IDENTITY CORRECTED (user, primary source) + arm-colour map
+- **CH1 IS THE FRIED, DISCONNECTED SENSOR. CH2 HAS A LIDAR PHYSICALLY CONNECTED.** User: "ch0,2,3,4,5,6 are all connected with lidar. Fried sensor is disconnected." This REVERSES the earlier record (2026-08-18 said ch2 fried/disconnected, ch1 never wired), which came from an earlier user statement and is superseded.
+- CONSEQUENCE FOR THE FIRMWARE NOW FLASHED: RING_SENSOR_FITTED = {true,false,false,true,true,true} marks ch2 unfitted while a sensor IS attached to it. THE DECISION STILL STANDS on the evidence (ch2 reported nothing in any run while fitted, so probing it only bought the ~1 s stall), but the RECORDED REASON was wrong. ch2 is a PRESENT sensor that does not work: bad chip, bad 4-wire bundle, or bad mux channel, undiagnosed. If it is ever repaired, ch2 must be marked fitted again.
+- **PHYSICAL MAP, ch0 VERIFIED BY TEST** (user ran --sensor 0 --truth 50 and ch0 was the channel that moved, so the identity map and the wiring agree at least at 0 deg). Arms, per the user: top-left RED, top-right RED, right BLACK, left BLACK, remaining two WHITE. The ring sits BETWEEN the arms, so each sensor points out a gap:
+    ch0    0 deg  nose, BETWEEN THE TWO RED ARMS      (verified)
+    ch1   60 deg  between top-right RED and right BLACK   -- fried, disconnected
+    ch2  120 deg  between right BLACK and rear-right WHITE -- sensor present, never reports
+    ch3  180 deg  tail, between the two WHITE arms
+    ch4  240 deg  between rear-left WHITE and left BLACK
+    ch5  300 deg  between left BLACK and top-left RED
+    ch6  up
+  Bearings 60-300 are DERIVED from the verified ch0 plus the identity map, not each individually tested.
+- REGRESSION SAME SESSION: the 60 s run after reseating ch6's power connector returned NO OBSTACLE_DISTANCE AT ALL (was 445). The only change was that reseating, so the handling is the prime suspect for disturbing ESP32 power or the TELEM1 wiring. Discriminator is bench.py nodes: component 195 present = ESP32 alive, fault is downstream; absent = unpowered / not booted / TELEM1 disturbed.
