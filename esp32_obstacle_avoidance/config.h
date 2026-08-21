@@ -145,8 +145,29 @@ static const uint8_t SECTOR_FOR_CHANNEL[NUM_RING_SENSORS] __attribute__((unused)
 // speed configs, which is the loose-contact / sagging-3V3 signature. Do not
 // "fix" this by lowering I2C_CLOCK_HZ; meter 3V3 at the failing sensor and
 // wiggle its connector.
+//
+// 2026-08-21: ch1 AND ch2 ARE NOW UNFITTED, and the paragraph above is why
+// this took so long to see. "Would lose the readings they do produce" is true
+// of a channel that SOMETIMES works. ch1 has no sensor on it at all (no space
+// on that side of the frame, user 2026-08-18) and ch2's chip is dead. Across
+// three 60 s runs neither produced a single reading, so there is nothing to
+// lose - and both paths put the SAME 65535 on the wire, because an unfitted
+// channel keeps _ok false and readAll() returns SENSOR_MM_ERROR for it
+// exactly as a failed fitted one does (proximity_sensors.cpp:78-88).
+// WHAT IT COSTS TO LEAVE THEM FITTED, measured on the aircraft: maintain()
+// re-inits one failed fitted channel every SENSOR_RETRY_PERIOD_MS (5 s), and
+// VL53L0X::init() on an absent chip BLOCKS for about a second waiting for
+// I2C timeouts (our own note at proximity_sensors.cpp:82). The sketch is
+// single-threaded, so the MAVLink stream stops for that second. A 60 s run
+// measured 12 stalls totalling 12.9 s, 22% of the time, each 1.07 s: exactly
+// one retry per 5 s. Past ArduPilot's PROXIMITY_MAV_TIMEOUT_MS of 500 ms that
+// is "PreArm: PRX1: No Data" plus "Rangefinder 2: No Data", and the aircraft
+// refused to arm on about a fifth of attempts. Two channels that can never
+// succeed were costing the ring a fifth of its uptime.
+// IF EITHER IS EVER REPAIRED, set it back to true in the same edit as the
+// wiring, or it will sit there working and never be read.
 static const bool RING_SENSOR_FITTED[NUM_RING_SENSORS] __attribute__((unused)) =
-    {true, true, true, true, true, true};
+    {true, false, false, true, true, true};
 // Back to 1 on 2026-08-14: ch6 had simply been DISCONNECTED FROM POWER. Once
 // reconnected it reads 20/20 at every speed. Reconnecting it also fixed ch1,
 // so an unpowered device on a shared 3V3 net was disturbing more than its own
