@@ -110,6 +110,7 @@ def collect(m, seconds, show=True):
     gaps = {'any': 0.0, 'obst': 0.0, 'up': 0.0}
     stalls = []                  # (start, end) of every silence over the gate
     beats = []                   # autopilot HEARTBEAT arrival times
+    sectors = 0                  # AP_Proximity's OWN re-emission (see below)
 
     def mark(kind, now):
         if now - last['any'] > PRX_TIMEOUT_S:
@@ -133,6 +134,12 @@ def collect(m, seconds, show=True):
                 beats.append(time.monotonic())
             continue
         if kind == 'DISTANCE_SENSOR':
+            # Orientations 0-7 are the autopilot's 45 deg proximity sectors,
+            # which only AP_Proximity emits: the ESP32 sends DISTANCE_SENSOR
+            # for the UP sensor alone. Seeing them proves the ring reached the
+            # autopilot even when the raw OBSTACLE_DISTANCE never reaches us.
+            if 0 <= msg.orientation <= 7:
+                sectors += 1
             if msg.orientation == UP_ORIENT:
                 up.append(msg.current_distance)
                 mark('up', time.monotonic())
@@ -148,6 +155,7 @@ def collect(m, seconds, show=True):
         gaps[k] = max(gaps[k], end - last[k])
     gaps['stalls'] = stalls
     gaps['beats'] = beats
+    gaps['sectors'] = sectors
     return end - t0, total, raw, up, gaps
 
 
@@ -347,7 +355,7 @@ def sensor_mode(m, args):
 
         elapsed, total, raw, up, gaps = collect(m, args.seconds)
         if not total and ch != UP_CH:
-            print(silence_help())
+            print(silence_help(gaps.get('sectors', 0)))
             return 1
         if ch == UP_CH:
             # Its no-data encoding is unverified, so every value is taken at
@@ -389,17 +397,46 @@ def sensor_mode(m, args):
     return 0
 
 
-def silence_help():
+def silence_help(sectors=0):
+    """What silence MEANS, which changed on 2026-08-21 and made the old text
+    actively wrong.
+
+    This tool reads the RAW OBSTACLE_DISTANCE that the autopilot forwards to
+    USB. Forwarding is a courtesy, not a guarantee: the autopilot can consume
+    the ring perfectly while forwarding none of it, and after the ch6 repair
+    that is exactly what happened. The old message told the user to suspect
+    ESP32 power and TELEM1 wiring at a moment when the ring was working, which
+    is the worst kind of wrong: confident, specific, and pointed at hardware
+    that was fine.
+
+    The discriminator is in the same stream. Orientations 0-7 of
+    DISTANCE_SENSOR are the autopilot's own 45 deg proximity sectors, emitted
+    by AP_Proximity after it has digested the ring. The ESP32 never sends
+    those; it sends the up sensor's orientation 24 and nothing else. So
+    sectors arriving while OBSTACLE_DISTANCE does not is proof the ring
+    reached the autopilot.
+    """
+    if sectors:
+        return (
+            f"no raw OBSTACLE_DISTANCE, but {sectors} proximity SECTOR "
+            f"message(s) arrived (DISTANCE_SENSOR orientations 0-7). Those "
+            f"come from the autopilot's own AP_Proximity, not from the ESP32, "
+            f"so THE RING IS WORKING and the autopilot is using it. What is "
+            f"missing is only the raw copy being forwarded to this USB link, "
+            f"which this tool depends on and which the autopilot is free to "
+            f"stop doing. DO NOT go looking at ESP32 power or TELEM1 wiring "
+            f"on the strength of this. For ring health right now, read "
+            f"test_everything's 'prx ring N/M' line, which is the ESP32's own "
+            f"report of its own sensors.")
     return (
-        "no OBSTACLE_DISTANCE at all. The ESP32 sits on TELEM1 (SERIAL1), "
-        "not TELEM2, which is the SiK radio. Three things can produce "
-        "this silence and they are told apart in one step: run "
-        "`tools/bench.py nodes --seconds 20`. Component 195 present = the "
-        "ESP32 is alive and talking, so the fault is in what the Pixhawk "
-        "does with its packets. Component 195 absent = the ESP32 is "
-        "unpowered, not booted, or its TELEM1 wiring is disturbed, which "
-        "is the same class of fault as every other silence this project "
-        "has had.")
+        "no OBSTACLE_DISTANCE and no proximity sector messages either, so "
+        "nothing about the ring is reaching this link. The ESP32 sits on "
+        "TELEM1 (SERIAL1), not TELEM2, which is the SiK radio. Tell the two "
+        "possibilities apart in one step: run `tools/bench.py nodes "
+        "--seconds 20`. Component 195 present = the ESP32 is alive and "
+        "talking, so the fault is in what the Pixhawk does with its packets. "
+        "Component 195 absent = the ESP32 is unpowered, not booted, or its "
+        "TELEM1 wiring is disturbed.")
 
 
 def survey(m, args):
@@ -418,7 +455,7 @@ def survey(m, args):
             lo[ch], hi[ch] = d['lo'], d['hi']
 
     if not total:
-        sys.exit(silence_help())
+        sys.exit(silence_help(gaps.get('sectors', 0)))
 
     print(f"{total} messages")
     report_stream(gaps, total, elapsed)

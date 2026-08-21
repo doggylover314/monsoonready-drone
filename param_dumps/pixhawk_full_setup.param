@@ -91,7 +91,18 @@ RNGFND1_MAX,6             # m, conservative outdoor. If RNGFND1_MAX_CM, use 600
 RNGFND1_GNDCLR,0.13       # m from lens to ground when landed (4.7 name+meters). MEASURE on real airframe
 
 # --- Upward rangefinder: 7th VL53L0X via ESP32 DISTANCE_SENSOR ---
-RNGFND2_TYPE,10           # 10 = MAVLink
+# 10 -> 0 on 2026-08-21: ch6, the UPWARD VL53L0X, is dead (ESP32 health reads
+# "up:ERR"). Its power joint was resoldered and measured good and the I2C pair
+# was reconnected, so supply and bus are both ruled out; a dead chip or mux
+# channel 6 remains, undiagnosed. A configured rangefinder that never reports
+# is "PreArm: Rangefinder 2: No Data", which is now the ONLY new arming
+# blocker. 0 removes it.
+# THIS DOES NOT TOUCH THE RING. PRX1_TYPE stays 2 and AVOID_ENABLE stays 7:
+# horizontal avoidance is unaffected, because AP_Proximity consumes the up
+# sensor's DISTANCE_SENSOR itself and does not go through RNGFND2. The only
+# thing given up is an upward sensor that is already dead.
+# SET IT BACK TO 10 IN THE SAME EDIT AS THE REPAIR if ch6 is ever fixed.
+RNGFND2_TYPE,0            # 0 = none (ch6 dead 2026-08-21); 10 = MAVLink
 RNGFND2_ORIENT,24         # 24 = up
 
 # --- Proximity ring: ESP32 OBSTACLE_DISTANCE ---
