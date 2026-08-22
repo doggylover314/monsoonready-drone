@@ -203,6 +203,30 @@ def main():
     # interesting number: markedly negative means the gate wastes time opening
     # before anything flows, so short doses under-deliver and the mission's
     # dose_s_min needs raising above that threshold.
+    # SUPPLY-LIMITED CHECK, BEFORE THE FIT, because it invalidates it.
+    # 2026-08-22: with an under-filled hopper the seeds around the hole run
+    # out mid-dwell, so the rate DECAYS during the open. Fitting a straight
+    # line to a decaying rate manufactures a large POSITIVE intercept, which
+    # reads exactly like a fixed slug falling at gate-crack. It is not one.
+    # Both are positive-intercept, so the intercept alone cannot tell them
+    # apart; the discriminator is whether g/s itself falls with dwell.
+    starved = False
+    if len(results) >= 2:
+        by_dwell = sorted(results, key=lambda r: r[1])
+        first = by_dwell[0][2] / by_dwell[0][1]
+        last = by_dwell[-1][2] / by_dwell[-1][1]
+        if first > 0 and last < 0.7 * first:
+            starved = True
+            print(f"\n*** SUPPLY-LIMITED, DO NOT TRUST THE FIT BELOW ***")
+            print(f"  g/s fell from {first:.2f} at the shortest dwell to "
+                  f"{last:.2f} at the longest, a {100 * (1 - last / first):.0f}% "
+                  f"drop. A gate that is open longer cannot deliver LESS per "
+                  f"second unless it is running out of material.")
+            print(f"  REFILL THE HOPPER and re-run. Until then the only "
+                  f"defensible number is the SHORTEST dwell's "
+                  f"{first:.2f} g/s, which is the least starved.")
+            print(f"  Any positive intercept below is this decay, not a slug.")
+
     slope = None            # stays None unless the fit below actually runs
     if len(results) >= 2:
         xs = [a for _, a, _ in results]
@@ -220,6 +244,10 @@ def main():
                 print(f"  gate opening lag: about {lost:.2f}s of the dwell "
                       f"delivers nothing, so raise MissionConfig dose_s_min "
                       f"above it or short doses will under-deliver")
+            elif intercept > 0.05 * slope and starved:
+                print(f"  positive intercept {intercept:+.2f} g is the "
+                      f"supply decay flagged above, NOT a fixed slug. "
+                      f"Refill and re-run before reading anything into it.")
             elif intercept > 0.05 * slope:
                 # The OPPOSITE failure, and the one this rig actually has
                 # (2026-08-22): a positive intercept means a fixed SLUG falls
@@ -250,7 +278,13 @@ def main():
     elif results:
         rate = sum(g / a for _, a, g in results) / len(results)
         basis = 'mean of %d measurement(s)' % len(results)
-    if rate and rate > 0:
+    if rate and rate > 0 and starved:
+        print("\n=== DOSE: NOT COMPUTED ===")
+        print("The hopper ran dry mid-measurement, so neither the rate nor "
+              "the intercept describes a full hopper. Refill and re-run; a "
+              "dose table built on starved data would be confidently wrong, "
+              "which is worse than no table.")
+    elif rate and rate > 0:
         print(f"\n=== DOSE, at {rate:.2f} g/s ({basis}) ===")
         print("Bti label rates: VectoBac G 2.5-20 lb/acre = "
               f"{BTI_G_PER_M2_LOW}-{BTI_G_PER_M2_HIGH} g/m2, "
