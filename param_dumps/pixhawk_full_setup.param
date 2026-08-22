@@ -179,10 +179,14 @@ SERVO9_FUNCTION,0
 # (AP_ServoRelayEvents.cpp do_set_servo -> SRV_Channel::set_output_pwm,
 # no constrain), so the documented range is GCS slider metadata, not
 # enforcement. Raising MIN to 800 would not make anything safer; it would
-# only misdescribe the gate, whose measured closed position is 560 us.
+# only misdescribe the gate, whose measured closed position is 500 us.
 SERVO9_MIN,500
 SERVO9_MAX,1800
-SERVO9_TRIM,560
+# TRIM = the CLOSED position, so an output that emits trim before the first
+# DO_SET_SERVO parks the gate SHUT. Moved 560 -> 500 on 2026-08-22 when the
+# hole was enlarged and closed moved to 500; leaving it at 560 would have
+# parked the gate about 5% open at boot and leaked granules on the pad.
+SERVO9_TRIM,500
 
 # --- Guided safety (UNO Q command link watchdog) ---
 GUID_TIMEOUT,3            # s without new commands -> stop and hover. VERIFY name

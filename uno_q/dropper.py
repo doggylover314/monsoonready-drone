@@ -115,20 +115,25 @@ class PixhawkServoDropper(Dropper):
     """
 
     # GATE TRAVEL, measured BY EYE with tools/servo_jog.py on the bench
-    # 2026-08-14 (user-read marks; aircraft was closed up the same evening):
-    #   closed 560us  ->  open 1760us
-    # This SUPERSEDES the 2026-08-10 numbers (closed 1600 / open 1000): the
-    # servo was remounted, so the old reversal story no longer describes the
-    # hardware. US_PER_DEG 10.0 is kept as calibration from the 2026-08-10
-    # observation that 900us swung ~90 deg on this unit.
-    # 560 sits BELOW the old 800us software guard, which is why PWM_MIN_US in
-    # mavlink_io.py moved to 500. The board must agree: SERVO9_MIN <= 560 or
-    # ArduPilot may clamp the close short and the gate never fully shuts
-    # (param_dumps/pixhawk_full_setup.param sets MIN 500 / MAX 1800 / TRIM
-    # 560 = closed, so a trim-emitting output parks the gate SHUT).
+    # 2026-08-22 (Raghav, after the hole was ENLARGED to cure the granule
+    # arching): closed 500us -> open 1600us.
+    # This SUPERSEDES the 2026-08-14 numbers (closed 560 / open 1760), which
+    # in turn superseded 2026-08-10 (closed 1600 / open 1000, servo since
+    # remounted, so that reversal story no longer describes the hardware).
+    # US_PER_DEG 10.0 is kept as calibration from the 2026-08-10 observation
+    # that 900us swung ~90 deg on this unit.
+    # 500 sits BELOW the old 800us software guard, which is why PWM_MIN_US in
+    # mavlink_io.py is 500. The board must agree: SERVO9_MIN <= 500 or
+    # ArduPilot may clamp the close short and the gate never fully shuts.
+    # param_dumps/pixhawk_full_setup.param sets MIN 500 / MAX 1800, so 500 is
+    # EXACTLY ON the min: legal and inclusive, but it has no margin, and if a
+    # future push ever raises SERVO9_MIN the gate silently stops closing.
+    # TRIM is still 560 and is now BETWEEN closed and open, so a trim-emitting
+    # output (boot before the first command) parks the gate PART OPEN rather
+    # than shut. Set SERVO9_TRIM to 500 on the board to restore boot-closed.
     US_PER_DEG = 10.0
-    DEFAULT_CLOSED_US = 560
-    DEFAULT_OPEN_US = 1760
+    DEFAULT_CLOSED_US = 500
+    DEFAULT_OPEN_US = 1600
 
     def __init__(self, io, channel=9, closed_us=DEFAULT_CLOSED_US,
                  open_us=DEFAULT_OPEN_US,
