@@ -171,7 +171,17 @@ def probe(port):
     print(local.strip())
 
     print("\nREMOTE RADIO (through the link)")
-    remote = at(ser, 'RTI5', wait=1.5)
+    # A remote dump is sixteen lines fetched over the AIR link, not over USB,
+    # and with ECC on the air link carries about half its nominal rate. 1.5 s
+    # was a guess and it was too short: on 2026-08-23 the ground radio showed
+    # a SOLID green LED, meaning linked, while this same call reported "no
+    # answer". Three attempts at 4 s, and the verdict below now defers to the
+    # LED rather than pretending a silent RTI5 proves anything.
+    remote = ''
+    for _ in range(3):
+        remote += at(ser, 'RTI5', wait=4.0) or ''
+        if 'S0' in remote or 'S1' in remote:
+            break
     if 'S0' in remote or 'S1' in remote:
         print(remote.strip())
         print("\nBOTH ENDS ANSWERED, so the link is up and the radios agree "
@@ -180,14 +190,19 @@ def probe(port):
               "else must match.")
     else:
         print("  no answer from the far radio.")
-        print("\nTHE LINK IS DOWN. The local radio is healthy, so this is a "
-              "settings mismatch, not a dead radio. NETID, AIR_SPEED and ECC "
-              "must be identical on both ends; SERIAL_SPEED may differ. Their "
-              "register numbers are in the ATI5 dump above. After a firmware "
+        print("\nCHECK THE GREEN LED BEFORE BELIEVING THAT. Solid green means "
+              "the radio HAS a link and this tool simply did not get a remote "
+              "dump back, which is a different and much smaller problem: "
+              "remote AT commands are slow, and they are slower again with "
+              "ECC on. If it is solid, ignore this section and just point "
+              "QGC at the radio, because a working MAVLink link is the actual "
+              "goal and RTI5 is only a proxy for it.")
+        print("\nBlinking green on BOTH ends is what a real mismatch looks "
+              "like. NETID, AIR_SPEED and ECC must be identical, as must "
+              "MIN_FREQ, MAX_FREQ and NUM_CHANNELS; SERIAL_SPEED may differ. "
+              "Register numbers are in the dump above. After a firmware "
               "upgrade the flashed end sits on the new firmware's defaults "
-              "while the other end keeps whatever it always had, which is "
-              "exactly how a healthy pair stops linking. Run `sweep-air` to "
-              "hunt the far radio's AIR_SPEED from this side.")
+              "while the other end keeps whatever it always had.")
     leave_command_mode(ser)
     return 0
 
