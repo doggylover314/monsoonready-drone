@@ -1,0 +1,89 @@
+[test] connecting tcp:127.0.0.1:5760 ...
+[test] heartbeat from sys 1
+[mavio] -> SET_MESSAGE_INTERVAL p1=33 p2=200000 p7=0
+[mavio] <- SET_MESSAGE_INTERVAL ACCEPTED
+[mavio] -> SET_MESSAGE_INTERVAL p1=132 p2=100000 p7=0
+[mavio] <- SET_MESSAGE_INTERVAL ACCEPTED
+[mavio] -> SET_MESSAGE_INTERVAL p1=1 p2=1e+06 p7=0
+[mavio] <- SET_MESSAGE_INTERVAL ACCEPTED
+[mavio] -> SET_MESSAGE_INTERVAL p1=24 p2=1e+06 p7=0
+[mavio] <- SET_MESSAGE_INTERVAL ACCEPTED
+[test] home -35.3632621,149.1652376
+[mavio] -> DO_SET_MODE p1=1 p2=4 p7=0
+[mavio] <- DO_SET_MODE ACCEPTED
+[mavio] -> ARM_DISARM p1=1 p2=0 p7=0
+[mavio] <- ARM_DISARM ACCEPTED
+[mavio] -> TAKEOFF p1=0 p2=0 p7=15
+[ap] INFO: Arming motors
+[mavio] <- TAKEOFF ACCEPTED
+[mission] IDLE -> TAKEOFF
+[tel] TAKEOFF mode=GUIDED armed=False lat=-35.3632621 lon=149.1652376 alt=0.0m rng=0.00m(stale) vd=0.00 batt=12.60V/~100% sats=10 hdop=1.21
+[tel] TAKEOFF mode=GUIDED armed=True lat=-35.3632621 lon=149.1652376 alt=1.8m rng=1.54m vd=-1.84 batt=12.60V/~100% sats=10 hdop=1.21
+[ap] INFO: EKF3 IMU1 MAG0 in-flight yaw alignment complete
+[ap] INFO: EKF3 IMU0 MAG0 in-flight yaw alignment complete
+[tel] TAKEOFF mode=GUIDED armed=True lat=-35.3632620 lon=149.1652377 alt=13.7m rng=13.59m(stale) vd=-1.63 batt=12.60V/~100% sats=10 hdop=1.21
+[mavio] -> goto -35.3630373,149.1652376 @15.0m
+[mission] TAKEOFF -> SURVEY (wp 0)
+[tel] SURVEY mode=GUIDED armed=True lat=-35.3631997 lon=149.1652376 alt=15.4m rng=15.83m(stale) vd=0.06 batt=12.60V/~100% sats=10 hdop=1.21
+[mavio] -> goto -35.3630373,149.1655133 @15.0m
+[mission] SURVEY -> SURVEY (wp 1)
+[tel] SURVEY mode=GUIDED armed=True lat=-35.3630358 lon=149.1652386 alt=15.0m rng=15.08m(stale) vd=0.01 batt=12.60V/~100% sats=10 hdop=1.21
+[mavio] -> goto -35.3630103,149.1653699 @15.0m
+[mission] SURVEY -> APPROACH (latched -35.3630103,149.1653699)
+[tel] APPROACH mode=GUIDED armed=True lat=-35.3630258 lon=149.1653690 alt=15.0m rng=15.12m(stale) vd=0.00 batt=12.60V/~100% sats=10 hdop=1.21
+[mission] APPROACH -> DESCEND
+[tel] DESCEND mode=GUIDED armed=True lat=-35.3630161 lon=149.1653674 alt=12.9m rng=12.85m(stale) vd=0.49 batt=12.60V/~100% sats=10 hdop=1.21
+[tel] DESCEND mode=GUIDED armed=True lat=-35.3630161 lon=149.1653677 alt=10.4m rng=10.36m(stale) vd=0.49 batt=12.60V/~100% sats=10 hdop=1.21
+[tel] DESCEND mode=GUIDED armed=True lat=-35.3630161 lon=149.1653676 alt=7.9m rng=7.86m vd=0.49 batt=12.60V/~100% sats=10 hdop=1.21
+[tel] DESCEND mode=GUIDED armed=True lat=-35.3630160 lon=149.1653676 alt=5.3m rng=5.26m vd=0.49 batt=12.60V/~100% sats=10 hdop=1.21
+[mavio] -> velocity NED 0,0,0 (forced)
+[mavio] -> goto -35.3630373,149.1653699 @3.0m
+[mission] DESCEND -> CROSS (rng=2.96m, crossing 3.0 m to the water at 3.0 m)
+[tel] CROSS mode=GUIDED armed=True lat=-35.3630161 lon=149.1653676 alt=2.7m rng=2.77m vd=0.38 batt=12.60V/~100% sats=10 hdop=1.21
+[mavio] -> velocity NED 0,0,0 (forced)
+[mission] CROSS -> DROP (over the water, stopping before release)
+[mission] dose 1.00s (area unknown, default dose)
+[dropper] TRIGGER #1 (simulated, dwell 1.00s)
+[tel] DROP mode=GUIDED armed=True lat=-35.3630359 lon=149.1653700 alt=3.0m rng=2.95m vd=0.00 batt=12.60V/~100% sats=10 hdop=1.21
+[tel] DROP mode=GUIDED armed=True lat=-35.3630374 lon=149.1653698 alt=3.0m rng=2.95m vd=0.00 batt=12.60V/~100% sats=10 hdop=1.21
+[mavio] -> goto -35.3630103,149.1653699 @3.0m
+[mission] DROP -> RETURN (treated, crossing back beside the water)
+[tel] RETURN mode=GUIDED armed=True lat=-35.3630363 lon=149.1653699 alt=3.0m rng=2.97m vd=0.00 batt=12.60V/~100% sats=10 hdop=1.21
+[mission] RETURN -> CLIMB (beside the water again)
+[tel] CLIMB mode=GUIDED armed=True lat=-35.3630149 lon=149.1653699 alt=5.8m rng=5.71m vd=-0.97 batt=12.60V/~100% sats=10 hdop=1.21
+[tel] CLIMB mode=GUIDED armed=True lat=-35.3630153 lon=149.1653702 alt=10.7m rng=10.76m(stale) vd=-1.00 batt=12.60V/~100% sats=10 hdop=1.21
+[mavio] -> goto -35.3630373,149.1655133 @15.0m
+[mission] CLIMB -> SURVEY (wp 1)
+[tel] SURVEY mode=GUIDED armed=True lat=-35.3630154 lon=149.1653710 alt=15.1m rng=15.07m(stale) vd=-0.12 batt=12.60V/~100% sats=10 hdop=1.21
+[mavio] -> goto -35.3632621,149.1655133 @15.0m
+[mission] SURVEY -> SURVEY (wp 2)
+[tel] SURVEY mode=GUIDED armed=True lat=-35.3630352 lon=149.1655002 alt=15.0m rng=15.07m(stale) vd=0.01 batt=12.60V/~100% sats=10 hdop=1.21
+[tel] SURVEY mode=GUIDED armed=True lat=-35.3631025 lon=149.1655171 alt=15.0m rng=15.45m(stale) vd=0.00 batt=12.60V/~100% sats=10 hdop=1.21
+[mavio] -> goto -35.3632621,149.1652376 @15.0m
+[mission] SURVEY -> SURVEY (wp 3)
+[tel] SURVEY mode=GUIDED armed=True lat=-35.3632634 lon=149.1655130 alt=15.0m rng=15.03m(stale) vd=0.00 batt=12.60V/~100% sats=10 hdop=1.21
+[tel] SURVEY mode=GUIDED armed=True lat=-35.3632655 lon=149.1653726 alt=15.0m rng=15.30m(stale) vd=0.00 batt=12.60V/~100% sats=10 hdop=1.21
+[mission] SURVEY -> DONE (survey complete)
+[mavio] -> DO_SET_MODE p1=1 p2=6 p7=0
+[mavio] <- DO_SET_MODE ACCEPTED
+[mission] done, RTL confirmed
+[test] mission returned in state DONE
+[ap] INFO: SIM Hit ground at 0.498664 m/s
+[ap] INFO: Disarming motors
+[test] disarmed=True
+[test] history:
+    TAKEOFF      
+    SURVEY       wp 0
+    SURVEY       wp 1
+    APPROACH     latched -35.3630103,149.1653699
+    DESCEND      
+    CROSS        rng=2.96m, crossing 3.0 m to the water at 3.0 m
+    DROP         over the water, stopping before release
+    RETURN       treated, crossing back beside the water
+    CLIMB        beside the water again
+    SURVEY       wp 1
+    SURVEY       wp 2
+    SURVEY       wp 3
+    DONE         survey complete
+[test] drops=1 abort=None
+[test] PASS (none)
