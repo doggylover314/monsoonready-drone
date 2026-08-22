@@ -137,7 +137,11 @@ def open_at(port, baud, quiet=False):
         return None
     if command_mode(ser):
         if not quiet:
-            print(f"  {baud:>6}: OK, in command mode")
+            # This line is a SUCCESS, not a symptom. Command mode is where AT
+            # commands are answered; the tool puts the radio back into data
+            # mode on the way out. An earlier wording read like a fault report
+            # and sent the user power-cycling a radio that was working.
+            print(f"  {baud:>6}: radio answers here")
         return ser
     if not quiet:
         print(f"  {baud:>6}: no answer")
@@ -188,8 +192,26 @@ def probe(port):
     return 0
 
 
+def read_reg(ser, n):
+    """One register's value, or None. ATSn? echoes just the number."""
+    for line in at(ser, f'ATS{n}?').splitlines():
+        line = line.strip()
+        if line.isdigit():
+            return int(line)
+    return None
+
+
 def sweep_air(port):
-    """Walk the local radio's AIR_SPEED until the remote answers."""
+    """Walk the local radio's AIR_SPEED until the remote answers.
+
+    NO CONFIRMATION PROMPT (user, 2026-08-22: "why do you need a confirmation
+    for the air-sweep? It is nothing dangerous at all"). He is right, it is a
+    reversible radio setting. The prompt was friction pretending to be safety.
+    What it should have done instead, and now does, is PUT THE SETTING BACK
+    when the sweep finds nothing: the first version walked to the end of the
+    list and abandoned the radio on AIR_SPEED 250, which is not where it
+    started and not a value anything else on this project uses.
+    """
     print("\nfinding a baud that reaches the local radio")
     ser = None
     for baud in BAUDS:
@@ -199,37 +221,56 @@ def sweep_air(port):
             break
     if not ser:
         sys.exit("local radio does not answer at any baud; run probe first")
+    baud = ser.baudrate
 
-    print("\nwalking AIR_SPEED. Each step writes and reboots the LOCAL radio, "
-          "so this changes its settings even if nothing is found.")
-    if input("type 'sweep' to continue: ").strip().lower() != 'sweep':
-        leave_command_mode(ser)
-        sys.exit("aborted, nothing written")
+    original = read_reg(ser, 2)
+    print(f"  AIR_SPEED starts at {original}; it goes back there if nothing "
+          f"links")
 
     for sp in AIR_SPEEDS:
         at(ser, f'ATS2={sp}')
         at(ser, 'AT&W')
         at(ser, 'ATZ', wait=2.0)
         ser.close()
-        time.sleep(1.0)
-        ser = open_at(port, ser.baudrate, quiet=True)
+        # A SiK pair does not link the instant both ends boot: they hop a
+        # shared channel sequence and have to find each other. Asking RTI too
+        # early reports "nothing" for a pair that would have linked a second
+        # later, which turns the whole sweep into a false negative.
+        time.sleep(3.0)
+        ser = open_at(port, baud, quiet=True)
         if not ser:
             print(f"  AIR_SPEED {sp:>3}: lost the local radio, stopping")
             return 1
-        remote = at(ser, 'RTI', wait=1.5)
-        hit = 'SiK' in remote or 'RADIO' in remote.upper()
+        remote = at(ser, 'RTI', wait=2.0) or ''
+        if 'SiK' not in remote:
+            remote += at(ser, 'RTI', wait=2.0) or ''
+        hit = 'SiK' in remote
         print(f"  AIR_SPEED {sp:>3}: {'LINK UP' if hit else 'nothing'}")
         if hit:
-            print(f"\nFOUND IT. Both radios are on AIR_SPEED {sp}. Leave it "
-                  f"here, or set the far end to match a value you prefer "
-                  f"before changing the local one.")
+            print(f"\nFOUND IT. Both radios are on AIR_SPEED {sp}. Leaving it "
+                  f"here. Change the far end with the RT form first if you "
+                  f"want a different value on both.")
             leave_command_mode(ser)
             return 0
-    leave_command_mode(ser)
-    print("\nno AIR_SPEED linked. NETID probably differs too; that cannot be "
-          "swept blind because the search space is 0-499. The far radio's "
-          "NETID has to be read with the two radios wired together, or reset "
-          "to default on both ends.")
+
+    if original is not None:
+        at(ser, f'ATS2={original}')
+        at(ser, 'AT&W')
+        at(ser, 'ATZ', wait=2.0)
+        print(f"\nput AIR_SPEED back to {original}")
+    ser.close()
+    print("\nNO AIR_SPEED LINKED, so AIR_SPEED is not the difference and the "
+          "search has to move off this end. In rough order of likelihood:\n"
+          "  1. The far radio has no power, or not enough. Look at its LEDs: "
+          "no light at all means no power, a blinking green means it is "
+          "powered and searching, solid green means linked. That one look "
+          "settles more than any sweep.\n"
+          "  2. NETID differs. It cannot be swept blind, the space is 0-499.\n"
+          "  3. MIN_FREQ, MAX_FREQ or NUM_CHANNELS differ. These must match "
+          "as exactly as NETID does and a firmware change can move them.\n"
+          "Fixing 2 and 3 without a link means reaching the far radio "
+          "directly, over the Pixhawk's serial passthrough or on a bench "
+          "adapter, and setting both ends to the same values.")
     return 1
 
 
