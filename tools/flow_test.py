@@ -220,16 +220,33 @@ def main():
                 print(f"  gate opening lag: about {lost:.2f}s of the dwell "
                       f"delivers nothing, so raise MissionConfig dose_s_min "
                       f"above it or short doses will under-deliver")
+            elif intercept > 0.05 * slope:
+                # The OPPOSITE failure, and the one this rig actually has
+                # (2026-08-22): a positive intercept means a fixed SLUG falls
+                # out the instant the gate cracks, no matter how short the
+                # dwell. The column sitting in the aperture is already past
+                # the gate. Flow is still linear, but it does NOT pass
+                # through the origin, so dose does NOT scale to zero and
+                # `grams / rate` OVERSTATES the dwell for every puddle.
+                print(f"  fixed slug per open: about {intercept:.2f} g falls "
+                      f"regardless of dwell. This is the MINIMUM DOSE and it "
+                      f"cannot be reduced by shortening the open time; only a "
+                      f"smaller aperture reduces it.")
+                print(f"  so dwell for a target mass is "
+                      f"(grams - {intercept:.2f}) / {slope:.2f}, NOT "
+                      f"grams / {slope:.2f}")
             else:
-                print("  no meaningful opening lag: flow is close to linear "
-                      "in time, so dose seconds scale honestly")
+                print("  intercept is near zero: flow passes through the "
+                      "origin, so dose seconds scale proportionally")
     # What the rate MEANS, in the only units a dosing decision is made in.
     # Uses the straight mean rather than the fit's slope when there is only
     # one point, and says which it used, because a judge asking "how many
     # grams" deserves to know whether that came from one measurement.
     rate = None
+    offset = 0.0            # grams delivered at zero dwell (the fixed slug)
     if slope is not None and slope > 0:
         rate, basis = slope, 'fitted slope'
+        offset = intercept
     elif results:
         rate = sum(g / a for _, a, g in results) / len(results)
         basis = 'mean of %d measurement(s)' % len(results)
@@ -238,17 +255,25 @@ def main():
         print("Bti label rates: VectoBac G 2.5-20 lb/acre = "
               f"{BTI_G_PER_M2_LOW}-{BTI_G_PER_M2_HIGH} g/m2, "
               f"about {BTI_G_PER_M2_TYPICAL} g/m2 mid-label.")
+        if offset > 0:
+            print(f"Dwell solves grams = {rate:.2f}*s + {offset:.2f}, so any "
+                  f"puddle wanting under {offset:.2f} g is OVER-DOSED by the "
+                  f"fixed slug and shown as 0.00s.")
         print(f"{'puddle':>9}{'grams':>9}{'seconds':>9}")
         for area in (1, 2, 5, 10, 20):
             grams = area * BTI_G_PER_M2_TYPICAL
-            print(f"{area:>7} m2{grams:>9.1f}{grams / rate:>9.2f}")
+            secs = (grams - offset) / rate
+            flag = ''
+            if secs <= 0:
+                secs, flag = 0.0, '  <-- slug alone overshoots'
+            print(f"{area:>7} m2{grams:>9.1f}{secs:>9.2f}{flag}")
         print("READ THIS BEFORE QUOTING ANY OF IT: the seconds are real, the "
               "grams are not. They were measured with a SURROGATE (salt, "
               "sooji, seeds), whose density and grain size are not Bti's, so "
               "the same dwell delivers a different mass of the real product. "
               "Re-run this with actual Bti granules before any number here "
               "goes in front of a judge.")
-        smallest = BTI_G_PER_M2_TYPICAL / rate
+        smallest = max(0.0, (BTI_G_PER_M2_TYPICAL - offset) / rate)
         if smallest < 0.3:
             print(f"\nNOTE: a 1 m2 puddle is only {smallest:.2f}s of gate "
                   f"time, which is close to the servo's own travel time. At "
