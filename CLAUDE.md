@@ -170,6 +170,11 @@ a working flight. Filming moves to the nearby field.
   hardware physically plugged into the laptop (the SiK GROUND radio, a Pixhawk
   deliberately moved there for QGC). When a block is laptop-side because the
   DEVICE is there, say so in one clause, or it reads as the same mistake again.
+  NEVER PUT `./git-pull` IN A LAPTOP BLOCK FOR CHANGES THE ASSISTANT JUST MADE
+  (user, 2026-08-22): the edits happen ON this laptop and are committed from
+  it, so the working tree already has them and the pull is pure noise. Pull on
+  the laptop ONLY to collect Raghav's work, and say that is why. The BOARD is
+  the machine that actually needs `./git-pull` before running anything new.
   (2026-08-01: a mixed block was pasted wholesale into the board shell and
   every laptop command errored). A command
   that starts a server (SITL, Flask) needs its own terminal; never chain one
