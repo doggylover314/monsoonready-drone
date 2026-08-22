@@ -55,7 +55,7 @@
 <text x="486" y="336" class="pin">GPS</text>
 <text x="486" y="362" class="pin">I2C</text>
 <text x="486" y="388" class="pin">SERIAL4</text>
-<text x="486" y="414" class="pin">SERIAL5</text>
+<text x="486" y="414" class="pin">USB</text>
 <text x="486" y="440" class="pin">RCIN</text>
 <text x="486" y="466" class="pin">MAIN 1-6</text>
 <text x="486" y="492" class="pin">AUX1 (ch9)</text>
@@ -69,22 +69,22 @@
 <!-- SiK -->
 <rect x="850" y="258" width="230" height="50" class="box sens"/>
 <text x="862" y="280" class="tb">SiK 433MHz telemetry</text><text x="862" y="299" class="ts">ground link, 57600</text>
-<path d="M760,278 L850,278" class="wire2"/>
+<path d="M760,304 L832,304 L832,283 L850,283" class="wire2"/>
 
 <!-- ESP32 + ring -->
 <rect x="850" y="322" width="230" height="74" class="box sens"/>
 <text x="862" y="344" class="tb">ESP32-WROOM-32</text>
 <text x="862" y="363" class="ts">MAVLink compid 195, 10Hz</text>
 <text x="862" y="380" class="ts">GPIO17-&gt;RX2, GPIO16&lt;-TX2, GND</text>
-<path d="M760,304 L805,304 L805,352 L850,352" class="wire2"/>
+<path d="M760,278 L805,278 L805,352 L850,352" class="wire2"/>
 
 <rect x="1140" y="322" width="200" height="50" class="box sens"/>
 <text x="1152" y="344" class="tb">TCA9548A mux</text><text x="1152" y="363" class="ts">0x70, GPIO21/22 I2C</text>
 <path d="M1080,347 L1140,347" class="wire"/>
 
 <rect x="1140" y="392" width="200" height="66" class="box sens"/>
-<text x="1152" y="414" class="tb">7x VL53L0X</text>
-<text x="1152" y="432" class="ts">ch0-5 ring @60deg</text>
+<text x="1152" y="414" class="tb">VL53L0X ring</text>
+<text x="1152" y="432" class="ts">ch0-5 @60deg, 4 fitted+live</text>
 <text x="1152" y="450" class="ts">ch6 upward</text>
 <path d="M1240,372 L1240,392" class="wire"/>
 
@@ -127,7 +127,7 @@
 <path d="M125,438 L125,700 L180,700" class="pw"/>
 
 <rect x="180" y="762" width="250" height="50" class="box act"/>
-<text x="192" y="784" class="tb">Hopper + granules</text><text x="192" y="803" class="ts">demo payload: inert salt</text>
+<text x="192" y="784" class="tb">Hopper + granules</text><text x="192" y="803" class="ts">demo payload: mustard seed</text>
 <path d="M305,736 L305,762" class="wire"/>
 
 <!-- UNO Q -->
@@ -148,13 +148,10 @@
 <path d="M820,946 L770,946" class="pw"/>
 <path d="M125,438 L125,946 L150,946" class="pw"/>
 
-<!-- BLOCKED link -->
-<rect x="180" y="770" width="0" height="0"/>
-<path d="M470,408 L300,408 L300,850" class="bw"/>
-<rect x="196" y="470" width="256" height="86" class="box blocked"/>
-<text x="208" y="494" class="tb" fill="#b3261e">UNO Q &lt;-&gt; Pixhawk link</text>
-<text x="208" y="513" class="ts">planned: D0/D1 (STM32 USART1)</text>
-<text x="208" y="531" class="ts">to SERIAL5, MAVLink2 115200</text>
-<text x="208" y="549" class="ts" fill="#b3261e">UNRESOLVED: Serial1 may be</text>
-<text x="208" y="566" class="ts" fill="#b3261e">claimed by the Arduino router</text>
+<!-- companion link -->
+<path d="M470,414 L300,414 L300,850" class="wire2"/>
+<rect x="196" y="470" width="256" height="68" class="box ai"/>
+<text x="208" y="494" class="tb">UNO Q &lt;-&gt; Pixhawk link</text>
+<text x="208" y="513" class="ts">USB, MAVLink2, through the hub</text>
+<text x="208" y="531" class="ts">SERIAL5 (D0/D1) retired, protocol -1</text>
 </svg>

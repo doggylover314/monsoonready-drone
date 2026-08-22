@@ -2,7 +2,7 @@
 
 An F550 hexacopter that finds standing water after monsoon rain and drops
 granular Bti larvicide into it. The YOLO model runs on an Arduino UNO Q bolted
-to the aircraft, so it decides in the air. No ground station. No cloud.
+to the aircraft, so it locates in the air. No ground station. No cloud.
 
 Arduino Physical AI Challenge India 2026. Built by Reyansh and Raghav.
 
@@ -73,7 +73,7 @@ Pixhawk 2.4.8
   TELEM1   ESP32 obstacle ring, MAVLink2 115200, component 195
   TELEM2   SiK 433 MHz radio
   SERIAL3  NEO-M8N GPS and compass
-  SERIAL5  TF-Luna, 115200
+  SERIAL4  TF-Luna, 115200
 ```
 
 The ESP32 sends plain `OBSTACLE_DISTANCE` and `DISTANCE_SENSOR` messages, so
