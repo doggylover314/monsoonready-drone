@@ -161,6 +161,15 @@ a working flight. Filming moves to the nearby field.
   Challenge"` (user, 2026-08-06, emphatic): he knows his working directory
   and the repeated cd is noise. Give the bare command with repo-relative
   paths (e.g. `./python tools/parameters.py push`)
+  ANYTHING THAT TALKS TO THE PIXHAWK IS A **BOARD** COMMAND (user, 2026-08-22,
+  after being told twice): parameters.py, level_cal.py, bench.py,
+  wiring_check.py, check_log.py on a fresh .bin. The Pixhawk lives on the UNO
+  Q's USB and unplugging it to reach the laptop is slower and costs a
+  reconnect, so he runs Pixhawk CLI work FROM THE BOARD. Do not put those in a
+  LAPTOP block. What genuinely stays on the laptop: git, SITL, training, and
+  hardware physically plugged into the laptop (the SiK GROUND radio, a Pixhawk
+  deliberately moved there for QGC). When a block is laptop-side because the
+  DEVICE is there, say so in one clause, or it reads as the same mistake again.
   (2026-08-01: a mixed block was pasted wholesale into the board shell and
   every laptop command errored). A command
   that starts a server (SITL, Flask) needs its own terminal; never chain one
