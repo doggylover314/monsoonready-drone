@@ -37,12 +37,11 @@ that height across the water.
 
 The model finds standing water. That is the whole claim.
 
-It cannot tell you the water has been there long enough to breed anything. One
-photo does not carry that, and from 15 m this morning's puddle and a two-week-
-old breeding site are the same handful of pixels. Stagnation has to come from
-repeat visits: fly the area again on another day, see which pools are still
-there, then have someone confirm on the ground. A single flight produces
-candidates and nothing more.
+It cannot tell you the water has been there long enough to breed anything. From
+15 m, this morning's puddle and a two-week-old breeding site are the same
+handful of pixels. Stagnation has to come from repeat visits: fly again on
+another day, see which pools are still there, then have someone confirm on the
+ground. One flight produces candidates and nothing more.
 
 ## Hardware
 
@@ -72,12 +71,11 @@ The ESP32 sends plain `OBSTACLE_DISTANCE` and `DISTANCE_SENSOR`, so ArduPilot's
 own avoidance reads them unmodified. The UNO Q commands the aircraft as
 component 191.
 
-Four of the six ring positions work. One never got a sensor, there is no room on
-that side of the frame, and one sensor has never answered. Both are marked
-absent in firmware, which matters more than it sounds: while they were marked
-present, the ESP32 retried them every five seconds and each retry blocked its
-loop for about a second. That gap was long enough for ArduPilot to call the
-proximity sensor dead and refuse to arm, on roughly a fifth of our attempts.
+Four of the six ring positions work, plus the upward one. Marking the other two
+absent in firmware mattered more than it sounds: while they were marked present,
+the ESP32 retried them every five seconds and each retry blocked its loop for
+about a second, which was long enough for ArduPilot to call the proximity sensor
+dead and refuse to arm on roughly a fifth of our attempts.
 
 ## The model
 
@@ -148,17 +146,16 @@ dwell comes from that and the measured flow.
 | 4 m² | 4.4 g | 0.92 s |
 | 6 m² | 6.6 g | 1.38 s |
 
-Read that as a placeholder. Two things are wrong with it. The flow rate behind
-it is 4.8 g/s, the midpoint of the 4.2 to 5.3 g/s measured across the two
-shortest dwells, and every one of those runs came from an under-filled hopper
-that was starving by the end. A full hopper has never been measured. Second, the
-material was mustard seed, and the gate passes a volume per second, so grams
-depend on bulk density. We have no verified figure for either mustard seed or
-VectoBac G's corn-cob granule. The seconds are honest for seed. The grams for
-Bti are arithmetic, not measurement.
+Treat that as a placeholder. The flow rate behind it, 4.8 g/s, is the midpoint
+of 4.2 to 5.3 g/s measured at the two shortest dwells, and every one of those
+runs came from an under-filled hopper that was starving by the end. A full
+hopper has never been measured. The material was also mustard seed, and the gate
+passes a volume per second, so grams depend on bulk density, which we have no
+verified figure for. The seconds are honest for seed. The grams for Bti are
+arithmetic, not measurement.
 
-At 1 m² the dwell is also close to the servo's own travel time, so the dose
-there is set by how fast the gate moves rather than how long it stays open.
+At 1 m² the dwell is close to the servo's own travel time, so the dose there is
+set by how fast the gate moves rather than how long it stays open.
 
 Fine salt was the first test material. It bridged, which turned out to be
 cohesion between hundred-micron grains rather than the hole being too small.
@@ -172,26 +169,19 @@ aborts upward, survey still finishes. Both pass.
 ## Where it stands
 
 Working: the airframe, which clears its vibration gate; the ring; the dashboard;
-parameter management; the detector on the board; the geofence and the route
-generation that fits rows inside it; and the whole mission loop in simulation.
+parameter management; the detector on the board; the geofence and route
+generation; and the whole mission loop in simulation.
 
-Not done: the full autonomous loop has never flown. We have had the aircraft
-armed and the mission commanded, but between GPS quality, a fence drawn too
-tight around the take-off spot and the proximity refusals above, there is no
-complete automatic flight on video.
+Not done: the full autonomous loop has never flown. The aircraft has been armed
+with the mission commanded, but between GPS quality, a fence drawn too tight
+around the take-off spot and the proximity refusals above, there is no complete
+automatic flight on video.
 
 ## Reproducing it
 
-One repository. Every decision is in a dated, author-tagged, append-only log in
-`PROJECT_STATE.md`, because two people on two machines built this.
+One repository, and every decision is in a dated, author-tagged, append-only log
+in `PROJECT_STATE.md`, because two people on two machines built this. The
+commands are in the top-level `README.md`.
 
-| Task | Command |
-|--|--|
-| Merge datasets | `./python training/merge_datasets.py` |
-| Train | `./python training/train.py` |
-| Export ONNX | `./python training/export.py` |
-| Push parameters | `./python tools/parameters.py push` |
-| Mission tests | `./python uno_q/sitl_test.py` |
-
-We do not use bulk parameter load from a ground station. It drops writes
-silently. `tools/parameters.py` acknowledges every single one.
+One thing worth saying: we do not use bulk parameter load from a ground station,
+because it drops writes silently. `tools/parameters.py` acknowledges every one.
