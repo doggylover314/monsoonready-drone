@@ -31,8 +31,10 @@ Four that cost real time.
 **Parameter names.** ArduPilot renames things between versions and the assistant
 kept using old names from memory. `WPNAV_SPEED` does not exist on 4.7, it is
 `WP_SPD`, and that one would have failed silently. Same with `RTL_ALT` to
-`RTL_ALT_M` and `RNGFND1_GNDCLEAR` to `RNGFND1_GNDCLR`. The fix was a rule:
-check the board or the source, never memory.
+`RTL_ALT_M`, `RNGFND1_GNDCLEAR` to `RNGFND1_GNDCLR`, and `ARMING_CHECK`, which
+4.7 replaced with `ARMING_SKIPCHK` and inverted while it was at it, so the old
+name reads as a dead link rather than an error. The fix was a rule: check the
+board or the source, never memory. It kept happening anyway.
 
 **Hardware this board cannot do.** It planned a bidirectional-DShot RPM notch
 filter before anyone checked whether the timer channels have DMA. They do not.

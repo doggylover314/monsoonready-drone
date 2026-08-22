@@ -76,14 +76,40 @@ def find_port():
 
 
 def command_mode(ser):
-    """Return True if the radio answered +++ with OK."""
+    """Get the radio into AT command mode, or confirm it is already there.
+
+    ASK BEFORE KNOCKING. A radio ALREADY in command mode does not answer `+++`
+    with OK, it answers with nothing, so a tool that only knows how to knock
+    reports a healthy radio as dead. That is a real bug this file shipped with
+    on 2026-08-22: `probe` succeeded, left the radio in command mode, and the
+    very next `sweep-air` said "does not answer at any baud". So try a plain
+    ATI first and treat a version string as proof we are already in.
+    """
+    ser.reset_input_buffer()
+    ser.write(b'\r\nATI\r\n')
+    ser.flush()
+    time.sleep(0.5)
+    if b'SiK' in ser.read(ser.in_waiting or 128):
+        return True
     ser.reset_input_buffer()
     time.sleep(GUARD_S)
     ser.write(b'+++')
     ser.flush()
     time.sleep(GUARD_S)
-    reply = ser.read(ser.in_waiting or 64)
-    return b'OK' in reply
+    return b'OK' in ser.read(ser.in_waiting or 64)
+
+
+def leave_command_mode(ser):
+    """ATO returns the radio to passing data. WITHOUT THIS THE RADIO STAYS IN
+    COMMAND MODE AND CARRIES NO MAVLINK, so a diagnostic run would leave QGC
+    with a link that enumerates and never talks. Shipped missing, same day."""
+    try:
+        ser.write(b'ATO\r\n')
+        ser.flush()
+        time.sleep(0.3)
+    except serial.SerialException:
+        pass
+    ser.close()
 
 
 def at(ser, cmd, wait=0.6):
@@ -99,8 +125,15 @@ def open_at(port, baud, quiet=False):
     try:
         ser = serial.Serial(port, baud, timeout=0.5)
     except serial.SerialException as exc:
-        if not quiet:
-            print(f"  {baud:>6}: cannot open ({exc})")
+        # NEVER quiet. "Device or resource busy" means QGC or another shell
+        # holds the port, which is a completely different problem from a
+        # silent radio, and hiding it behind --quiet sends the reader off
+        # chasing a dead radio that is fine.
+        busy = 'busy' in str(exc).lower()
+        print(f"  {baud:>6}: cannot open ({exc})")
+        if busy:
+            print("       ^ something else has this port open. Close QGC, or "
+                  "any other program holding the radio, and re-run.")
         return None
     if command_mode(ser):
         if not quiet:
@@ -151,7 +184,7 @@ def probe(port):
               "while the other end keeps whatever it always had, which is "
               "exactly how a healthy pair stops linking. Run `sweep-air` to "
               "hunt the far radio's AIR_SPEED from this side.")
-    ser.close()
+    leave_command_mode(ser)
     return 0
 
 
@@ -170,7 +203,7 @@ def sweep_air(port):
     print("\nwalking AIR_SPEED. Each step writes and reboots the LOCAL radio, "
           "so this changes its settings even if nothing is found.")
     if input("type 'sweep' to continue: ").strip().lower() != 'sweep':
-        ser.close()
+        leave_command_mode(ser)
         sys.exit("aborted, nothing written")
 
     for sp in AIR_SPEEDS:
@@ -189,10 +222,10 @@ def sweep_air(port):
         if hit:
             print(f"\nFOUND IT. Both radios are on AIR_SPEED {sp}. Leave it "
                   f"here, or set the far end to match a value you prefer "
-                  f"with RTS2 before changing the local one.")
-            ser.close()
+                  f"before changing the local one.")
+            leave_command_mode(ser)
             return 0
-    ser.close()
+    leave_command_mode(ser)
     print("\nno AIR_SPEED linked. NETID probably differs too; that cannot be "
           "swept blind because the search space is 0-499. The far radio's "
           "NETID has to be read with the two radios wired together, or reset "
@@ -214,7 +247,7 @@ def write_one(port, name, value):
              else f'AT{name}={value}').strip())
     print(at(ser, 'AT&W').strip())
     at(ser, 'ATZ', wait=2.0)
-    ser.close()
+    ser.close()   # ATZ already rebooted it out of command mode
     print("\nwritten and rebooted. Before:")
     print(before.strip())
     print("\nre-run probe to read it back. A write you have not read back is "
@@ -234,12 +267,12 @@ def factory(port):
           "whatever it has, so if they were paired on custom settings this "
           "will break the pair until the far end is reset too.")
     if input("type 'factory' to continue: ").strip().lower() != 'factory':
-        ser.close()
+        leave_command_mode(ser)
         sys.exit("aborted, nothing written")
     print(at(ser, 'AT&F').strip())
     print(at(ser, 'AT&W').strip())
     at(ser, 'ATZ', wait=2.0)
-    ser.close()
+    ser.close()   # ATZ already rebooted it out of command mode
     print("reset and rebooted. Run probe to see the defaults it landed on.")
     return 0
 
