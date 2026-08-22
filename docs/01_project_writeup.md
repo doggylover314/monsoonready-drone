@@ -1,293 +1,212 @@
-# MonsoonReady → Autonomous Larvicide Drone
+# MonsoonReady
 
-An **F550 hexacopter** that surveys for standing water after monsoon rain,
-detects it with a **YOLO model running onboard an Arduino UNO Q**, descends
-over the target on a **TF-Luna** rangefinder, and drops **granular Bti larvicide**
-into it. Detection, decision and action all happen on the aircraft; no ground
-station and no cloud are in the loop.
+An F550 hexacopter that finds standing water after monsoon rain and drops
+granular Bti larvicide into it. The YOLO model runs on an Arduino UNO Q bolted
+to the aircraft, so it decides in the air. No ground station. No cloud.
 
-Arduino Physical AI Challenge India, 2026. Two-person team.
+Arduino Physical AI Challenge India 2026. Built by Reyansh and Raghav.
 
----
+## Why granules
 
-## 1. The problem
+Aedes aegypti lays eggs in small pools: flat roofs, building sites, blocked
+drains, tarpaulins, an old tank nobody emptied. Larvae are stuck in the water
+until they hatch, which makes them the easy thing to kill. Council crews
+already do this on foot. It is slow, and they only treat what they can walk to.
 
-*Aedes aegypti*, the mosquito carrying dengue and chikungunya, breeds in small
-bodies of standing water that appear everywhere after monsoon rain: flat
-rooftops, construction sites, blocked drains, tarpaulins, unused tanks. The
-larval stage is where the mosquito is least mobile and most vulnerable.
-Municipal vector control relies on ground crews walking sites, which is slow
-and misses what a person cannot reach or does not know about.
+Granular Bti has one requirement, which is landing in the water. No tank. No
+pump, no nozzle, nothing to drift downwind. What is left is a much smaller
+problem: find the water, get over it, drop a measured amount.
 
-**The design insight is that larval control does not need spraying.** Granular
-*Bti* only has to **land in the water**. That removes the tank, the pump, the
-nozzle, the spray drift and most of the payload weight, and reduces the problem
-to: find the water, get above it, drop a measured dose.
+## The loop
 
----
+Pixhawk flies the survey rows at 15 m while the UNO Q takes downward photos and
+runs them through the model. Water in frame means the coordinates get locked
+right then, at altitude. The aircraft repositions beside the water, comes down
+on the TF-Luna, crosses over the middle, opens the gate, crosses back. Climb,
+next row.
 
-## 2. The mission loop
+It descends beside the puddle rather than over it because the TF-Luna uses
+850 nm infrared and still water at that wavelength acts like a mirror. Dry
+ground three metres to the side gives an honest height. The aircraft holds that
+height across the water.
 
+Once it lands the UNO Q stops being a mission computer and turns into a web
+dashboard: where it flew, what it found, what it treated.
 
-1. Pixhawk | Fly survey pattern at survey altitude (`survey_alt_m`, default 15 m) |
-2. UNO Q | Run detector on downward stills; **onboard**, no link required |
-3. UNO Q | On detection, **latch** target lat/lon at survey altitude |
-4. UNO Q → Pixhawk | Guided reposition over target, then descend on rangefinder |
-5. UNO Q | At drop height, open the servo gate; granules fall |
-6. UNO Q → Pixhawk | Climb to survey altitude, resume the pattern |
-7. UNO Q | On landing, switch role to base station: heatmap and report |
+Test flights drop mustard seed. Not larvicide.
 
-Demonstration flights dispense **inert mustard seeds**, not larvicide, so that no part
-of the demonstration is a pesticide application. See `05_compliance_narrative.md`.
+## What we claim
 
----
+The model finds standing water. That is the whole claim.
 
-## 3. What is claimed, and what is not
+It cannot tell you the water has been there long enough to breed anything.
+One photo does not carry that information, and from 15 m this morning's puddle
+and a two-week-old breeding site are the same handful of pixels.
 
-The model detects **standing-water candidates**. It cannot detect stagnation,
-because stagnation is a property of time and not of a single frame: a fresh
-puddle and a two-week-old breeding site are identical from 15 m.
+Stagnation has to come from repeat visits. Fly the area again on a different
+day, see which pools are still sitting there, then have someone confirm on the
+ground. A single flight produces candidates and nothing more.
 
-Stagnation is therefore established the way it actually can be, by **the same
-candidate persisting across repeated passes on different days**, plus operator
-confirmation. A single flight produces candidates. A survey programme produces
-breeding sites.
+## Hardware
 
-This limitation is stated rather than absorbed into the claim, because the
-narrow honest version survives questioning and the broad version does not.
+| Part | Why this one |
+|------|--------------|
+| F550 hexacopter | Six motors carry the payload and survive losing one. Replaced the S550 we destroyed. |
+| Pixhawk 2.4.8, ArduCopter 4.7.0 | Guided-mode MAVLink is mature, and the logs are good enough to work out what went wrong. |
+| 6x A2212 920KV, 1045 props | Swapped from EMAX MT2213 when we could not get matching props in India. |
+| 6x 45A BLHeli_32 ESCs | Rated well above what the motors pull, so they stay cool. |
+| 3S 8000mAh LiPo | One pack. It lives on the drone. |
+| Arduino UNO Q, 4GB | Runs the detector. The whole point of the project. |
+| Logitech B525, 720p | We already owned it and UVC works on the UNO Q today. That beat any spec gain from buying something. |
+| TF-Luna, downward | ArduPilot supports it natively. Gives height above the ground and puddle size for the dose. |
+| VL53L0X ring on a TCA9548A, read by an ESP32 | Cheapest proximity ring the flight controller understands without a firmware fork. |
+| MG90 metal-gear servo | Opens a gate on a tube. Metal gears because a stripped nylon gear means no drop. |
+| SH1106 OLED | Prearm status, sats, mode, battery, readable in the field without a laptop. |
+| SiK 433 MHz | Ground monitoring during tests. |
+| FlySky FS-i6X | Ten channels, with arm and kill on their own switches. |
 
----
-
-## 4. Hardware
-
-| Subsystem | Part | Rationale |
-|-----------|------|-----------|
-| Frame | **F550** hexacopter, X | Six motors: payload margin and motor-failure tolerance. Replaced the S550 destroyed in crash 3; centre plates no longer available. |
-| Flight controller | **Pixhawk 2.4.8**, ArduCopter **4.7.0** (Pixhawk1-bdshot) | Mature guided-mode MAVLink interface, strong logging for post-incident analysis |
-| Motors / props | 6× **DJI A2212 920KV**, DJI-style **1045** | Changed from EMAX MT2213 when matching propellers proved unavailable in India |
-| ESCs | 6× **45A BLHeli_32** | Rated far above the A2212's draw, so they never run hot |
-| Battery | **3S 8000mAh** LiPo, XT60 | Survey endurance |
-| AI compute | **Arduino UNO Q, 4GB** | Runs the detector onboard. The physical-AI premise of the project. |
-| Camera | **Logitech B525**, 720p UVC | Already owned, and UVC works on the UNO Q today, which outweighed any spec gain from a new part |
-| Height / descent | **Benewake TF-Luna**, serial, downward | Native ArduPilot support; true height above the water surface, and puddle size for dosing |
-| Obstacle ring | 7× **VL53L0X** on a **TCA9548A** mux, read by an **ESP32** | Cheapest proximity ring the flight controller understands natively |
-| Dispenser | **MG90** servo gate on a tube | Metal gears, no tank, no pump, no nozzle |
-| Status display | 1.3in I²C **OLED** (SH1106) | Prearm pass/fail, satellites, EKF, mode, battery: field-readable with no laptop |
-| Telemetry | **433MHz SiK** | Ground monitoring during tests |
-| RC | **FlySky FS-i6X / FS-iA10B**, iBUS | 10 channels; dedicated arm and kill switches |
-
-### 4.1 Serial allocation
-
-Every subsystem speaks to the flight controller in a protocol it already
-understands. Nothing here requires a firmware fork.
+### Wiring
 
 ```
 Pixhawk 2.4.8
-  SERIAL1 ──── SiK 433MHz telemetry
-  SERIAL2 ──── ESP32 obstacle module      MAVLink2 115200, compid 195
-  SERIAL3 ──── NEO-M8N GPS + compass mast
-  SERIAL4 ──── UNO Q mission computer     MAVLink2 115200, compid 191
-  SERIAL5 ──── TF-Luna rangefinder        serial, 115200
+  USB      UNO Q companion, MAVLink2
+  TELEM1   ESP32 obstacle ring, MAVLink2 115200, component 195
+  TELEM2   SiK 433 MHz radio
+  SERIAL3  NEO-M8N GPS and compass
+  SERIAL5  TF-Luna, 115200
 ```
 
-SERIAL4 and SERIAL5 share one 6-pin DF13 split cable; pin 1 (5 V) feeds the
-TF-Luna only. The UNO Q's `D0`/`D1` are STM32 `USART1` at 3.3 V, bridged to the
-Linux side by RPC.
+The ESP32 sends plain `OBSTACLE_DISTANCE` and `DISTANCE_SENSOR` messages, so
+ArduPilot's own avoidance reads them with nothing modified. The UNO Q commands
+the aircraft as component 191 using standard guided-mode messages.
 
-- The **ESP32** emits standard `OBSTACLE_DISTANCE` (6-sector ring) and
-  `DISTANCE_SENSOR` (upward), so ArduPilot's existing avoidance consumes them
-  unmodified. Full detail in `esp32_obstacle_avoidance/README.md`.
-- The **UNO Q** commands the aircraft with standard guided-mode messages as
-  component 191. Full detail in `uno_q/README.md`.
+Four of the six ring positions work. One never got a sensor, there is no room
+on that side of the frame. One has a sensor that has never answered. Both are
+marked absent in the firmware, which matters more than it sounds: while they
+were still marked present, the ESP32 retried them every five seconds and each
+retry blocked its main loop for about a second. That gap was long enough for
+ArduPilot to declare the proximity sensor dead and refuse to arm, on roughly a
+fifth of our attempts.
 
----
+## The model
 
-## 5. The detection model
+One class, `puddle`. Every source dataset gets collapsed to it. Multi-class
+sets keep only the water classes and everything else gets dropped, and an image
+that ends up with no boxes stays in as a negative, which is free hard-negative
+data.
 
-### 5.1 Task framing
+We deliberately do not keep `pool` or `water tank`. They really are breeding
+sites, but they are not things this aircraft should drop into, and teaching the
+model to find them would only mean writing code to ignore them later.
 
-Single class, `puddle`. Every source dataset is collapsed to that one class by
-`training/merge_datasets.py`. Multi-class sets keep only water-named classes;
-other boxes are dropped, and an image left with no boxes **stays in as a
-negative**, which is free hard-negative data.
+`yolo26n` at 640 px, trained on the RTX 3050. We tried `yolov8n` first. The
+attention models from v12 onward are too slow on an A53 CPU to be worth it, and
+cloud inference is not an option for a drone over a building site with no
+signal.
 
-Classes named `pool` or `water tank` are **deliberately not kept**. They are
-genuine breeding sites, but they are not drop targets for this aircraft, and
-learning them would produce confident detections the mission logic would then
-have to suppress. Not learning them is the better design.
+Two runs:
 
-### 5.2 Model choice
+| | Precision | Recall | mAP50 | mAP50-95 |
+|--|--|--|--|--|
+| Run 1, `yolov8n`, 11.7k images | 0.744 | 0.687 | 0.725 | 0.431 |
+| Run 2, `yolo26n`, 21.7k images | 0.795 | 0.708 | 0.766 | 0.467 |
 
-**`yolo26n`**, 640 px, trained on the RTX 3050 laptop.
+Both scored on the same v2 validation set, which is the only fair comparison.
+Run 2 wins on everything with fewer parameters. On the UNO Q it runs at roughly
+490 ms per frame, and the laptop and the board produce identical predictions on
+the same 24 images, down to the confidence value.
 
-| Candidate | Verdict |
-|-----------|---------|
-| `yolov8n` | Run-1 baseline. Superseded. |
-| **`yolo26n`** | **Adopted.** Better accuracy at similar size, roughly 2× faster CPU ONNX, and an **NMS-free export** that removes a postprocessing stage from the UNO Q's CPU. |
-| YOLO v12+ attention models | Rejected: too slow on an A53-class CPU for what they add |
-| Cloud inference | Rejected: see 5.5 |
+Training augmentation includes 180 degree rotation and vertical flip, because a
+photo taken straight down has no correct way up.
 
-Training augmentation includes `degrees=180` and `flipud=0.5`, because a nadir
-drone view has no canonical "up".
-
-### 5.3 Training data
-
-| Dataset | Train | Val |
-|---------|-------|-----|
-| v1 | 11,725 | 3,069 |
-| v2 (merged 2026-07-25) | ~21,700 | ~4,500 |
-
-Licences and full attribution in `03_dataset_citations.md`. All public sets are
-CC BY 4.0, which makes attribution a licence obligation.
-
-### 5.4 Results
-
-Run 1: dataset v1, `yolov8n` baseline, stopped around epoch 160 of 200 after
-plateauing.
-
-| Metric | Run 1 | v2 / `yolo26n` |
-|--------|-------|----------------|
-| Precision | 0.79 | TBD |
-| Recall | 0.72 | TBD |
-| mAP50 | 0.789 | TBD |
-| mAP50-95 | 0.474 | TBD |
-| UNO Q inference | not benchmarked | TBD |
-
-**Known failure modes**, found by inspecting run-1 predictions image by image
+Three failure modes, found by looking at run-1 predictions one image at a time
 rather than by reading the metrics:
 
-| Failure | Description | v2 response |
-|---------|-------------|-------------|
-| Sheet water | A thin film across a wide surface, with no puddle-like outline | First-party nadir photographs at survey height |
-| Glare | Specular sun on the water surface | Same, shot across times of day |
-| Close range | Frames where water fills most of the frame are unreliable | Handled in software: target latching, section 6 |
+- Sheet water, a thin film with no puddle-shaped outline. Answer: our own
+  photos taken from survey height.
+- Glare, where the sun bounces off the surface. Same answer, shot at different
+  times of day.
+- Close range, where the water fills most of the frame. That one changed the
+  architecture instead of the dataset.
 
-The close-range finding is the one that changed the architecture rather than
-the dataset.
+## Mission logic
 
-### 5.5 Why inference is onboard
+The parts worth knowing about, each of which exists because something went
+wrong or was going to.
 
-1. A drone over a construction site has **no dependable link**.
-2. Cloud round-trip latency does not fit a **descent decision loop**.
-3. The challenge is about **physical AI at the edge**; moving the model to a
-   datacentre answers a different question.
+**The target gets locked at altitude.** First detection from 15 m sets the
+coordinates and the aircraft stops looking after that. Close-range frames are
+exactly where the model is least reliable, so a design that kept re-detecting
+would hand steering to its worst input.
 
-The model runs on the aircraft or the project has failed.
+**Descents abort upward.** The rule separates the cases instead of treating
+every missing reading as a fault:
 
----
+| Situation | What it means | What happens |
+|--|--|--|
+| No reading, still high | Out of sensor range. Normal. | Keep descending |
+| No reading, below 6 m | Should be seeing ground | Abort upward |
+| Had a reading, lost it | Dropout | Abort upward |
+| EKF says below drop height, rangefinder never confirmed | The two disagree | Abort upward |
+| Good reading at drop height | Confirmed | Drop |
 
-## 6. Mission logic and safety
+A missed puddle costs nothing. A blind descent costs the aircraft.
 
-Implementation and state diagram in `uno_q/README.md`. Three behaviours are
-worth calling out here, because each exists in response to something that has
-already gone wrong or is known to be physically risky.
+**The pilot always wins.** Any mode change away from guided and the mission
+stands down and stops sending commands. It never fights the sticks.
 
-### 6.1 Target latching
+**Nothing waits forever.** Takeoff, each survey leg and each approach have
+timeouts. Guided position targets are not acknowledged by ArduPilot, so a
+refused destination looks exactly like one the aircraft is still flying to, and
+without a timeout the mission would sit there until the battery failsafe.
 
-Target coordinates are locked on **first detection at survey altitude**, and
-detections are ignored for the rest of the manoeuvre.
+**Detections outside the geofence are thrown away.** The camera sees about
+eight metres either side of the aircraft and the survey rows sit only four
+metres inside the boundary, so water at the edge of frame can be outside the
+fence entirely. Flying there would either be refused silently or trigger a
+fence breach and an RTL.
 
-The reason is the run-1 finding above: close-range frames are exactly where the
-model is least reliable. A re-detecting implementation would let the least
-trustworthy frames steer the aircraft. Latching means the **most informative
-view, the wide one from altitude, is the one that decides**.
+**Bad GPS means no latch.** Above 1.5 HDOP or below 8 satellites, detections
+are ignored. We measured the position wandering ten metres on a bad day, which
+is wider than the puddle.
 
-### 6.2 Descent aborts upward
+## Simulation
 
-The TF-Luna uses **850 nm infrared**, and still water at that wavelength
-behaves close to a mirror. Specular dropout over the exact thing being
-descended toward is **expected, not hypothetical**.
+`uno_q/sitl_test.py` runs two scenarios against ArduPilot SITL:
 
-A naive "no reading means abort" rule would abort every descent, because the
-sensor cannot see the ground from 15 m at all: **the first part of every
-descent is legitimately blind**. The implemented rule distinguishes the cases:
+| Scenario | Pass | Result |
+|--|--|--|
+| Nominal | One drop, survey finishes, RTL, no abort | Pass, dropped at 2.98 m |
+| Rangefinder dropout | Zero drops, aborts upward, survey still finishes | Pass |
 
-| Condition | Interpretation | Action |
-|-----------|----------------|--------|
-| No reading, above `rng_expect_m` | Normal. Out of sensor range. | Continue descent |
-| No reading, below `rng_expect_m` | Should see ground by now, does not | **Abort upward** |
-| Reading acquired, then lost | Dropout | **Abort upward** |
-| EKF below drop height, rangefinder never confirmed | Altitude sources disagree | **Abort upward** |
-| Valid reading ≤ `drop_alt_m` | Confirmed at drop height | Drop |
+## Where it stands
 
-A missed puddle costs nothing. A blind descent costs the aircraft. After two
-crashes caused by a corrupted altitude estimate (`02_crash_postmortems.md`), no
-single altitude source is allowed to act alone.
+Working: the airframe, the ring, the dashboard, parameter management, the
+detector on the board, the geofence, route generation from the fence shape, and
+the whole mission loop in simulation.
 
-### 6.3 The pilot always wins
+Not done: the full autonomous loop has not flown yet. We have had the aircraft
+armed and the mission commanded, but between GPS quality, a fence drawn too
+tight around the take-off spot and the proximity refusals above, we have not
+got a complete automatic flight on video.
 
-If the flight mode changes away from `GUIDED` for any reason, the mission code
-**stands down** and stops commanding the aircraft. It never fights the human on
-the sticks.
+The dose in grams per second is also unmeasured. The hopper bridges with fine
+salt, which turned out to be cohesion between hundred-micron grains rather than
+the hole being too small, so we changed the test material to mustard seed
+instead of enlarging the hole.
 
-### 6.4 Simulation evidence
+## Reproducing it
 
-`uno_q/sitl_test.py` runs two scripted scenarios against ArduPilot SITL with a
-simulated hexacopter and rangefinder:
-
-| Scenario | Pass criteria | Result 2026-07-26 |
-|----------|---------------|-------------------|
-| Nominal | Exactly one drop, survey completes, RTL, no abort | **PASS** (drop at rng 2.98 m) |
-| Rangefinder dropout | Zero drops, abort upward, survey still completes | **PASS** |
-
-This is the functionality evidence for the parts of the loop not yet flown.
-
----
-
-## 7. Base station mode
-
-After landing, the UNO Q stops being a mission computer and becomes a report
-server: a heatmap of detections over the survey area, the treated sites, and
-the image that triggered each drop. A survey then produces a municipal work
-product rather than just a flight, and repeated surveys are what turn
-"candidate" into "confirmed breeding site" per section 3.
-
-Status: **not implemented** (`PROJECT_STATE.md` TODO 13).
-
----
-
-## 8. What is not done
-
-| Item | State |
-|------|-------|
-| Airframe | Rebuild in progress after crash 3 |
-| **Vibration** | **The open blocker.** Median ~20.6 against a gate of 15. Until an unloaded hover clears the gate, no altitude-holding mode is trustworthy on this aircraft. |
-| ESP32 obstacle module | Compiles clean in both modes; **never flashed** |
-| Detect-descend-treat loop | Proven in simulation; not yet flown |
-| Base station | Not implemented |
-| Digital Sky registration | Parked; portal blocks self-registration. See `05`. |
-
-**Descope ladder**, in order, if time runs short:
-
-1. Loiter + onboard detection + drop → the minimum judgeable demonstration
-2. \+ base-station report
-3. \+ obstacle array
-4. \+ fully automatic guided descent
-
----
-
-## 9. Reproducibility
-
-The project is one git repository. Every decision is in a dated, author-tagged,
-append-only log in `PROJECT_STATE.md`, because two people on two machines built
-it.
+One git repository. Every decision is in a dated, author-tagged, append-only
+log in `PROJECT_STATE.md`, because two people on two machines built this.
 
 | Task | Command |
-|------|---------|
-| Merge datasets | `.venv/bin/python training/merge_datasets.py` |
-| Train | `.venv/bin/python training/train.py` (checkpoints per epoch, resumes from `last.pt`) |
-| Export ONNX | `.venv/bin/python training/export.py` |
-| Push Pixhawk params | `python tools/parameters.py push` (per-write ack) |
-| Dump Pixhawk params | `python tools/parameters.py pull` |
-| Mission tests | `.venv/bin/python uno_q/sitl_test.py` |
+|--|--|
+| Merge datasets | `./python training/merge_datasets.py` |
+| Train | `./python training/train.py` |
+| Export ONNX | `./python training/export.py` |
+| Push parameters | `./python tools/parameters.py push` |
+| Mission tests | `./python uno_q/sitl_test.py` |
 
-Ground-station **bulk parameter load is not used**: it was found to silently
-drop writes, which is why `tools/parameters.py` acknowledges every individual
-write. The mission code runs unchanged against the simulator and the aircraft;
-only the connection string differs.
-
----
-
-## 10. AI assistance
-
-Disclosed in full in `08_ai_authorship_disclosure.md`.
+We do not use bulk parameter load from a ground station. It drops writes
+silently. `tools/parameters.py` acknowledges every single write instead.
