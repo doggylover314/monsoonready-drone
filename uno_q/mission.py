@@ -133,8 +133,17 @@ class MissionConfig:
     # of samples above the 1.4 HDOP arming gate, which is larger than every
     # margin the drop relies on. A latch taken on a fix like that is a
     # confidently wrong drop, so detections are ignored until the fix is good.
-    hdop_max: float = 1.5
-    min_sats: int = 8
+    # TIGHTENED 2026-08-22 (user) to match the two rules this project already
+    # holds, because 1.5/8 was looser than both: the board's own
+    # GPS_HDOP_GOOD is 140, i.e. ArduPilot will not even ARM above HDOP 1.4
+    # (read from log 50's PARM records), and CRASH LESSONS has required 10+
+    # sats since C3. Latching on a fix the autopilot judges unfit to arm on
+    # was the inconsistency. COST, stated honestly: at log 50's spot-2 fix
+    # quality (55% of samples above 1.4) this ignores about half the
+    # detections; at log 48's spot-1 quality (HDOP 0.79-0.90) it ignores none.
+    # The site stays in the water and can be found again on a later pass.
+    hdop_max: float = 1.4
+    min_sats: int = 10
     # CROSS arrival: wp_radius_m is 1.5 m on a 3 m cross, so the gate could
     # open 1.4 m off centre (the kinematic harness measured exactly that) and
     # a 2 m puddle would be treated at the rim. Tighter, and only here.

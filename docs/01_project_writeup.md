@@ -2,13 +2,13 @@
 
 An F550 hexacopter that finds standing water after monsoon rain and drops
 granular Bti larvicide into it. The YOLO model runs on an Arduino UNO Q bolted
-to the aircraft, so it locates in the air. No ground station. No cloud.
+to the aircraft, so it locates while flying in the air. No ground station. No cloud.
 
-Arduino Physical AI Challenge India 2026. Built by Reyansh and Raghav.
+Arduino Physical AI Challenge India 2026. Built by Reyansh Sen and Raghav Sukhija.
 
 ## Why granules
 
-Aedes aegypti lays eggs in small pools: flat roofs, building sites, blocked
+Aedes aegypti, the mosquito responsible for dengue and malaria, lays eggs in small pools: flat roofs, building sites, blocked
 drains, tarpaulins, an old tank nobody emptied. Larvae are stuck in the water
 until they hatch, which makes them the easy thing to kill. Council crews
 already do this on foot. It is slow, and they only treat what they can walk to.
