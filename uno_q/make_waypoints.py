@@ -272,7 +272,7 @@ def main():
                     help="'auto' (default) = the Pixhawk's USB via "
                          "/dev/serial/by-id, or SITL tcp:...")
     ap.add_argument('--rows', type=int, default=3)
-    ap.add_argument('--spacing', type=float, default=5.0,
+    ap.add_argument('--spacing', type=float, default=12.0,
                     help='m between rows (camera covers ~16.7 m at 15 m alt)')
     ap.add_argument('--length', type=float, default=20.0, help='row length m')
     ap.add_argument('--heading', type=float, default=None,

@@ -477,11 +477,24 @@ class MavIO:
                 return True
         return False
 
-    def arm(self):
-        # Generous retries: covers EKF settle time after SITL boot.
-        self.command_ack(
+    def arm(self, retries=12, timeout=5.0):
+        """Arm, and RETURN WHETHER IT WORKED.
+
+        This used to swallow its own result and retry 60 times at 5 s, which
+        is five minutes of silence, and mission.run() called takeoff()
+        straight afterwards whether or not the aircraft had armed. On
+        2026-08-21 every arm attempt in the field was refused (HDOP, fence
+        breach, proximity) and the dashboard still reported a mission under
+        way, because nothing anywhere looked at this outcome.
+
+        The retry budget is still generous (default 12 x 5 s = a minute) since
+        prearm genuinely does settle after boot, but it now ENDS, and the
+        caller is expected to act on False. The reason itself is already in
+        tel.statustexts, put there by ArduPilot as "PreArm:"/"Arm:" text.
+        """
+        return self.command_ack(
             mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, p1=1,
-            timeout=5.0, retries=60, retry_failed=True)
+            timeout=timeout, retries=retries, retry_failed=True)
 
     def takeoff(self, alt_m):
         self.command_ack(mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, p7=alt_m)

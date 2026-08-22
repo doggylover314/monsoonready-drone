@@ -264,10 +264,26 @@ def main():
                           'basestation', 'dashboard.py')
         bs_cmd = [sys.executable, bs, '--data-dir', args.data_dir]
 
+    # THE SAME FENCE THE OPERATOR DREW AND PUSHED. The mission needs it to
+    # refuse detections outside the boundary (2026-08-22): the camera sees
+    # about 8 m either side of the aircraft while the rows sit only a few
+    # metres inside the polygon. An empty or missing fence.json disables the
+    # check rather than inventing a boundary, and that is logged either way so
+    # a flight can never quietly lose the protection.
+    import fence as fence_mod
+    poly = fence_mod.load()
+    if len(poly) >= 3:
+        log(f"[run] geofence loaded: {len(poly)} corners; detections outside "
+            f"it (or whose descent point is) will be ignored")
+    else:
+        log("[run] NO GEOFENCE FILE: detections will NOT be fence-checked. "
+            "Draw and save a fence on the dashboard to enable that check.")
+
     cfg = MissionConfig(waypoints=wps, survey_alt_m=args.survey_alt,
                         drop_alt_m=args.drop_alt,
                         lateral_offset_n_m=args.offset_n,
                         lateral_offset_e_m=args.offset_e,
+                        fence=poly,
                         basestation_cmd=bs_cmd)
 
     stop = {'why': None}

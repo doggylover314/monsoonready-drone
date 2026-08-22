@@ -2,7 +2,7 @@
 
 An **F550 hexacopter** that surveys for standing water after monsoon rain,
 detects it with a **YOLO model running onboard an Arduino UNO Q**, descends
-over the target on a **TF-Luna** rangefinder, and drops **granular larvicide**
+over the target on a **TF-Luna** rangefinder, and drops **granular Bti larvicide**
 into it. Detection, decision and action all happen on the aircraft; no ground
 station and no cloud are in the loop.
 
@@ -28,17 +28,16 @@ to: find the water, get above it, drop a measured dose.
 
 ## 2. The mission loop
 
-| Step | Actor | Action |
-|------|-------|--------|
-| 1 | Pixhawk | Fly survey pattern at survey altitude (`survey_alt_m`, default 15 m) |
-| 2 | UNO Q | Run detector on downward stills; **onboard**, no link required |
-| 3 | UNO Q | On detection, **latch** target lat/lon at survey altitude |
-| 4 | UNO Q → Pixhawk | Guided reposition over target, then descend on rangefinder |
-| 5 | UNO Q | At drop height, open the servo gate; granules fall |
-| 6 | UNO Q → Pixhawk | Climb to survey altitude, resume the pattern |
-| 7 | UNO Q | On landing, switch role to base station: heatmap and report |
 
-Demonstration flights dispense **inert salt**, not larvicide, so that no part
+1. Pixhawk | Fly survey pattern at survey altitude (`survey_alt_m`, default 15 m) |
+2. UNO Q | Run detector on downward stills; **onboard**, no link required |
+3. UNO Q | On detection, **latch** target lat/lon at survey altitude |
+4. UNO Q → Pixhawk | Guided reposition over target, then descend on rangefinder |
+5. UNO Q | At drop height, open the servo gate; granules fall |
+6. UNO Q → Pixhawk | Climb to survey altitude, resume the pattern |
+7. UNO Q | On landing, switch role to base station: heatmap and report |
+
+Demonstration flights dispense **inert mustard seeds**, not larvicide, so that no part
 of the demonstration is a pesticide application. See `05_compliance_narrative.md`.
 
 ---

@@ -356,7 +356,7 @@ def make_app(data_dir, control=None):
         b = request.get_json(silent=True) or {}
         try:
             rows = int(b.get('rows', 3))
-            spacing = float(b.get('spacing', 5))
+            spacing = float(b.get('spacing', 12))
             length = float(b.get('length', 20))
             inset = float(b.get('inset', 4))
             heading = b.get('heading')

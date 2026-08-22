@@ -31,12 +31,16 @@ Non-negotiable behaviors (PROJECT_STATE):
     condition having fired => abort (altitude sources disagree).
 """
 
+import math
 import socket
 import subprocess
 import time
 from dataclasses import dataclass, field
 
 from detector import offset_latlon, dist_m
+# Fence geometry has ONE home (CLAUDE.md): make_waypoints owns point-in-polygon
+# and point-to-edge distance because the route generator already needed them.
+from make_waypoints import _inside, _seg_dist
 
 
 def _port_in_use(port, host='127.0.0.1'):
@@ -107,6 +111,42 @@ class MissionConfig:
     # before giving up, which needs no detector change because the coordinates
     # are already held here.
     site_retries: int = 1
+    # THE GEOFENCE, as [(lat, lon), ...]. Empty = no fence known, and every
+    # check below is then skipped rather than guessed at. The camera swath at
+    # 15 m is 16.0 m wide, so it sees ~8 m either side of the aircraft while
+    # build_coverage puts the rows only inset_m inside the polygon: a puddle
+    # at the edge of frame on a boundary row is OUTSIDE the fence. Latching it
+    # ends the flight one of two ways, neither handled: ArduPilot refuses a
+    # GUIDED destination outside the fence and says nothing (position targets
+    # carry no ack), so APPROACH waits for an arrival that never comes; or the
+    # aircraft goes and breaches, FENCE_ACTION 1 commands RTL, and the mode
+    # change reads here as a pilot override and stands the mission down.
+    fence: list = field(default_factory=list)
+    fence_margin_m: float = 2.0    # every commanded point stays this far in
+    # ARRIVAL TIMEOUTS. Before 2026-08-22 only CROSS and RETURN could give up,
+    # so anything that stopped the aircraft arriving hung the mission until a
+    # battery failsafe, with the dashboard showing the state and no reason.
+    takeoff_timeout_s: float = 60.0
+    survey_leg_timeout_s: float = 120.0
+    approach_timeout_s: float = 90.0
+    # FIX QUALITY GATE. Log 50 measured the position wandering ~10 m with 55%
+    # of samples above the 1.4 HDOP arming gate, which is larger than every
+    # margin the drop relies on. A latch taken on a fix like that is a
+    # confidently wrong drop, so detections are ignored until the fix is good.
+    hdop_max: float = 1.5
+    min_sats: int = 8
+    # CROSS arrival: wp_radius_m is 1.5 m on a 3 m cross, so the gate could
+    # open 1.4 m off centre (the kinematic harness measured exactly that) and
+    # a 2 m puddle would be treated at the rim. Tighter, and only here.
+    cross_radius_m: float = 0.5
+    # Seconds of blind detector (dead worker, dead camera) tolerated while the
+    # camera still matters. The farm's failure was a survey flown blind to
+    # completion, landing with zero detections and nothing saying why.
+    detector_blind_s: float = 15.0
+    # Arm attempts before the mission gives up and says why. 12 x 5 s = about
+    # a minute, which covers EKF/GPS settling after boot without the five
+    # minutes of silence the old unbounded retry produced in the field.
+    arm_retries: int = 12
     end_mode: str = 'RTL'
     # argv to launch the base station after the mission ends (None = don't).
     # The onboard runner sets this; SITL tests leave it off.
@@ -120,7 +160,14 @@ class Mission:
     # aircraft, so end_mode still gets commanded. Kept distinct from DONE so
     # the log and the dashboard never show an interrupted flight as a
     # completed survey.
-    TERMINAL = ('DONE', 'STANDDOWN', 'STOPPED')
+    # NOARM = the autopilot refused to arm and we never left the ground.
+    # Terminal like the rest, and like STANDDOWN it is deliberately NOT in the
+    # end_mode list below: commanding RTL to a disarmed aircraft achieves
+    # nothing and would put a misleading mode change in the log.
+    # ABORTED = an airborne failure the mission cannot fly through (takeoff
+    # never reached altitude, detector went blind). It DOES command end_mode,
+    # because the aircraft is in the air and RTL is the safe place for it.
+    TERMINAL = ('DONE', 'STANDDOWN', 'STOPPED', 'NOARM', 'ABORTED')
 
     def __init__(self, io, detector, dropper, cfg, log=print, recorder=None,
                  should_stop=None):
@@ -146,6 +193,7 @@ class Mission:
         self._drop_rel_alt = None
         self._t_state = 0.0        # time of last state entry
         self._rng_acquired = False # ground return seen during current descent
+        self._last_fix_gripe = None # so a poor fix is logged once, not per tick
         self._t_dropped = None     # monotonic time the gate finished cycling
         self._drop_ok = True       # did the last gate actuation report success
         # The pilot-override test may only fire once GUIDED has actually
@@ -199,11 +247,50 @@ class Mission:
         return (tel.rng_valid
                 and time.monotonic() - tel.rng_t < self.cfg.rng_timeout_s)
 
-    def _at_wp(self, lat, lon, alt=None):
+    def _inside_fence(self, lat, lon, margin=None):
+        """Is this point at least `margin` metres inside the geofence?
+
+        The geometry is imported from make_waypoints rather than rewritten,
+        so the route generator and the mission agree by construction about
+        what "inside" means. No fence configured = True: this must never
+        invent a boundary the operator did not draw.
+        """
+        poly = self.cfg.fence
+        if not poly or len(poly) < 3:
+            return True
+        margin = self.cfg.fence_margin_m if margin is None else margin
+        lat0, lon0 = poly[0]
+        mlat = 111320.0
+        mlon = mlat * math.cos(math.radians(lat0))
+        if abs(mlon) < 1.0:
+            return True
+        pts = [((a - lat0) * mlat, (b - lon0) * mlon) for a, b in poly]
+        p = ((lat - lat0) * mlat, (lon - lon0) * mlon)
+        if not _inside(p[0], p[1], pts):
+            return False
+        return all(_seg_dist(p[0], p[1], *pts[i], *pts[(i + 1) % len(pts)])
+                   >= margin for i in range(len(pts)))
+
+    def _gps_ok(self):
+        """Is the fix good enough to trust a latch or a drop position?
+
+        Returns (ok, why). Missing HDOP or sat count is treated as OK: those
+        fields arrive with GPS_RAW_INT and an old autopilot stream that does
+        not send it must not silently disable the survey.
+        """
+        tel, cfg = self.io.tel, self.cfg
+        if tel.hdop is not None and tel.hdop > cfg.hdop_max:
+            return False, f'HDOP {tel.hdop:.2f} > {cfg.hdop_max:g}'
+        if tel.sats is not None and tel.sats < cfg.min_sats:
+            return False, f'{tel.sats} sats < {cfg.min_sats}'
+        return True, ''
+
+    def _at_wp(self, lat, lon, alt=None, radius=None):
         tel = self.io.tel
         if tel.lat is None:
             return False
-        if dist_m(tel.lat, tel.lon, lat, lon) > self.cfg.wp_radius_m:
+        radius = self.cfg.wp_radius_m if radius is None else radius
+        if dist_m(tel.lat, tel.lon, lat, lon) > radius:
             return False
         if alt is not None and abs(tel.rel_alt_m - alt) > self.cfg.alt_tol_m:
             return False
@@ -220,9 +307,20 @@ class Mission:
         else:
             self.log("[mission] GUIDED was accepted but never confirmed by a "
                      "heartbeat; the override check stays disarmed until it is")
-        io.arm()
-        io.takeoff(cfg.survey_alt_m)
-        self._set('TAKEOFF')
+        # ARM IS A QUESTION, NOT AN ANNOUNCEMENT (2026-08-21 field day). Every
+        # arm attempt that day was refused and the dashboard still said the
+        # mission was under way, because this line used to be a bare io.arm()
+        # whose result nobody read, followed unconditionally by takeoff() to a
+        # disarmed aircraft. A mission that cannot arm must END, and must say
+        # the autopilot's own reason, which is already in the statustexts.
+        arm_t = time.monotonic()
+        if not io.arm(retries=cfg.arm_retries):
+            why = io.tel.prearm_messages(since_t=arm_t - 5.0)
+            self._set('NOARM', '; '.join(why) if why
+                      else 'the autopilot refused to arm and gave no reason')
+        else:
+            io.takeoff(cfg.survey_alt_m)
+            self._set('TAKEOFF')
 
         while self.state not in self.TERMINAL:
             io.step()
@@ -242,6 +340,21 @@ class Mission:
                 self._set('STANDDOWN', f"mode={tel.mode}, pilot has aircraft")
                 break
 
+            # BLIND DETECTOR. Only while the camera still matters: once
+            # DESCEND starts the target is latched and the rangefinder governs
+            # the rest, so going blind there must not abort a committed
+            # descent. The farm's failure was the camera dying after preflight
+            # passed and the aircraft flying the whole survey seeing nothing,
+            # landing with "0 detections" and no reason recorded anywhere.
+            blind = self.det.blind_for_s() if hasattr(self.det, 'blind_for_s') \
+                else 0.0
+            if (self.state in ('TAKEOFF', 'SURVEY', 'APPROACH')
+                    and blind > self.cfg.detector_blind_s):
+                self._set('ABORTED',
+                          f"detector blind for {blind:.0f}s (worker or camera "
+                          f"dead); ending rather than flying a blind survey")
+                break
+
             # Runner asked us to wind up (signal / lost console). Checked
             # AFTER the pilot test and BEFORE the state handler so we never
             # start a new descent on the way out.
@@ -253,7 +366,7 @@ class Mission:
 
             getattr(self, '_st_' + self.state.lower())()
 
-        if self.state in ('DONE', 'STOPPED'):
+        if self.state in ('DONE', 'STOPPED', 'ABORTED'):
             confirmed = io.set_mode(cfg.end_mode)
             self.log(f"[mission] {self.state.lower()}, {cfg.end_mode} "
                      + ("confirmed" if confirmed
@@ -296,6 +409,15 @@ class Mission:
         if (tel.rel_alt_m is not None
                 and tel.rel_alt_m >= self.cfg.survey_alt_m - self.cfg.alt_tol_m):
             self._goto_current_wp()
+            return
+        if self._elapsed() >= self.cfg.takeoff_timeout_s:
+            # Airborne or not, this ends here. ABORTED commands end_mode, so a
+            # partial climb is handed to RTL rather than left hovering while
+            # the dashboard shows TAKEOFF and nothing moves.
+            self._set('ABORTED',
+                      f"never reached {self.cfg.survey_alt_m:g} m in "
+                      f"{self.cfg.takeoff_timeout_s:.0f}s "
+                      f"(at {tel.rel_alt_m if tel.rel_alt_m is None else round(tel.rel_alt_m, 1)} m)")
 
     def _goto_current_wp(self):
         if self.wp_i >= len(self.cfg.waypoints):
@@ -323,6 +445,38 @@ class Mission:
     def _st_survey(self):
         det = self.det.poll(self.io.tel)
         if det is not None:
+            # A LATCH IS ONLY AS GOOD AS THE FIX IT WAS TAKEN ON. Log 50
+            # measured ~10 m of wander, larger than the puddle. Skip the
+            # detection rather than fly to a coordinate that means nothing;
+            # the site stays in the water and can be found again on a later
+            # pass with a better fix.
+            ok, why = self._gps_ok()
+            if not ok:
+                if why != self._last_fix_gripe:
+                    self.log(f"[mission] detection IGNORED, fix is poor: {why}")
+                    self._last_fix_gripe = why
+                det = None
+            else:
+                self._last_fix_gripe = None
+        if det is not None:
+            # OUTSIDE THE FENCE IS NOT A TARGET. The swath reaches ~8 m either
+            # side while the rows sit only a few metres inside the polygon, so
+            # edge-of-frame water can be beyond the boundary. Both the water
+            # AND the offset descent point are checked, because the descent
+            # point is where the aircraft is actually commanded first.
+            beside = offset_latlon(det.lat, det.lon,
+                                   self.cfg.lateral_offset_n_m,
+                                   self.cfg.lateral_offset_e_m)
+            if not (self._inside_fence(det.lat, det.lon)
+                    and self._inside_fence(*beside)):
+                self.log(f"[mission] detection at {det.lat:.7f},{det.lon:.7f} "
+                         f"IGNORED: it or its descent point is outside the "
+                         f"geofence (margin {self.cfg.fence_margin_m:g} m). "
+                         f"Flying there would either be silently refused or "
+                         f"breach the fence and trigger RTL.")
+                self.rec.detection(det.lat, det.lon, det.confidence)
+                det = None
+        if det is not None:
             # TARGET LATCH: lock now, at survey altitude; ignore later detections.
             self.rec.detection(det.lat, det.lon, det.confidence)
             self.puddle = (det.lat, det.lon)
@@ -340,11 +494,31 @@ class Mission:
         if self._at_wp(lat, lon):
             self.wp_i += 1
             self._goto_current_wp()
+            return
+        if self._elapsed() >= self.cfg.survey_leg_timeout_s:
+            # Give up on THIS leg, not on the flight: wind, avoidance holding
+            # us at a margin, or an unreachable waypoint should cost one row,
+            # not the pack. Skipping is logged so the gap is never silent.
+            self.log(f"[mission] waypoint {self.wp_i} not reached in "
+                     f"{self.cfg.survey_leg_timeout_s:.0f}s, skipping it")
+            self.wp_i += 1
+            self._goto_current_wp()
 
     def _st_approach(self):
         if self._at_wp(*self.target, alt=self.cfg.survey_alt_m):
             self._rng_acquired = False
             self._set('DESCEND')
+            return
+        if self._elapsed() >= self.cfg.approach_timeout_s:
+            # The classic silent hang: SET_POSITION_TARGET_GLOBAL_INT carries
+            # no ack, so a destination the autopilot refused looks exactly
+            # like one it is still flying to. Drop the site and survey on.
+            self.log(f"[mission] APPROACH timed out after "
+                     f"{self.cfg.approach_timeout_s:.0f}s; the destination may "
+                     f"have been refused (position targets are not acked). "
+                     f"Abandoning this site and resuming the survey.")
+            self.target = self.puddle = None
+            self._goto_current_wp()
 
     def _st_descend(self):
         cfg, tel = self.cfg, self.io.tel
@@ -405,7 +579,8 @@ class Mission:
         treating that as a fault is exactly the abort that used to end the
         flight with zero drops.
         """
-        if self._at_wp(*self.puddle, alt=self._drop_rel_alt):
+        if self._at_wp(*self.puddle, alt=self._drop_rel_alt,
+                       radius=self.cfg.cross_radius_m):
             self.io.velocity_ned(0, 0, 0, force=True)
             self._t_dropped = None
             self._set('DROP', 'over the water, stopping before release')

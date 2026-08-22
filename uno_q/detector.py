@@ -56,6 +56,17 @@ class DetectionSource:
         """Called every tick while in SURVEY. Return Detection or None."""
         raise NotImplementedError
 
+    def blind_for_s(self):
+        """Seconds this source has been unable to see anything at all.
+
+        0.0 means healthy. This exists because None from poll() is ambiguous:
+        it means BOTH "no puddle here" and "I have no eyes", and the mission
+        cannot tell a clean survey from a blind one without asking. Sources
+        that cannot go blind (a scripted FakeDetector) inherit this and always
+        report 0.0.
+        """
+        return 0.0
+
 
 class _RowResolver(DetectionSource):
     """Shared 'model rows -> Detection' logic for OnnxDetector (in-process
@@ -396,6 +407,7 @@ class FileDetector(_RowResolver):
         self._last_mtime = None
         self._stale_warned = False
         self._cam_warned = False
+        self._blind_since = None
 
     def _read(self):
         """Latest worker payload if it is new since last read, else None.
@@ -455,6 +467,14 @@ class FileDetector(_RowResolver):
                  f"{self.path} within 30s (is detect_worker.py running?)")
         return False
 
+    def blind_for_s(self):
+        """How long the worker's output has been stale. A dead worker, a
+        dead camera or a full disk all end up here, because all three stop
+        the file being rewritten."""
+        if self._blind_since is None:
+            return 0.0
+        return time.monotonic() - self._blind_since
+
     def _snap_for(self, t_frame):
         """History snapshot nearest the frame's capture time."""
         if not self._hist:
@@ -470,6 +490,12 @@ class FileDetector(_RowResolver):
             self._hist.append(_TelSnap(tel))
 
         payload, stale = self._read()
+        # Blindness is a DURATION, not an event: the mission decides how long
+        # is too long, this only records when it started.
+        if stale and self._blind_since is None:
+            self._blind_since = time.monotonic()
+        elif not stale:
+            self._blind_since = None
         if stale:
             if not self._stale_warned:
                 self.log(f"[detector] worker output stale >"
