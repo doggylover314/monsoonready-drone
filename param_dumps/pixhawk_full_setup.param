@@ -151,6 +151,48 @@ AVOID_ACCEL_MAX,3
 AVOID_BACKUP_SPD,0.75
 AVOID_BACKUP_DZ,0.1
 
+# --- THE RING DID NOT PROTECT THE SURVEY. Added 2026-08-22 (user: "the ring
+#     has to work at all times"). READ FROM ArduCopter 4.7 SOURCE, not memory:
+#
+#   ArduCopter/mode_guided.cpp has exactly ONE avoidance call, line 850,
+#   inside velaccel_control_run(). That is the VELOCITY-target path, which
+#   mission.py uses only for the descent (io.velocity_ned). Survey rows and
+#   the approach send POSITION targets (io.goto -> SET_POSITION_TARGET_
+#   GLOBAL_INT), and those land in pos_control_run() at line 735, which has
+#   no avoidance of any kind. So with AVOID_ENABLE 7 alone, the ring braked
+#   the aircraft during the descent and did nothing for the whole survey.
+#
+#   THE FIX IS TWO PARAMETERS, and it needs both or it does nothing:
+#   (1) GUID_OPTIONS bit 6 sends guided POSITION targets through wp_nav
+#       instead of straight to the position controller (mode_guided.cpp:670
+#       use_wpnav_for_position_control -> Option::WPNavUsedForPosControl).
+#   (2) Copter's wp_nav IS an AC_WPNav_OA (system.cpp:467), so once position
+#       targets go through it, OA_TYPE turns on path planning. BendyRuler
+#       reads the OA database, which AP_Proximity_Backend.cpp:144 feeds from
+#       the ring. OA_TYPE 0 = the planner object is never even allocated
+#       (AP_OAPathPlanner::init switches on _type), hence the reboot.
+#
+#   TWO DIFFERENT MECHANISMS NOW COVER THE FLIGHT, and that is fine but it
+#   should be said out loud: simple avoidance (AVOID_ENABLE) brakes on the
+#   descent's velocity targets, BendyRuler bends the path on the survey's
+#   position targets. wp_control_run() has no simple-avoidance call either,
+#   so the two never overlap.
+#
+#   UNTESTED AS OF 2026-08-22. Not flown, not simulated. Revert is one write
+#   of OA_TYPE,0 which restores exactly the previous behaviour.
+GUID_OPTIONS,64           # bit 6 = wpnav used for guided position targets
+OA_TYPE,1                 # 1 = BendyRuler (0 disabled, 2 Dijkstra, 3 both)
+# MARGIN_MAX default is 5 m and the ring's usable range is ~2 m (ESP32
+# RANGE_MAX_CM 200). A planner told to hold 5 m clear of obstacles it cannot
+# see past 2 m only reacts once the obstacle is already inside its margin, so
+# it bends hard and late. 2 m matches what the sensor can actually deliver.
+OA_MARGIN_MAX,2
+# LOOKAHEAD default 15 m assumes a scanning lidar. Planning 15 m ahead on 2 m
+# of vision invents obstacle-free space it has no evidence for. 5 m is a
+# judgement call, not a measurement: it is the first number to revisit if
+# SITL shows the aircraft wandering off the rows.
+OA_BR_LOOKAHEAD,5
+
 # --- Dropper servo: MG90 on AUX OUT 1 = output channel 9 (MAIN1-8 are
 #     SERVO1-8, AUX1-6 are SERVO9-14; user wired it to AUX1 on 2026-08-02,
 #     superseding the provisional AUX6/ch14 assignment). FUNCTION 0 frees the

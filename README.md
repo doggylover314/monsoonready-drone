@@ -2,7 +2,7 @@
 
 An F550 hexacopter that finds standing water after monsoon rain and drops
 granular Bti larvicide into it. The YOLO model runs on an Arduino UNO Q bolted
-to the aircraft, so it decides in the air. No ground station. No cloud.
+to the aircraft, so it locates in the air. No ground station. No cloud.
 
 Arduino Physical AI Challenge India 2026. Built by Reyansh and Raghav.
 
@@ -39,20 +39,16 @@ refusals took the second.
 
 ## The hardware, briefly
 
-- F550 hexacopter. Pixhawk 2.4.8 running ArduCopter 4.7.0, NEO-M8N GPS and
-  compass on a mast.
-- Arduino UNO Q as the companion computer, talking to the Pixhawk over USB.
-  Camera stills go through ONNX, the mission logic decides, and it commands
-  the aircraft in guided mode.
-- TF-Luna rangefinder pointing down. Every descent is gated on it, and losing
-  the return aborts the descent upward.
+- F550 hexacopter. Pixhawk 2.4.8 on ArduCopter 4.7.0, NEO-M8N GPS on a mast.
+- Arduino UNO Q as companion computer, on the Pixhawk's USB. Camera stills go
+  through ONNX and it commands the aircraft in guided mode.
+- TF-Luna pointing down. Every descent is gated on it, and losing the return
+  aborts upward.
 - An ESP32 on TELEM1 reads a ring of VL53L0X sensors and sends the Pixhawk
-  standard `OBSTACLE_DISTANCE` messages. Four of the six ring positions work,
-  plus the upward one. One position never got a sensor because the frame has no
-  room on that side, and one sensor has never answered. Both are marked absent
-  in firmware, which is what stopped the arming failures.
-- SiK 433 MHz radio on TELEM2 for ground monitoring.
-- MG90 metal-gear servo on a gate at the bottom of the hopper.
+  standard `OBSTACLE_DISTANCE`. Four of the six ring positions work, plus the
+  upward one. One never got a sensor, the frame has no room, and one has never
+  answered. Marking both absent in firmware is what stopped the arming failures.
+- SiK 433 MHz on TELEM2. MG90 metal-gear servo on the hopper gate.
 
 ## Running it
 

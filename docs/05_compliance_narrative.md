@@ -1,40 +1,35 @@
 # Where this sits legally, in India
 
-> Not legal advice. This is the project's own position. Indian drone rules have
+> Not legal advice, just the project's own position. Indian drone rules have
 > changed repeatedly since 2021 and the assistant that drafted this has
-> knowledge running to May 2026, so anything below could already be out of
-> date. Every claim carries a confidence level. The low-confidence ones need
-> checking against current DGCA and Ministry of Civil Aviation text before
-> anyone relies on them. A judge from Arduino, Qualcomm or Robu.in may well
-> know the current rules better than this document does.
+> knowledge running to May 2026, so some of it could be out of date. Every claim
+> carries a confidence level and the low-confidence ones need checking against
+> current DGCA and Ministry of Civil Aviation text. A judge from Arduino,
+> Qualcomm or Robu.in may know the current rules better than this document.
 
 ## The position
 
 MonsoonReady is a student prototype. It has flown only in controlled test
-conditions, and demonstration flights drop inert mustard seed, so no pesticide
-is applied at any point in this project.
-
-Digital Sky registration has not been completed. That is written here as an
-open gap rather than dressed up as compliance. What a deployed version would
-need is further down.
+conditions and demonstration flights drop inert mustard seed, so no pesticide is
+applied at any point. Digital Sky registration has not been completed, and that
+is written here as an open gap rather than dressed up as compliance.
 
 ## Rules as we understand them
 
 | Claim | Confidence | Detail |
 |--|--|--|
-| Weight categories | Reasonably high, verify | Under the Drone Rules 2021, unmanned aircraft are categorised by all-up weight. Nano up to 250 g, Micro above 250 g to 2 kg, Small above 2 kg to 25 kg, larger categories above that. |
-| Our category | Reasonably high | An F550 with payload is over 2 kg, so Small. Meaningfully more regulated than Micro, which is the part that matters here. |
-| Registration route | High that it exists, lower on detail | Registration and a unique identification number come through the Digital Sky platform |
+| Weight categories | Reasonably high, verify | Under the Drone Rules 2021, aircraft are categorised by all-up weight: Nano to 250 g, Micro 250 g to 2 kg, Small 2 kg to 25 kg, larger above. |
+| Our category | Reasonably high | An F550 with payload is over 2 kg, so Small. Meaningfully more regulated than Micro. |
+| Registration route | High that it exists, lower on detail | Registration and a unique identification number through Digital Sky |
 | Airspace | High that it exists, lower on detail | Green, yellow and red zones on the airspace map |
-| Pilot certification | High that it exists, lower on detail | Remote pilot certification through DGCA-approved training organisations, requirements varying by category |
-| Aerial larvicide application | Low. Needs primary sources. | There is a standard operating procedure for drone-based pesticide application on the agriculture side of government, and pesticide registration runs through the CIB&RC under the Insecticides Act 1968. Whether public-health larviciding by drone is treated differently from agricultural spraying is not established here. |
+| Pilot certification | High that it exists, lower on detail | Through DGCA-approved training organisations, requirements varying by category |
+| Aerial larvicide application | Low. Needs primary sources. | A standard operating procedure exists for drone-based pesticide application on the agriculture side, and pesticide registration runs through the CIB&RC under the Insecticides Act 1968. Whether public-health larviciding by drone is treated differently is not established here. |
 
 ## The gaps
 
 **Digital Sky registration is not done.** Self-registration was blocked by the
 portal for this class of build and two students found no route through it. No
-exemption is claimed and no blame is placed on the portal. It simply could not
-be completed.
+exemption is claimed and no blame is placed on the portal.
 
 **Neither of us holds a remote pilot certificate.**
 
@@ -50,8 +45,7 @@ covers the documentation and says nothing about regulatory status.
 
 1. Aircraft registration and a unique identification number.
 2. Remote pilot certification for whoever is flying.
-3. Operation inside permitted airspace, with authorisation where that is
-   required.
+3. Operation inside permitted airspace, with authorisation where required.
 4. Confirmation that the larvicide is registered for the intended use, and
    compliance with whatever aerial-application procedure applies.
 5. Coordination with the municipal body responsible for vector control.
@@ -64,18 +58,15 @@ vector-control programme.
 
 ## Why demonstrations drop seed
 
-Granular Bti kills mosquito, blackfly and midge larvae, and it is used widely
-in public health work. Dropping it in a demo would turn a student flight test
-into a pesticide application, under a body of law this project is neither
-qualified for nor licensed under.
-
-So the hopper carries mustard seed instead. This was decided early, not
+Granular Bti kills mosquito, blackfly and midge larvae and is used widely in
+public health work. Dropping it in a demo would turn a student flight test into
+a pesticide application, under a body of law this project is neither qualified
+for nor licensed under. So the hopper carries mustard seed. Decided early, not
 discovered late.
 
-One honest correction: the original plan used fine salt, chosen because it was
-supposed to match Bti granules for flow. It did not. Salt bridged in the hopper
-and stopped flowing altogether, which turned out to be cohesion between
+One correction worth keeping. The original plan used fine salt, chosen because
+it was supposed to match Bti granules for flow. It did not. Salt bridged in the
+hopper and stopped flowing, which turned out to be cohesion between
 hundred-micron grains rather than the hole being too small. Mustard seed at
-roughly 1 mm is the closer match to VectoBac G's corn-cob granule anyway. Every
-flow number this project has measured belongs to mustard seed and to nothing
-else.
+about 1 mm is the closer match to VectoBac G's corn-cob granule anyway, and
+every flow number this project has measured belongs to mustard seed.

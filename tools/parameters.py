@@ -48,6 +48,10 @@ NEEDS_REBOOT = {
     'BATT_CURR_PIN': 'analog pin assignment is read once at startup',
     'BATT_VOLT_PIN': 'analog pin assignment is read once at startup',
     'PRX1_TYPE': 'proximity driver is instantiated at startup',
+    'OA_TYPE': 'AP_OAPathPlanner::init switches on the type and allocates the '
+               'BendyRuler object once at startup. Written live, the planner '
+               'stays a null pointer and the aircraft flies with no path '
+               'planning at all, silently',
     'RNGFND1_TYPE': 'rangefinder driver is instantiated at startup',
     'RNGFND2_TYPE': 'rangefinder driver is instantiated at startup',
     'SERIAL1_PROTOCOL': 'serial port protocol is bound at startup',
