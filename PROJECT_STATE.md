@@ -1968,3 +1968,21 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - **STILL NOT SEEN RENDERED BY THE ASSISTANT** (no renderer here, browser
   preview blocked by the sandbox). The user is the only one who can confirm it
   looks right, same standing caveat as `docs/block_diagram.svg`.
+
+### 2026-08-23 ~20:45 IST: HAND-GENERATED CIRCUIT SCHEMATIC DELETED
+
+- User: the redrawn SVG was better but still had small errors, and the diagram
+  is being remade in Claude design instead. `docs/circuit_schematic.svg` is
+  DELETED from the repo (recoverable from history at commit 5538645; the
+  generator only ever lived in the session scratchpad and is gone with it).
+- The specific errors were NOT named, so they are not recorded and not fixed.
+  If the hand-drawn route is ever revived, that list has to be asked for again.
+- `docs/block_diagram.svg` is NOT deleted. It is a block diagram, not a circuit
+  diagram, it is the file `docs/README.md` points at, and it is the image the
+  report still needs. Deleting it was not asked for.
+- OPEN AND UNVERIFIED, carried over: the USB topology. The deleted schematic
+  drew the Pixhawk on the UNO Q's own port with only the camera on the hub; an
+  earlier note (scratchpad mkcircuit.py) said the hub carries the Pixhawk AND
+  the camera. Nobody has confirmed which is physically true. Whatever comes out
+  of Claude design inherits this error unless the user checks the actual USB
+  plugs.
