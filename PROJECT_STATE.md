@@ -2219,3 +2219,38 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - NOT TESTED AGAINST A REAL PIXHAWK. The link open path (`MavIO.wait_ready`,
   `setup_streams`) has only been exercised against a nonexistent port here.
   First real proof will be the board.
+
+### 2026-08-23 ~22:35 IST: DRY RUN OVER A PUDDLE, NO DETECTION. WHAT IT CAN AND CANNOT MEAN
+
+- User held the aircraft over a puddle and pressed DRY RUN. Nothing detected.
+  Read the code before guessing; three candidate causes, one decisive test.
+- RULED OUT, the detector really was running: `run_mission.py:143` spawns
+  `detect_worker.py` BEFORE the dry-run branch, and `detector.preflight()` at
+  line 148 refuses to continue unless the worker publishes within 30 s. A dry
+  run that got as far as "DRY RUN: not arming" had live inference behind it.
+- RULED OUT, the geofence: the fence is not even loaded until after the
+  dry-run branch returns (`run_mission.py:194`). A dry run is never
+  fence-checked, so the fence cannot be what suppressed it.
+- RULED OUT, the treated-site dedup: `_RowResolver._fired` is per-process and a
+  dry run is a fresh process, so `skip_radius_m` had nothing to skip against.
+- **PRIME SUSPECT: NO GPS FIX.** `run_mission.py:158` calls
+  `detector.poll(io.tel)`, and every detector returns None immediately when
+  `tel.lat is None`, because a detection has to be attached to a ground
+  position. Under trees, at night, held by hand, no fix is entirely plausible.
+  run_mission already says so in as many words if it happens: "no GPS fix
+  arrived, so the detector was never polled ... the dry run proved nothing
+  beyond the link and the camera."
+- SECOND SUSPECT: scale, the opposite of the 2026-08-23 flight problem. At
+  hand height (~1.2 m) the frame is about 1.3 m across, so a puddle FILLS it.
+  The model was trained on aerial views where a puddle is an object inside a
+  scene; an edge-to-edge sheet of water has no context and is a genuinely
+  different input. Detection worked at 1.9 m (conf 0.63, 346 px) but that is
+  not the same as detection at arm's length.
+- **DECISIVE TEST, and it is a comparison not a single reading:**
+  `detect_worker.log` records what the MODEL produced, independent of
+  telemetry; `run_mission.log` records what survived the GPS gate. Boxes in the
+  worker log with nothing in the mission log means the GPS gate. Nothing in
+  either means the model did not fire, and then altitude is the variable, not
+  confidence.
+- NOT YET KNOWN. This entry records the analysis, not a conclusion. The logs
+  are on the board and the assistant does not touch the board.
