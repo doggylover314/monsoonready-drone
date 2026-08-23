@@ -155,5 +155,16 @@ The aircraft refuses a step: whoever is not filming says what it should have
 done, C keeps rolling, land it, say plainly that it will be retried. Decide on
 the ground whether this take stands.
 
+The battery failsafe interrupts the mission: the aircraft breaks off, climbs to
+15 metres and flies home by itself. Let it. Do not switch out of RTL, because
+taking manual control on camera makes a working safeguard look like a fault. It
+fired inside two minutes on the last flight, so this is the likeliest
+interruption today. C keeps the aircraft in frame through the landing while R
+names it as it happens.
+
+**R, if it fires:** "That's the battery failsafe. It's set to break off the
+survey and bring the aircraft home on its own, and that's what it's doing now.
+We'll fly the rest of the run once the pack is charged."
+
 Never fake a result on camera. Judges who catch an overclaim stop believing the
 rest of it, and a limitation you state yourself costs you nothing.

@@ -1683,3 +1683,9 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - STAGE DIRECTIONS REWRITTEN TO MATCH. Whoever speaks is no longer assumed to be the one filming; each block now says who holds the camera and who handles the hardware.
 - **TIMINGS SHIFTED** by the new block: assembly 2:15 -> 2:30, AI 3:00 -> 3:15. Flight still 4:00 and result still 6:30.
 - RHYTHM: score 11 -> 10, burstiness 0.70, em-dashes 0, tricolons 0. Repeated openers read 0.60, high, but the metric counts dialogue lines that legitimately open with "It's" and "That's"; it was not chased further.
+
+### 2026-08-23 ~16:10 IST: battery-failsafe recovery added to VIDEO_SCRIPT
+- USER APPROVED the gap flagged one reply earlier. "Recovering mid-take" now covers a battery failsafe interrupting an autonomous run, with a line for R to say while it happens.
+- **THE INSTRUCTION IS TO LET IT RUN, and that is deliberate.** Switching out of RTL on camera turns a working safeguard into something that looks like a fault, and the pilot override is exactly what happened on log 59 at t=122.7 (`MODE -> STABILIZE Rsn=1 RC_COMMAND`, six seconds into the failsafe RTL). C keeps filming through the landing.
+- THE SPOKEN LINE SAYS "once the pack is charged", NOT a fresh pack. There is one battery and no spare, and a script that implies a second one on camera contradicts the BOM.
+- BALANCE UNAFFECTED: the contingency line is excluded from the 49/51 count because it is only spoken if the failsafe fires. Planned-take totals are unchanged at R 249 / C 264.
