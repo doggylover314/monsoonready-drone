@@ -143,7 +143,11 @@ PRX1_YAW_CORR,0
 # WP_SPD 3. Cruise is at 15 m AGL, above the obstacle field; the ring earns
 # its keep in the slow low phases (descent 0.5 m/s, short cross legs).
 # Ring-protected CRUISE needs WP_SPD <= 2: TRADE MADE 2026-08-18, WP_SPD,2.
-AVOID_ENABLE,7            # 7 = proximity ring steers again (user 2026-08-18)
+AVOID_ENABLE,0            # 0 = ring steers NOTHING (2026-08-23, log 55: the
+                          # ring reports phantom obstacles at 0.3-0.8 m in open
+                          # air and simple avoidance was fighting the pilot in
+                          # LOITER. Was 7 from 2026-08-18. See the OA block
+                          # below for the evidence; same root cause.
 AVOID_MARGIN,1            # m stand-off in GPS modes; sensor max is ~1.2-2 m
 AVOID_BEHAVE,0            # 0 = slide
 AVOID_DIST_MAX,1.5        # m, non-GPS modes; must be < reliable sensor range
@@ -180,8 +184,38 @@ AVOID_BACKUP_DZ,0.1
 #
 #   UNTESTED AS OF 2026-08-22. Not flown, not simulated. Revert is one write
 #   of OA_TYPE,0 which restores exactly the previous behaviour.
-GUID_OPTIONS,64           # bit 6 = wpnav used for guided position targets
-OA_TYPE,1                 # 1 = BendyRuler (0 disabled, 2 Dijkstra, 3 both)
+# ================== ALL THREE REVERTED 2026-08-23, FLOWN AND FAILED ==========
+# Log 55 killed this. OABR shows Act=1 on EVERY record through a 53-second RTL
+# and DYaw (the bearing BendyRuler commands) jumping 240, 324, 48, 204, 0, 86,
+# 155, 209, 295... around the whole circle every two seconds. Mar sat at
+# 0.05-1.2 m the entire time, always inside the margin. RTL never made
+# progress: POS shows the aircraft inside a ~10 m box for the full minute.
+#
+# ROOT CAUSE IS NOT THE PLANNER, IT IS THE RING. PRX in the same window, at
+# 8.6 m over an open field with nothing within a metre of the aircraft, reports
+# D180=0.31, D225=0.66, D315=0.68, D0=0.80, DUp=0.27 while other sectors read
+# the 2.0 m clear ceiling. Those are PHANTOM obstacles. VL53L0X are known to
+# false-trigger under bright ambient infrared and this was a midday flight.
+# The same phantoms are what has been producing "PreArm: Proximity 180 deg,
+# 0.11m" for days; it is one fault, not two.
+#
+# So the ring's data is not fit to steer the aircraft in daylight, and every
+# consumer of it is turned off:
+#   OA_TYPE 0      kills BendyRuler -> RTL and the survey rows work again.
+#                  Takes effect LIVE, no reboot: AP_OAPathPlanner.cpp:207
+#                  returns OA_NOT_REQUIRED immediately when _type is 0.
+#   AVOID_ENABLE 0 kills simple avoidance -> LOITER stops fighting the pilot.
+#                  This one was NOT caused by the OA change; AVOID_ENABLE has
+#                  been 7 since 2026-08-18 and the same phantoms drive it.
+#   GUID_OPTIONS 0 restores the guided position path that flew before today.
+#                  With OA_TYPE 0 there is nothing to gain from bit 6.
+# PRX1_TYPE STAYS 2: the ring still streams, the dashboard still shows it, and
+# it stays an arming health check. It just no longer steers anything.
+# TO RE-ENABLE, the ring needs to stop lying first: shade the sensors, or drop
+# RANGE_MAX_CM so a phantom cannot land inside the margin, and prove it with
+# tools/ring_channels.py OUTDOORS IN SUN before any of these three go back.
+GUID_OPTIONS,0            # was 64; see the block above
+OA_TYPE,0                 # was 1 (BendyRuler); see the block above
 # MARGIN_MAX default is 5 m and the ring's usable range is ~2 m (ESP32
 # RANGE_MAX_CM 200). A planner told to hold 5 m clear of obstacles it cannot
 # see past 2 m only reacts once the obstacle is already inside its margin, so
