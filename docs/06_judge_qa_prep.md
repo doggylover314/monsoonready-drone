@@ -117,12 +117,17 @@ five seconds and each retry blocked its loop for about a second, long enough for
 ArduPilot to call the sensor dead and refuse to arm.
 
 **Does it actually avoid anything during an autonomous flight?**
-Two mechanisms, one per phase, and getting this right meant reading ArduPilot
-source rather than trusting parameter names. Simple avoidance applies only to
-guided velocity targets, which is the descent. Survey rows send position targets
-and get path planning instead, which needs `GUID_OPTIONS` bit 6 and `OA_TYPE`
-together. We found the survey unprotected because neither was set. Both are set
-now, and neither has flown.
+No, and that is deliberate as of 23 August. The ring reports distances to
+ArduPilot but steers nothing: `OA_TYPE`, `AVOID_ENABLE` and `GUID_OPTIONS` are
+all 0. We had them on for one flight and it failed. In daylight the VL53L0X
+sensors return phantom obstacles at 0.3 to 0.8 m over open ground, so path
+planning fought a wall that was not there and RTL never made it home. The same
+phantoms explain months of "PreArm: Proximity" refusals. Working out which
+mechanism applied where meant reading ArduPilot source rather than trusting
+parameter names: simple avoidance only touches guided velocity targets, which
+is the descent, while survey rows send position targets and need `GUID_OPTIONS`
+bit 6 and `OA_TYPE` together. That work stands. The sensors have to stop lying
+before any of it is switched back on.
 
 **What if the obstacle module dies in flight?**
 The proximity backend makes it an arming dependency, so a dead module is caught
