@@ -1734,3 +1734,11 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - SCRIPT UPDATED: the 4:00 block now states the dashboard is the only launch path, gives the ARM then START order, and calls out the eight-second window in bold. Pre-record checklist gained four items (dashboard full screen on a stand, route saved, fence pushed, DRY RUN already pressed once).
 - **THE DRY RUN BUTTON IS THE FREE REHEARSAL AND IT COSTS NO FLIGHT BATTERY**: it never arms, so nothing spins, and it exercises the exact launch path that gets filmed. Pressing START MISSION on camera having never pressed it once is the avoidable risk here.
 - ONE-TAKE CONSEQUENCE STATED TO THE USER RATHER THAN DECIDED FOR HIM: the autonomous loop has still never flown, so committing the only recording to variant A is a gamble. The script carries variant B for exactly this and the choice stays his.
+
+### 2026-08-23 ~17:00 IST: 3:15 STILL-IMAGE DEMO CUT. Live boxes only
+- USER: cut the pre-flight boxes entirely, show the live ones instead. **This removes the whole problem rather than labelling it**, which is the better call: a laptop running a saved still was always the weakest thing in the take, and the fix I had written was a caption on a weak beat.
+- 3:15 is now Reyansh describing the model with the camera ON THEM, not the screen, ending "You'll see what it found when it comes back." Nothing runs, so nothing has to be set up or can fail there.
+- **THE DETECTION BEAT MOVED TO 6:30, WHERE THE BOXES ARE REAL.** Raghav's dashboard line now names what is on screen: every detection boxed, the coordinate the model worked out, every drop. Camera direction says to get close enough to read one box and its coordinate.
+- Checklist item "detector ready to run" replaced with "the dashboard on the other tab", since no detector is run by hand any more.
+- BALANCE CAME OUT EVEN AT 250 / 250 EXACTLY, without any trimming for its own sake. Removing a 31-word Raghav line and growing his dashboard line by 12 happened to land there.
+- **THIS RAISES THE STAKES ON THE FLIGHT.** With the still-image demo gone there is no longer ANY detection footage that does not depend on the aircraft working. If the flight produces no detections, the take has no AI content at all. Flagged to the user; the tray on the first survey row is what protects against it.

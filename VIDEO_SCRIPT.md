@@ -20,7 +20,7 @@ forgotten line or a wander out of frame; the flying is the part already known.
 Nothing may need setting up mid-take.
 
 - [ ] Laptop awake, sleep off, brightness up, in shade. One tab on google.com,
-      detector ready to run.
+      the dashboard on the other.
 - [ ] Dashboard open and full screen, on a stand the camera can see
 - [ ] Route drawn for today's field and saved. ARM refuses without it.
 - [ ] Fence drawn and pushed
@@ -85,20 +85,14 @@ can never brown out the computer. The ring is hand-soldered to a central hub.
 The hopper is our own design. Bought: frame, flight controller, motors. Made:
 everything that makes it MonsoonReady."
 
-**3:15, the AI.** Both at the laptop. The aircraft has not flown yet, so this is
-the model run on a still from an earlier flight. Reyansh starts it. Camera over
-their shoulders, screen legible.
+**3:15, the AI.** Both at the laptop. Nothing is run here; the detections come
+later, live off the aircraft. Camera on them, not the screen.
 
 **Reyansh:** "The brain is a YOLO26-nano network we trained ourselves on about
 twenty-six thousand images of standing water. On the Arduino's own CPU it runs
 an image in about half a second. That's fine, because the aircraft photographs
-while it hovers rather than processing video."
-
-Boxes appear on the laptop screen.
-
-**Raghav:** "That's the model finding standing water in a still from an earlier
-flight, same weights that run on the Arduino. Each box becomes a ground
-coordinate for the aircraft to fly to."
+while it hovers rather than processing video. You'll see what it found when it
+comes back."
 
 **4:00, the flight.** Laptop up on a stand with the dashboard full screen.
 Camera on the screen for the launch, then steps back far enough to hold the
@@ -136,10 +130,13 @@ commanding the drop by hand."
 Fly the same line over the tray, drop beside it, land.
 
 **6:30, the result.** Both walk to the tray. Reyansh shows the seed in the
-water. Camera follows them in, close on the tray, then pans to the dashboard.
+water. Camera follows them in, close on the tray, then to the dashboard, close
+enough to read a boxed detection and its coordinate.
 
 **Raghav:** "Treated. In deployment that's Bti on a real breeding site. And
-here's the mission log: every detection, every drop, live on the base station."
+here's what the model saw on the way out: every detection boxed, with the
+coordinate it worked out, and every drop. That's the live log off the aircraft,
+on our own base station."
 
 Closing. Both straight to camera, side by side, aircraft between them. Reyansh
 first, then Raghav.

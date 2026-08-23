@@ -8,7 +8,7 @@
 <h2 style="font-size:14pt;font-weight:700;margin:16pt 0 6pt 0">Before you press record</h2>
 <p style="font-size:11pt;margin:0 0 10pt 0">Nothing may need setting up mid-take.</p>
 <ul style="margin:0 0 10pt 0;padding-left:22pt">
-<li style="font-size:11pt;margin:0 0 4pt 0">&#9744; Laptop awake, sleep off, brightness up, in shade. One tab on google.com, detector ready to run.</li>
+<li style="font-size:11pt;margin:0 0 4pt 0">&#9744; Laptop awake, sleep off, brightness up, in shade. One tab on google.com, the dashboard on the other.</li>
 <li style="font-size:11pt;margin:0 0 4pt 0">&#9744; Dashboard open and full screen, on a stand the camera can see</li>
 <li style="font-size:11pt;margin:0 0 4pt 0">&#9744; Route drawn for today&#x27;s field and saved. ARM refuses without it.</li>
 <li style="font-size:11pt;margin:0 0 4pt 0">&#9744; Fence drawn and pushed</li>
@@ -32,10 +32,8 @@
 <p style="font-size:11pt;margin:0 0 10pt 0"><strong>Raghav:</strong> &quot;And underneath all of that is the part that does the actual work. A hopper we built, with a servo gate under it. In deployment it drops Bti, a larvicide that kills mosquito larvae and nothing else. Today it drops mustard seed, because Bti is a real pesticide and this is a test flight.&quot;</p>
 <p style="font-size:11pt;margin:0 0 10pt 0"><strong>2:30, the assembly.</strong> Camera on the wiring bay. Reyansh holds the frame steady and clear of the shot.</p>
 <p style="font-size:11pt;margin:0 0 10pt 0"><strong>Raghav:</strong> &quot;We built this, so here&#x27;s the inside. One buck converter powers the Arduino, a separate one powers the servo and the sensor ring, so a stalled servo can never brown out the computer. The ring is hand-soldered to a central hub. The hopper is our own design. Bought: frame, flight controller, motors. Made: everything that makes it MonsoonReady.&quot;</p>
-<p style="font-size:11pt;margin:0 0 10pt 0"><strong>3:15, the AI.</strong> Both at the laptop. The aircraft has not flown yet, so this is the model run on a still from an earlier flight. Reyansh starts it. Camera over their shoulders, screen legible.</p>
-<p style="font-size:11pt;margin:0 0 10pt 0"><strong>Reyansh:</strong> &quot;The brain is a YOLO26-nano network we trained ourselves on about twenty-six thousand images of standing water. On the Arduino&#x27;s own CPU it runs an image in about half a second. That&#x27;s fine, because the aircraft photographs while it hovers rather than processing video.&quot;</p>
-<p style="font-size:11pt;margin:0 0 10pt 0">Boxes appear on the laptop screen.</p>
-<p style="font-size:11pt;margin:0 0 10pt 0"><strong>Raghav:</strong> &quot;That&#x27;s the model finding standing water in a still from an earlier flight, same weights that run on the Arduino. Each box becomes a ground coordinate for the aircraft to fly to.&quot;</p>
+<p style="font-size:11pt;margin:0 0 10pt 0"><strong>3:15, the AI.</strong> Both at the laptop. Nothing is run here; the detections come later, live off the aircraft. Camera on them, not the screen.</p>
+<p style="font-size:11pt;margin:0 0 10pt 0"><strong>Reyansh:</strong> &quot;The brain is a YOLO26-nano network we trained ourselves on about twenty-six thousand images of standing water. On the Arduino&#x27;s own CPU it runs an image in about half a second. That&#x27;s fine, because the aircraft photographs while it hovers rather than processing video. You&#x27;ll see what it found when it comes back.&quot;</p>
 <p style="font-size:11pt;margin:0 0 10pt 0"><strong>4:00, the flight.</strong> Laptop up on a stand with the dashboard full screen. Camera on the screen for the launch, then steps back far enough to hold the aircraft, the tray and both of them at once. Reyansh has the transmitter.</p>
 <p style="font-size:11pt;margin:0 0 10pt 0">Everything starts from the dashboard. Nobody types on camera. The order is ARM, then START MISSION, <strong>and START has to be pressed within eight seconds</strong>: the armed state expires on its own after that and the button greys out again. ARM also refuses unless a route has already been saved.</p>
 <p style="font-size:11pt;margin:0 0 10pt 0">Variant A, autonomous:</p>
@@ -46,8 +44,8 @@
 <p style="font-size:11pt;margin:0 0 10pt 0">Variant B, piloted:</p>
 <p style="font-size:11pt;margin:0 0 10pt 0"><strong>Reyansh, variant B:</strong> &quot;Full disclosure first. The detection you just saw runs on the drone, but the link that closes the loop isn&#x27;t flight-ready today, so this flight is me flying, with the detector recording what it sees. I&#x27;m commanding the drop by hand.&quot;</p>
 <p style="font-size:11pt;margin:0 0 10pt 0">Fly the same line over the tray, drop beside it, land.</p>
-<p style="font-size:11pt;margin:0 0 10pt 0"><strong>6:30, the result.</strong> Both walk to the tray. Reyansh shows the seed in the water. Camera follows them in, close on the tray, then pans to the dashboard.</p>
-<p style="font-size:11pt;margin:0 0 10pt 0"><strong>Raghav:</strong> &quot;Treated. In deployment that&#x27;s Bti on a real breeding site. And here&#x27;s the mission log: every detection, every drop, live on the base station.&quot;</p>
+<p style="font-size:11pt;margin:0 0 10pt 0"><strong>6:30, the result.</strong> Both walk to the tray. Reyansh shows the seed in the water. Camera follows them in, close on the tray, then to the dashboard, close enough to read a boxed detection and its coordinate.</p>
+<p style="font-size:11pt;margin:0 0 10pt 0"><strong>Raghav:</strong> &quot;Treated. In deployment that&#x27;s Bti on a real breeding site. And here&#x27;s what the model saw on the way out: every detection boxed, with the coordinate it worked out, and every drop. That&#x27;s the live log off the aircraft, on our own base station.&quot;</p>
 <p style="font-size:11pt;margin:0 0 10pt 0">Closing. Both straight to camera, side by side, aircraft between them. Reyansh first, then Raghav.</p>
 <p style="font-size:11pt;margin:0 0 10pt 0"><strong>Reyansh, variant A:</strong> &quot;Everything you saw, survey, detection, drop, happened on the aircraft. The model on the Arduino, the flying on the Pixhawk.&quot;</p>
 <p style="font-size:11pt;margin:0 0 10pt 0"><strong>Raghav, variant A:</strong> &quot;We flew it and filmed it, and what you saw is what it did. Thanks for watching.&quot;</p>
