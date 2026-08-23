@@ -1689,3 +1689,11 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - **THE INSTRUCTION IS TO LET IT RUN, and that is deliberate.** Switching out of RTL on camera turns a working safeguard into something that looks like a fault, and the pilot override is exactly what happened on log 59 at t=122.7 (`MODE -> STABILIZE Rsn=1 RC_COMMAND`, six seconds into the failsafe RTL). C keeps filming through the landing.
 - THE SPOKEN LINE SAYS "once the pack is charged", NOT a fresh pack. There is one battery and no spare, and a script that implies a second one on camera contradicts the BOM.
 - BALANCE UNAFFECTED: the contingency line is excluded from the 49/51 count because it is only spoken if the failsafe fires. Planned-take totals are unchanged at R 249 / C 264.
+
+### 2026-08-23 ~16:20 IST: VIDEO_SCRIPT.html, a paste-into-Google-Docs copy
+- USER wants the script in Google Docs with bold and heading sizes intact. **Markdown pasted into Docs arrives as plain text with the asterisks visible**, so the markdown file cannot be the source for that. HTML on the clipboard is what Docs actually reads: it maps `<h1>`/`<h2>` onto its own Heading 1 / Heading 2 styles and `<strong>` onto bold.
+- `VIDEO_SCRIPT.html` generated from `VIDEO_SCRIPT.md`. Emits ONLY headings, bold, paragraphs and one bullet list, because those are the four things the user allowed. Point sizes are inlined (11 body, 20 h1, 14 h2) as a fallback for the case where Docs drops the tag mapping.
+- CHECKLIST BOXES are the `&#9744;` character inside ordinary bullets, not Docs checkbox list items. HTML paste cannot produce a native Docs checklist, and a printed script needs a tickable box more than it needs a clickable one.
+- VERIFIED, not assumed: 1 h1, 4 h2, 43 paragraphs, 9 list items, 25 bold spans, zero surviving markdown asterisks, `<strong>` open/close counts equal, and a **plain-text round trip of 1244 words against 1244 in the markdown, delta zero**. Also rendered in the browser and read back on screen.
+- **THE CONVERTER IS NOT IN THE REPO.** It is a one-off in the session scratchpad; only its output is committed. A second home for markdown conversion is not wanted.
+- REGENERATION: the .md stays the source of truth. Any later edit to the script means regenerating the .html, or the two drift.
