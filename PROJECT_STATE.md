@@ -1740,5 +1740,5 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - 3:15 is now Reyansh describing the model with the camera ON THEM, not the screen, ending "You'll see what it found when it comes back." Nothing runs, so nothing has to be set up or can fail there.
 - **THE DETECTION BEAT MOVED TO 6:30, WHERE THE BOXES ARE REAL.** Raghav's dashboard line now names what is on screen: every detection boxed, the coordinate the model worked out, every drop. Camera direction says to get close enough to read one box and its coordinate.
 - Checklist item "detector ready to run" replaced with "the dashboard on the other tab", since no detector is run by hand any more.
-- BALANCE CAME OUT EVEN AT 250 / 250 EXACTLY, without any trimming for its own sake. Removing a 31-word Raghav line and growing his dashboard line by 12 happened to land there.
+- BALANCE CAME OUT AT 259 / 260, a ONE WORD gap, without any trimming for its own sake. (I predicted 250/250 before measuring; the prediction was wrong and the measurement is what stands.)
 - **THIS RAISES THE STAKES ON THE FLIGHT.** With the still-image demo gone there is no longer ANY detection footage that does not depend on the aircraft working. If the flight produces no detections, the take has no AI content at all. Flagged to the user; the tray on the first survey row is what protects against it.
