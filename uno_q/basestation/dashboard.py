@@ -13,6 +13,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 from flask import Flask, abort, jsonify, request, send_from_directory
@@ -29,6 +30,11 @@ MISSION_ID_RE = re.compile(r'^[A-Za-z0-9_\-]+$')
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 LOG_DIR = os.path.expanduser('~/logs')
+# Everything that opens the Pixhawk serial port exclusively. The dashboard's
+# own map link must stand down for any of them: losing that race aborts a
+# flight, or fails a param push with a busy port.
+PIXHAWK_TOOLS = ('run_mission.py', 'test_everything.py', 'parameters.py',
+                 'bench.py', 'level_cal.py', 'wiring_check.py', 'check_log.py')
 
 log = None   # BoardLog, bound in main() for handler scope
 
@@ -244,6 +250,78 @@ def make_app(data_dir, control=None):
     # ---------------- waypoints (map shows the planned route BEFORE flight
     # and lets it be edited by dragging, user 2026-08-16) -------------------
 
+    # LIVE POSITION. The mission writes fixes to its JSONL, so the map can
+    # show the aircraft while flying with no link of its own. Before launch
+    # there is no mission and therefore no position, which is what the map was
+    # missing. The dashboard opens its OWN link, but only while nothing else
+    # owns the port: run_mission.py and test_everything.py both take it
+    # exclusively, and losing that race would abort a flight.
+    live = {'io': None, 'fix': None, 'at': 0.0, 'hold': 0.0,
+            'lock': threading.Lock()}
+
+    def live_close(why):
+        io = live['io']
+        live['io'] = None
+        if io is not None:
+            try:
+                io.conn.close()
+            except Exception:                           # noqa: BLE001
+                pass
+            log(f'LIVE: link closed ({why})')
+
+    def live_release(seconds, why):
+        """Drop the link and refuse to reopen it for a while.
+
+        Called just before spawning anything that needs the Pixhawk. Without
+        the hold, the 3 s poll could reopen the port in the gap between the
+        spawn and the child actually opening it.
+        """
+        live['hold'] = time.time() + seconds
+        live_close(why)
+
+    @app.get('/api/live_position')
+    def api_live_position():
+        """Where the aircraft is when no mission is running (polled)."""
+        if not ctl:
+            abort(403)
+        busy = next((n for n in PIXHAWK_TOOLS if find_pids(n)), None)
+        if busy:
+            live_close(f'{busy} owns the port')
+            return jsonify({'ok': True, 'source': 'mission', 'busy': busy})
+        if time.time() < live['hold']:
+            return jsonify({'ok': True, 'source': 'holding'})
+        if not live['lock'].acquire(blocking=False):
+            return jsonify({'ok': True, 'source': 'link', 'fix': live['fix']})
+        try:
+            if live['io'] is None:
+                from mavlink_io import MavIO
+                io = MavIO(ctl['conn'], log=log)
+                io.wait_ready(timeout=8)
+                io.setup_streams()
+                live['io'] = io
+                log('LIVE: opened the Pixhawk link for the map')
+            io = live['io']
+            deadline = time.time() + 0.5
+            while time.time() < deadline:
+                io.step()
+            t = io.tel
+            if t.lat is not None and (abs(t.lat) > 0.01 or abs(t.lon) > 0.01):
+                live['fix'] = {'lat': t.lat, 'lon': t.lon, 'alt': t.rel_alt_m,
+                               'rng': t.rng_m if t.rng_valid else None,
+                               'heading': t.heading_deg, 'mode': t.mode,
+                               'armed': bool(t.armed), 'sats': t.sats}
+                live['at'] = time.time()
+            return jsonify({
+                'ok': True, 'source': 'link', 'fix': live['fix'],
+                'age_s': (round(time.time() - live['at'], 1)
+                          if live['at'] else None)})
+        except Exception as exc:                        # noqa: BLE001
+            live_close(f'error: {exc}')
+            return jsonify({'ok': False, 'source': 'link',
+                            'error': str(exc)})
+        finally:
+            live['lock'].release()
+
     @app.get('/api/waypoints')
     def api_waypoints_get():
         """Route for Start button; fetched at load and after edits, not polled."""
@@ -449,6 +527,7 @@ def make_app(data_dir, control=None):
             cmd.append('--no-drop')
         if body.get('dry_run'):
             cmd.append('--dry-run')
+        live_release(30, 'mission starting')
         # run_mission owns ~/logs/run_mission.log; suppress stdout duplication
         p = subprocess.Popen(cmd, cwd=REPO, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL,
@@ -498,6 +577,7 @@ def make_app(data_dir, control=None):
                os.path.join(REPO, 'uno_q', 'test_everything.py'),
                '--conn', ctl['conn'], '--camera', str(ctl['camera']),
                '--out', selftest_path]
+        live_release(20, 'self-test starting')
         if only:
             cmd += ['--only', only]
         p = subprocess.Popen(cmd, cwd=REPO, stdout=subprocess.DEVNULL,

@@ -1379,6 +1379,19 @@ async function setMode(mode) {
   render();
 }
 
+/* Position before launch. The mission's own fixes only exist once it is
+   running, so with the aircraft sitting armed on the ground the map had
+   nothing to draw (user, 2026-08-23, twice). The server reads the Pixhawk
+   directly, but only while nothing else owns the port. */
+async function livePoll() {
+  try {
+    const j = await getJSON('/api/live_position');
+    if (j.source === 'link' && j.fix) { state.live = j.fix; state.liveAt = Date.now(); }
+    else if (j.source !== 'link') state.live = null;   // mission owns the port
+    state.liveErr = j.ok ? null : j.error;
+  } catch { state.liveErr = 'no answer from the board'; }
+}
+
 async function ctlRefresh() {
   let c;
   try { c = await getJSON('/api/control'); } catch { return; }
@@ -1676,6 +1689,7 @@ function render() {
   // useful BEFORE the first flight, and editing needs them on screen
   if (layer('ly-wp')) for (const wp of state.wps) pts.push(wp);
   if (layer('ly-fence')) for (const p of state.fence) pts.push(p);
+  if (layer('ly-drone') && state.live) pts.push([state.live.lat, state.live.lon]);
   // Typed site anchor: fills a vacuum, and keeps steadying the frame while
   // drawing (without it the first placed corner would refit to a 10 m box).
   const anchorOnly = !pts.length && !!siteAnchor;
@@ -1922,6 +1936,26 @@ function render() {
         `${f.lat.toFixed(6)}, ${f.lon.toFixed(6)}<br>` +
         `<span class="t">${alt} m above launch &middot; rangefinder ${rng}` +
         `</span>`});
+    } else if (state.live) {
+      // On the ground, no mission: position read straight off the Pixhawk.
+      const g = state.live, p = proj.px(g.lat, g.lon);
+      const fresh = (Date.now() - (state.liveAt || 0)) < 15000;
+      const col = css('--drone');
+      ctx.save();
+      ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, 7);
+      ctx.strokeStyle = col; ctx.lineWidth = 2.2;
+      if (!fresh) ctx.setLineDash([3, 2.5]);
+      ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(p.x, p.y, 2.4, 0, 7);
+      ctx.fillStyle = col; ctx.fill();
+      ctx.restore();
+      state.hits.push({...p, r: 14, html:
+        `<b>Aircraft</b> on the ground, ${g.armed ? 'ARMED' : 'disarmed'}` +
+        `${g.mode ? ' &middot; ' + g.mode : ''}<br>` +
+        `${g.lat.toFixed(6)}, ${g.lon.toFixed(6)}<br>` +
+        `<span class="t">${g.sats == null ? '' : g.sats + ' sats &middot; '}` +
+        `${fresh ? 'live from the flight controller'
+                 : 'link went quiet, last known'}</span>`});
     }
   }
 
@@ -2388,6 +2422,7 @@ setInterval(() => {
 setInterval(async () => {
   if (document.hidden || !layoutState) return;
   ctlRefresh();          // flight control state + log tail, every tick
+  livePoll();            // where the aircraft is when no mission is running
   try {
     const evs = await getJSON('/api/events/' + state.selected);
     const j = JSON.stringify(evs);

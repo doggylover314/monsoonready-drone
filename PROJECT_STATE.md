@@ -2178,3 +2178,44 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
   before START and no dot after the mission ends. The earlier "no dot even
   though the checkbox is ticked" was this same rule working correctly, not a
   failure. The map shows the aircraft only while it is flying.
+
+### 2026-08-23 ~22:20 IST: LIVE POSITION BEFORE LAUNCH. DASHBOARD READS THE PIXHAWK
+
+- User confirmed the wrong-position dot WAS hollow, so it was the past-flight
+  ghost and the previous fix was right. He then still saw no dot, because
+  nothing was flying. Both reports come from the same gap: **the map could only
+  ever show the aircraft while a mission was running**, since position came
+  from the mission's JSONL fixes. On the ground before START there was nothing
+  to draw. That is the actual feature that was asked for and it is now built.
+- **NEW `GET /api/live_position`.** The dashboard opens its OWN MAVLink link
+  and reports lat/lon/alt/rng/heading/mode/armed/sats, polled on the existing
+  3 s tick.
+- **PORT SAFETY IS THE WHOLE RISK AND IS HANDLED THREE WAYS.** The Pixhawk
+  serial port is exclusive, so a dashboard holding it would abort a flight or
+  fail a param push.
+  1. `PIXHAWK_TOOLS` names every program that takes the port
+     (`run_mission.py`, `test_everything.py`, `parameters.py`, `bench.py`,
+     `level_cal.py`, `wiring_check.py`, `check_log.py`). If any is running the
+     link is CLOSED and the endpoint reports `source: 'mission'`. **This is why
+     a param push from the board shell still works with the dashboard up.**
+  2. `live_release(seconds, why)` drops the link and refuses to reopen it for a
+     while. Called immediately BEFORE spawning run_mission (30 s) and
+     test_everything (20 s). Without the hold, the 3 s poll could seize the
+     port in the gap between the spawn and the child opening it.
+  3. Any exception closes the link, so a failure cannot leak a held port.
+- Front end: mission fixes still WIN whenever a mission is running; the link
+  reading is only used otherwise. The ground marker is a hollow ring with a
+  centre dot (deliberately different from the in-flight solid disc), tooltip
+  gives armed/disarmed, mode, satellite count. Dashed when the link has been
+  quiet 15 s. The live position also counts toward the map's projection, so
+  with no fence and no route drawn the aircraft alone frames the map.
+- TESTED. Server, through the test client: each of the seven tools in
+  `PIXHAWK_TOOLS` makes the endpoint stand down and name the blocker; a
+  missing port fails cleanly twice running with no leaked link; START spawns
+  and the very next poll returns `source: 'holding'`. Front end, in a real
+  browser: ground marker with no mission at all (and `proj.ok` true on the live
+  position alone), armed variant, quiet-link variant, mission fixes overriding
+  the ground reading once flying, and the `ly-drone` toggle hiding both.
+- NOT TESTED AGAINST A REAL PIXHAWK. The link open path (`MavIO.wait_ready`,
+  `setup_streams`) has only been exercised against a nonexistent port here.
+  First real proof will be the board.
