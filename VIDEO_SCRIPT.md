@@ -21,7 +21,10 @@ Nothing may need setting up mid-take.
 
 - [ ] Laptop awake, sleep off, brightness up, in shade. One tab on google.com,
       detector ready to run.
-- [ ] Dashboard open
+- [ ] Dashboard open and full screen, on a stand the camera can see
+- [ ] Route drawn for today's field and saved. ARM refuses without it.
+- [ ] Fence drawn and pushed
+- [ ] DRY RUN pressed once already, so START MISSION is not the first press ever
 - [ ] Aircraft on the sheet, pack in, hopper loaded with mustard seed, gate
       closed, props tight, SD in
 - [ ] Tray on the survey path, filled, water calm
@@ -97,8 +100,14 @@ Boxes appear on the laptop screen.
 flight, same weights that run on the Arduino. Each box becomes a ground
 coordinate for the aircraft to fly to."
 
-**4:00, the flight.** Camera steps back far enough to hold the aircraft, the
-tray and both of them at once. Reyansh has the transmitter.
+**4:00, the flight.** Laptop up on a stand with the dashboard full screen.
+Camera on the screen for the launch, then steps back far enough to hold the
+aircraft, the tray and both of them at once. Reyansh has the transmitter.
+
+Everything starts from the dashboard. Nobody types on camera. The order is ARM,
+then START MISSION, **and START has to be pressed within eight seconds**: the
+armed state expires on its own after that and the button greys out again. ARM
+also refuses unless a route has already been saved.
 
 Variant A, autonomous:
 
