@@ -54,3 +54,8 @@ Thumbs.db
 # per-machine scratch tooling: one-off editing and formatting helpers that are
 # not part of the build and are not worth review
 tools/local/
+
+# copied flight logs. Each .BIN is megabytes and they are working copies of
+# what is already on the SD card, so they never belong in the repo.
+logs/
+*.BIN
