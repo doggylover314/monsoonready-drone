@@ -465,7 +465,8 @@ class Mission:
                 self._set('DROP', note + ", stopping before release")
             elif self._drop_rel_alt is None:
                 # No altitude reference; release beside water, not blind across.
-                self._set('DROP', note + ", no rel_alt; releasing beside water")
+                self._set('DROP', note + ", no rel_alt: releasing beside the "
+                                         "water rather than crossing blind")
             else:
                 self.io.goto(*self.puddle, self._drop_rel_alt)
                 self._set('CROSS', note + f", crossing {self._cross_m():.1f} m "
