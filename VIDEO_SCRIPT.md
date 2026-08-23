@@ -93,9 +93,9 @@ while it hovers rather than processing video."
 
 Boxes appear on the laptop screen.
 
-**Raghav:** "That's the model finding standing water in a photo from an earlier
-flight. Same weights that run on the Arduino in the air. Each box becomes a
-ground coordinate, and that's what the aircraft flies to."
+**Raghav:** "That's the model finding standing water in a still from an earlier
+flight, same weights that run on the Arduino. Each box becomes a ground
+coordinate for the aircraft to fly to."
 
 **4:00, the flight.** Camera steps back far enough to hold the aircraft, the
 tray and both of them at once. Reyansh has the transmitter.
@@ -129,9 +129,8 @@ Fly the same line over the tray, drop beside it, land.
 **6:30, the result.** Both walk to the tray. Reyansh shows the seed in the
 water. Camera follows them in, close on the tray, then pans to the dashboard.
 
-**Raghav:** "Treated. In deployment that's Bti doing this to a real breeding
-site. And here's the mission log: every detection with its coordinates, every
-drop, live on the base station."
+**Raghav:** "Treated. In deployment that's Bti on a real breeding site. And
+here's the mission log: every detection, every drop, live on the base station."
 
 Closing. Both straight to camera, side by side, aircraft between them. Reyansh
 first, then Raghav.
