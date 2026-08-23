@@ -293,8 +293,31 @@ BATT_MONITOR,4            # 4 = analog voltage+current. Reboot, then calibrate
 # actually take off on a full pack. The protections that do NOT depend on
 # that assumption are the voltage ones below.
 BATT_CAPACITY,8000
-BATT_LOW_VOLT,10.8        # 3.6 V/cell -> triggers low action
-BATT_CRT_VOLT,10.2        # 3.4 V/cell -> triggers critical action
+# --- 2026-08-23: THE VOLTAGE FAILSAFES WERE FIRING ON SAG, NOT DEPLETION.
+# Evidence, log 59: 448 samples below 10.8 V under load, and the breakdown by
+# mode is STABILIZE 186, LOITER 206, RTL 52. The FIRST dip was at t=88.4 s in
+# level hover, 36.5 A, climb rate 0.02 m/s. So this is a HOVER condition, not
+# an RTL climb; RTL deepened it (10.32 V at 38 A) but arrived long after.
+# Sag is about 1.9 V at 30 A, i.e. roughly 63 milliohms from cells to flight
+# controller, which is high. Pack itself is healthy: cells 4.19/4.18/4.20
+# after a self-terminated charge, no puffing, no damage.
+# The charger cross-check closed the same day and says the counter is honest:
+# 1630 mAh logged across logs 53-59 against 1781 mAh put back, a 9% gap that
+# is ordinary charging loss. BATT_AMP_PERVLT 24 is CORRECT, so the mAh
+# failsafes below are now the trustworthy protection and voltage can be
+# relaxed without losing real cover.
+# FS_VOLTSRC 1 is the actual fix: it judges on the sag-COMPENSATED voltage
+# estimate rather than the loaded terminal voltage (AP_BattMonitor_Params.cpp
+# :107, "0:Raw Voltage, 1:Sag Compensated Voltage"). Lowering the thresholds
+# alone would have hidden the symptom; this measures the right thing.
+# 10.5/10.0 = 3.5/3.33 V per cell UNDER LOAD, which recovers well above that
+# at rest. DO NOT GO LOWER. The 63 milliohms is still undiagnosed and a
+# handheld DMM cannot see it: the user measured "2 ohms" pack-to-ESC, which
+# at 42 A would be 84 V of drop, so that reading was the meter's own floor
+# and neither clears nor condemns the harness.
+BATT_FS_VOLTSRC,1         # 1 = sag-compensated (was 0 = raw terminal volts)
+BATT_LOW_VOLT,10.5        # was 10.8; 3.5 V/cell under load
+BATT_CRT_VOLT,10.0        # was 10.2; 3.33 V/cell under load
 BATT_FS_LOW_ACT,2         # 2 = RTL (user-confirmed policy)
 BATT_FS_CRT_ACT,1         # 1 = Land
 # mAh-based failsafes (added 2026-08-14, now that the current sensor is
