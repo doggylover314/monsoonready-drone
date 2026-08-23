@@ -64,6 +64,12 @@ class MissionConfig:
     descent_mps: float = 0.5
     climb_mps: float = 1.0
     wp_radius_m: float = 1.5
+    # PHOTO HOLD. A moving camera smears the frame, and at survey altitude a
+    # small puddle is only tens of pixels across, so the smear is the whole
+    # target. Hold at each waypoint, let the airframe settle, then advance.
+    # Waypoint spacing sets the interval (make_waypoints.densify); this sets
+    # the dwell. 0 disables it and restores continuous flight.
+    photo_hold_s: float = 1.0
     alt_tol_m: float = 1.0
     rng_timeout_s: float = 1.0
     rng_expect_m: float = 6.0      # EKF alt by which rangefinder must have acquired
@@ -203,6 +209,7 @@ class Mission:
         self._t_state = 0.0        # time of last state entry
         self._rng_acquired = False # ground return seen during current descent
         self._last_fix_gripe = None # so a poor fix is logged once, not per tick
+        self._hold_since = None     # photo hold start, None when not holding
         self._t_dropped = None     # monotonic time the gate finished cycling
         self._drop_ok = True       # did the last gate actuation report success
         # The pilot-override test may only fire once GUIDED has actually
@@ -429,6 +436,9 @@ class Mission:
                       f"(at {tel.rel_alt_m if tel.rel_alt_m is None else round(tel.rel_alt_m, 1)} m)")
 
     def _goto_current_wp(self):
+        # Every arrival starts its own hold, including a leg that was skipped
+        # on timeout and one re-entered from CLIMB after a drop.
+        self._hold_since = None
         if self.wp_i >= len(self.cfg.waypoints):
             self._set('DONE', 'survey complete')
             return
@@ -501,6 +511,12 @@ class Mission:
             return
         lat, lon = self.cfg.waypoints[self.wp_i]
         if self._at_wp(lat, lon):
+            if self.cfg.photo_hold_s > 0:
+                if self._hold_since is None:
+                    self._hold_since = time.monotonic()
+                    return
+                if time.monotonic() - self._hold_since < self.cfg.photo_hold_s:
+                    return
             self.wp_i += 1
             self._goto_current_wp()
             return

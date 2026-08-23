@@ -359,6 +359,10 @@ def make_app(data_dir, control=None):
             spacing = float(b.get('spacing', 12))
             length = float(b.get('length', 20))
             inset = float(b.get('inset', 4))
+            # Waypoint spacing ALONG a row. With a photo hold at each
+            # waypoint this is the photo interval, so the row ends alone are
+            # not enough.
+            max_leg = float(b.get('max_leg', 4))
             heading = b.get('heading')
             heading = None if heading in (None, '') else float(heading)
             start = b.get('start') or None
@@ -367,18 +371,21 @@ def make_app(data_dir, control=None):
         except (TypeError, ValueError, IndexError):
             return jsonify({'ok': False, 'error': 'bad numbers'}), 400
         if not (1 <= rows <= 25) or not (1 <= spacing <= 50) \
-                or not (2 <= length <= 500) or not (0 <= inset <= 50):
+                or not (2 <= length <= 500) or not (0 <= inset <= 50) \
+                or not (0 <= max_leg <= 200):
             return jsonify({'ok': False,
                             'error': 'rows 1-25, spacing 1-50 m, '
-                                     'row length 2-500 m, keep-out 0-50 m'}), 400
+                                     'row length 2-500 m, keep-out 0-50 m, '
+                                     'waypoint spacing 0-200 m'}), 400
 
         poly = fence.load(fence_path)
         if len(poly) >= 3:
-            from make_waypoints import build_coverage
+            from make_waypoints import build_coverage, densify
             wps, info = build_coverage(poly, heading, spacing, inset, start)
             if info.get('problem'):
                 log.warn(f"GENERATE refused: {info['problem']}")
                 return jsonify({'ok': False, 'error': info['problem']}), 400
+            wps = densify(wps, max_leg)
             log(f"GENERATE: {len(wps)} waypoints covering the {len(poly)}-corner "
                 f"fence, {info['rows']} rows on {info['lines']} lines "
                 f"{spacing:g} m apart along {info['heading']} deg, "
@@ -418,7 +425,10 @@ def make_app(data_dir, control=None):
                                          'be made from its position'}), 400
             t = io.tel
             head = t.heading_deg if heading is None else heading
-            wps = build_serpentine(t.lat, t.lon, head, rows, spacing, length)
+            from make_waypoints import densify
+            wps = densify(
+                build_serpentine(t.lat, t.lon, head, rows, spacing, length),
+                max_leg)
         except Exception as exc:                        # noqa: BLE001
             log.error(f'GENERATE failed: {exc}')
             return jsonify({'ok': False, 'error': str(exc)}), 500
@@ -454,7 +464,10 @@ def make_app(data_dir, control=None):
         cmd = [ctl['python'], os.path.join(REPO, 'uno_q', 'run_mission.py'),
                '--conn', ctl['conn'], '--waypoints', wp,
                '--camera', str(ctl['camera']),
-               '--data-dir', ctl['data_dir']]
+               '--data-dir', ctl['data_dir'],
+               '--survey-alt', str(ctl['survey_alt']),
+               '--conf', str(ctl['conf']),
+               '--photo-hold', str(ctl['photo_hold'])]
         if ctl['no_drop'] or body.get('no_drop'):
             cmd.append('--no-drop')
         if body.get('dry_run'):
@@ -823,6 +836,11 @@ def main():
     global log
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--data-dir', default='~/monsoonready_data')
+    # Passed straight to run_mission, so START MISSION can be retuned between
+    # flights without editing code or leaving the dashboard.
+    ap.add_argument('--survey-alt', type=float, default=15.0)
+    ap.add_argument('--conf', type=float, default=0.5)
+    ap.add_argument('--photo-hold', type=float, default=1.0)
     ap.add_argument('--host', default='0.0.0.0')
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--enable-control', action='store_true',
@@ -863,6 +881,8 @@ def main():
             'waypoints': args.waypoints, 'conn': args.conn,
             'camera': args.camera, 'no_drop': args.no_drop,
             'data_dir': args.data_dir,
+            'survey_alt': args.survey_alt, 'conf': args.conf,
+            'photo_hold': args.photo_hold,
         }
         log(f'FLIGHT CONTROL ENABLED on port {args.port}: anyone who can '
             f'reach this host can start and stop the mission')

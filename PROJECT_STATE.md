@@ -1756,3 +1756,21 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - CAVEAT TO EXPECT: ground position is computed from altitude, so at ~0 m the COORDINATE will be wrong. The BOX is the thing being proven here, not the fix. Nothing approaches anything because nothing is armed.
 - SECOND CAVEAT: a detection outside the saved fence is ignored by design (fence_margin_m 2 m), and run_mission logs which way it went. If the model clearly sees the tray but nothing is recorded, the fence check is the first thing to look at, not the model.
 - **THIS MATTERS MORE THAN IT DID AN HOUR AGO.** With the pre-flight still-image demo cut from the script, the flight is the only source of detection footage, so a model that does not fire means a take with no AI content at all.
+
+### 2026-08-23 ~18:20 IST: PUDDLE NOT DETECTED IN THE FILMED FLIGHT. Scale is the prime suspect
+- USER flew and recorded; the puddle was never detected. Asked whether to lower the survey altitude.
+- **THE ARITHMETIC SAYS YES, AND IT IS NOT MARGINAL.** From `CameraGeometry(1280, 720, hfov 56.2)`: at 15 m the footprint is 16.0 x 9.0 m, i.e. **12.5 mm per pixel**, so a 40 cm tray is **32 px** across and a 1 m puddle is 80 px. At 8 m it is 8.5 x 4.8 m, 6.7 mm/px, and the same tray is **60 px**. A 32 px target on a nano detector trained on much larger water is the likeliest single cause.
+  | alt | footprint | mm/px | 40 cm tray | 1 m puddle |
+  | 15 m | 16.0 x 9.0 | 12.5 | 32 px | 80 px |
+  | 10 m | 10.7 x 6.0 | 8.3 | 48 px | 120 px |
+  | 8 m | 8.5 x 4.8 | 6.7 | 60 px | 150 px |
+  | 6 m | 6.4 x 3.6 | 5.0 | 80 px | 200 px |
+- **THREE CAUSES ARE IN PLAY AND ONLY ONE IS ALTITUDE**, so changing altitude alone can leave it unfixed: (a) target too small in frame, (b) `--conf` 0.5 rejecting a low-confidence hit, (c) the fence check discarding a real detection, which run_mission logs explicitly (mission.py:471-482 "IGNORED: it or its descent point is outside the geofence"). **The log distinguishes (c) from (a) and (b) for free and should be read before any more flying.**
+- A DETECTION THAT NEVER FIRED LEAVES NO LOG LINE AT ALL: detector.py:127 only logs after the model's own confidence filter and the dedup, so "no [detector] puddle lines" cannot by itself separate "saw nothing" from "saw it at 0.4".
+
+### 2026-08-23 ~18:20 IST: PHOTO HOLD AND WAYPOINT DENSITY IMPLEMENTED
+- USER: hold to take a proper photo, and put the waypoints closer together because sparse rows miss things at low altitude.
+- **`make_waypoints.densify(points, max_leg_m)` (NEW).** The builders only ever emitted ROW ENDS, so the aircraft crossed an entire row without stopping; waypoint spacing is what sets the photo interval, so this was the missing half. Splits any leg longer than max_leg_m into equal pieces, preserves both endpoints, no-ops on <=0 or a 1-point list. Tested: a 50 m leg becomes 14 points with a 3.85 m maximum; a real `build_coverage` route went 20 -> 169 waypoints at 4 m.
+- **`MissionConfig.photo_hold_s` (NEW, default 1.0) and the SURVEY arrival path.** On reaching a waypoint the mission now dwells before advancing, so the frame is taken stationary. `_hold_since` is cleared in `_goto_current_wp`, which covers a normal advance, a leg skipped on timeout, and re-entry from CLIMB after a drop. Tested on a stubbed Mission: first tick starts the hold and does not advance, an immediate second tick still does not advance, and a tick after 1.1 s advances and clears the hold. `photo_hold_s = 0` restores continuous flight exactly.
+- **`--photo-hold`, `--survey-alt` and `--conf` NOW REACH run_mission FROM THE DASHBOARD.** api_start previously passed none of them, so START MISSION was hard-wired to 15 m and conf 0.5 and could not be retuned without editing code. They are dashboard CLI args now, so `start_dashboard.sh` can carry them. The generate endpoint also takes `max_leg` (default 4 m, validated 0-200) and densifies both the fence-coverage and serpentine branches.
+- **THE BATTERY MAKES THIS A TRADE, NOT A FREE WIN.** Dense waypoints plus a 1 s hold at each one is far slower than flying the rows continuously, and the failsafe fired at 116 s on log 59. A 169-waypoint route cannot be flown. THE SURVEY AREA MUST SHRINK to a few short rows over the tray, or the flight ends before it reaches the water.

@@ -138,6 +138,9 @@ def main():
     ap.add_argument('--offset-e', type=float, default=0.0,
                     help='metres east of the puddle to descend over')
     ap.add_argument('--conf', type=float, default=0.5)
+    ap.add_argument('--photo-hold', type=float, default=1.0,
+                    help='seconds to hold at each waypoint so the frame is '
+                         'taken stationary. 0 flies the rows continuously')
     # 'auto' = resolve the camera BY NAME (camera.py). Bare indexes are an
     # enumeration race with the Venus codecs and losing that race is exactly
     # the 2026-08-15 farm failure. A number or /dev/videoN pins it for bench.
@@ -281,6 +284,7 @@ def main():
 
     cfg = MissionConfig(waypoints=wps, survey_alt_m=args.survey_alt,
                         drop_alt_m=args.drop_alt,
+                        photo_hold_s=args.photo_hold,
                         lateral_offset_n_m=args.offset_n,
                         lateral_offset_e_m=args.offset_e,
                         fence=poly,

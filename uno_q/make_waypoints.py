@@ -28,6 +28,27 @@ from mavlink_io import MavIO
 EARTH_M_PER_DEG_LAT = 111320.0
 
 
+def densify(points, max_leg_m):
+    """Split any leg longer than max_leg_m into equal pieces.
+
+    The builders emit only row ends, so the aircraft crosses a whole row
+    without stopping. With a photo hold at each waypoint, waypoint spacing is
+    what sets the photo interval. max_leg_m <= 0 returns the list unchanged.
+    """
+    if max_leg_m is None or max_leg_m <= 0 or len(points) < 2:
+        return list(points)
+    out = [points[0]]
+    for (alat, alon), (blat, blon) in zip(points, points[1:]):
+        dn = (blat - alat) * EARTH_M_PER_DEG_LAT
+        de = ((blon - alon) * EARTH_M_PER_DEG_LAT
+              * math.cos(math.radians(alat)))
+        n = int(math.ceil(math.hypot(dn, de) / max_leg_m))
+        for i in range(1, n + 1):
+            t = i / n
+            out.append((alat + (blat - alat) * t, alon + (blon - alon) * t))
+    return out
+
+
 def build_serpentine(lat0, lon0, heading_deg, rows, spacing_m, length_m):
     """Waypoints (lat, lon) for a serpentine starting AT (lat0, lon0),
     rows running along heading_deg, stepping right of that heading."""
