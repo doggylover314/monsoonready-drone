@@ -7,8 +7,8 @@ afterwards.
 Two people, one phone held landscape. R is Reyansh, narrating and flying. C is
 Raghav on camera, following, never stopping the recording.
 
-Print it. One copy each. Walk it through once without recording, because takes
-fail on forgetting a line and on wandering into frame, not on flying.
+Print it. One copy each. Walk it through once without recording. Takes fail on a
+forgotten line or a wander into frame; the flying is the part already known.
 
 ## Before you press record
 
@@ -46,10 +46,10 @@ names it.
 > computer. It runs Linux, and it runs our puddle-detection model on board.
 > Nothing goes to a phone or the cloud. Next to it, the camera the model sees
 > through, and a TF-Luna laser measuring height above the ground. Around the
-> frame, time-of-flight sensors on an ESP32, an obstacle ring reporting
-> distances to ArduPilot. It's reporting, not steering: in bright daylight it
-> sees puddles of light that aren't there, so we took it off the flight
-> controls until we've fixed that. And this is the payload: a hopper we built,
+> frame, time-of-flight sensors on an ESP32, an obstacle ring feeding distances
+> to ArduPilot. Right now it only reports them. Bright daylight makes those
+> sensors see obstacles that aren't there, so we've taken the ring off the
+> flight controls until we fix it. And this is the payload: a hopper we built,
 > with a
 > servo gate. In deployment it drops Bti, a larvicide that kills mosquito larvae
 > and nothing else. Today it drops mustard seed, because Bti is a real pesticide
@@ -113,12 +113,12 @@ C pans to the dashboard.
 Closing, straight to camera:
 
 > R, variant A: "Everything you saw, survey, detection, drop, happened on the
-> aircraft. The model on the Arduino, the flying on the Pixhawk. We flew it,
-> filmed it, and showed you what it did. Thanks for watching."
+> aircraft. The model on the Arduino, the flying on the Pixhawk. We flew it and
+> filmed it, and what you saw is what it did. Thanks for watching."
 >
-> R, variant B: "What's real today: onboard detection, GPS-logged sightings, and
-> the treatment mechanism. What's next is closing the loop without a pilot. We'd
-> rather show you exactly where it stands. Thanks for watching."
+> R, variant B: "Real today: onboard detection, GPS-logged sightings, and a
+> treatment mechanism that works. Still to come is closing the loop without a
+> pilot. We'd rather show you where it actually stands. Thanks for watching."
 
 C holds the aircraft in frame three seconds, then stops.
 
