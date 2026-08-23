@@ -2333,3 +2333,44 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
   There is no survey-grade truth to compare against, so the measurement is
   spread about the mean while the vehicle is stationary (GPS ground speed
   < 0.5 m/s). It is a lower bound on absolute error, not the absolute error.
+
+### 2026-08-23 ~23:45 IST: PRODUCT NAMED "MonsoonReady Dragonfly"
+
+- User: project name to MonsoonReady, product name to MonsoonReady Dragonfly,
+  update everywhere. **The project was ALREADY named MonsoonReady in all 26
+  tracked files, so that half was a no-op.** The real change is the product
+  name, which did not exist before. The old product name was "MonsoonReady
+  Drone", and it lived only in the submission report's Project Title field.
+- **THE DANGEROUS PART, AND WHY "EVERYWHERE" WAS NOT DONE LITERALLY.** Most
+  lowercase occurrences are live filesystem identifiers, not prose:
+  `monsoonready-drone` (the clone dir /home/arduino/monsoonready-drone),
+  `monsoonready_data` (~/monsoonready_data, holds every mission JSONL),
+  `monsoonready_det` (/tmp/monsoonready_det.json, the detector handoff),
+  `monsoonready-sync`, `monsoonready_manual`. Renaming any of them breaks the
+  aircraft on a reflight day. They were deliberately left alone. If the user
+  wants the paths renamed too it is a separate, coordinated board operation and
+  must not be bundled with a prose rename.
+- Method: 4 Sonnet classifier agents (docs / video / UI / meta), then one Sonnet
+  verifier PER PROPOSED EDIT with instructions to default to reject and to
+  confirm the target string byte for byte. 3 proposed, 3 accepted, 0 rejected.
+  The UI and meta groups correctly proposed nothing.
+- APPLIED, 3 lines in 3 files: `VIDEO_SCRIPT.md` and `VIDEO_SCRIPT.html` spoken
+  intro now says "this is MonsoonReady Dragonfly"; and
+  `docs/04_demo_video_storyboard.md` Plan B narration names the aircraft
+  instead of saying "the drone".
+- REPORT (~/Downloads/Arduino_Challenge_Project_Report.docx) edited separately
+  by surgical string replacement rather than the old paragraph-index patcher,
+  because the user had inserted images and the indexes had shifted. Backup at
+  the session scratchpad. Project Title "MonsoonReady Drone" ->
+  "MonsoonReady Dragonfly"; the opening description now reads "MonsoonReady
+  Dragonfly is an F550 hexacopter". Verified after rewrite: 18 zip entries and
+  all 4 embedded images preserved.
+- LEFT ALONE ON PURPOSE, flag for the user: Team Name stays "MonsoonReady"; the
+  video filename `MonsoonReady_Drone_Flight_1.mp4` in the report is an actual
+  filename and renaming it in the document without renaming the file would
+  break the reference; the dashboard title stays "MonsoonReady base station"
+  because the base station is not the aircraft; `README.md` and
+  `docs/01_project_writeup.md` headings stay "# MonsoonReady" as the project.
+- GUARD RUN AFTER APPLYING: `git diff` contains no `monsoonready[-_]` token at
+  all, only 3 files and 3 lines changed, and VIDEO_SCRIPT.html still balances
+  42 `<p>` against 42 `</p>`.

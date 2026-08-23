@@ -43,7 +43,7 @@ date" into Google. Hold three seconds, then widen to both of them. This is a
 disqualification criterion, so get it clean.
 
 **Reyansh:** "Today is [date], there it is on Google. I'm Reyansh, this is
-Raghav, and this is MonsoonReady, our entry for the Arduino Physical AI
+Raghav, and this is MonsoonReady Dragonfly, our entry for the Arduino Physical AI
 Challenge. It's a drone that finds the standing water where dengue and malaria
 mosquitoes breed, and treats it from the air."
 

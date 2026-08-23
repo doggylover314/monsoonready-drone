@@ -32,7 +32,7 @@ safety pilot, and let it survey, detect, descend, drop and come home.
 
 Plan B is flown by Reyansh with the detector recording and the drop commanded
 manually, opening with a plain sentence saying so. Something like: the detection
-you just watched runs on the drone, the command link that closes the loop is not
+you just watched runs on the MonsoonReady Dragonfly, the command link that closes the loop is not
 flight-ready today, so this one is me flying. Three seconds, said once, at the
 start.
 
