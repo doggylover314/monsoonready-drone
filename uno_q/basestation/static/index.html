@@ -21,6 +21,7 @@
     --critical:  #c22f2f;
     --det-dot:   #2f6fce;
     --track:     #6b6963;
+    --drone:     #d9730d;
     --site-dim:  0.55;
     --shadow:    rgba(0,0,0,.15);
     --cell:      86px;   /* grid row height; panel heights are multiples */
@@ -39,6 +40,7 @@
     --critical:  #d03b3b;
     --det-dot:   #86b6ef;
     --track:     #898781;
+    --drone:     #ff9f43;
     --site-dim:  0.40;
     --shadow:    rgba(0,0,0,.4);
   }
@@ -401,6 +403,7 @@
     <span class="chip"><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#0ca30c"/><path d="M4 7.4l2 2 4-4.5" stroke="#fff" stroke-width="1.8" fill="none"/></svg> treated</span>
     <span class="chip"><svg width="14" height="14"><path d="M3 3l8 8M11 3l-8 8" stroke="#d03b3b" stroke-width="2.4"/></svg> abort</span>
     <span class="chip"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="var(--track)" stroke-width="2"/></svg> track</span>
+    <span class="chip"><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="var(--drone)" stroke="#fff" stroke-width="1.6"/></svg> drone</span>
     <span class="chip"><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--det-dot)" stroke-width="1.8"/><text x="7" y="10" font-size="8" text-anchor="middle" fill="var(--det-dot)">1</text></svg> waypoint</span>
     <span class="chip"><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="3 2.5"/></svg> recurring &ge;2 flights</span>
     <span class="chip" style="margin-left:auto">scroll = zoom &middot; drag = pan &middot; dbl-click = reset</span>
@@ -520,6 +523,7 @@
 const RAMP = ['#cde2fb','#9ec5f4','#6da7ec','#3987e5','#256abf','#1c5cab','#104281','#0d366b'];
 /* Vocabulary and thresholds are uno_q/predict.py's; keep them in step. */
 const PERSIST_RADIUS_M = 5, RECURRING_MIN_FLIGHTS = 2, BLOB_RADIUS_M = 8;
+const LIVE_FIX_STALE_S = 10;   // fixes land every 1 s, polled every 3 s
 
 const $ = id => document.getElementById(id);
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -646,6 +650,7 @@ function buildPanels() {
     <label><input type="checkbox" id="ly-drop" checked> drops</label>
     <label><input type="checkbox" id="ly-abort" checked> aborts</label>
     <label><input type="checkbox" id="ly-track" checked> track</label>
+    <label><input type="checkbox" id="ly-drone" checked> drone</label>
     <label id="ly-site-label" style="display:none"><input type="checkbox" id="ly-site" checked> site</label>
     <span id="satNote" style="font-size:11.5px;color:var(--muted)"></span>
     <button id="wpEdit" style="display:none;font-size:12px;padding:2px 8px">Edit route</button>
@@ -838,6 +843,9 @@ async function loadMissions() {
 
 async function loadEvents() {
   state.events = await getJSON('/api/events/' + state.selected);
+  const mid = statusMissionId();
+  state.fixCount = mid ? ofMission('fix', mid).length : 0;
+  state.fixFresh = Date.now();
   $('updated').textContent = 'updated ' + new Date().toLocaleTimeString([], {hour12: false});
 }
 
@@ -1725,16 +1733,6 @@ function render() {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    // live aircraft position: last fix of the newest mission
-    const mid = statusMissionId();
-    const fx = mid ? ofMission('fix', mid) : [];
-    if (fx.length && !ofMission('mission_end', mid).length) {
-      const p = proj.px(fx[fx.length - 1].lat, fx[fx.length - 1].lon);
-      ctx.fillStyle = css('--ink');
-      ctx.strokeStyle = css('--page'); ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, 7); ctx.fill(); ctx.stroke();
-      state.hits.push({...p, r: 10, html: `<b>Aircraft</b> latest fix`});
-    }
   }
 
   /* GEOFENCE: the hand-drawn inclusion polygon (user 2026-08-16 - the field
@@ -1874,6 +1872,51 @@ function render() {
       `<b>Recurring site</b> seen in ${c.flights.size} flights ` +
       `(${c.n} detections)<br><span class="t">stagnation candidate: ` +
       `re-inspect / treat</span>`});
+  }
+
+  /* WHERE THE AIRCRAFT IS. Last 'fix' of the newest mission, which the
+     mission writes once a second. Drawn after every other layer so a dense
+     route cannot hide it, and on its own toggle so turning the track off
+     does not take the aircraft with it.
+
+     Freshness is measured from when THIS BROWSER saw a new fix arrive, never
+     by comparing the fix timestamp to the browser clock: the board's clock
+     is not guaranteed to agree with the laptop's. */
+  if (layer('ly-drone')) {
+    const mid = statusMissionId();
+    const fx = mid ? ofMission('fix', mid) : [];
+    if (fx.length) {
+      const f = fx[fx.length - 1], p = proj.px(f.lat, f.lon);
+      const ended = ofMission('mission_end', mid).length > 0;
+      const age = (Date.now() - (state.fixFresh || 0)) / 1000;
+      const live = !ended && age < LIVE_FIX_STALE_S;
+      const col = css('--drone');
+      ctx.save();
+      if (live) {                       // halo: findable at a glance on video
+        ctx.globalAlpha = 0.22; ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, 7); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, 7);
+      if (live) { ctx.fillStyle = col; ctx.fill(); }
+      else { ctx.setLineDash([3, 2.5]); }   // hollow = not moving any more
+      ctx.strokeStyle = live ? '#fff' : col; ctx.lineWidth = 2;
+      ctx.stroke(); ctx.setLineDash([]);
+      if (live) {
+        ctx.strokeStyle = col; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 8.6, 0, 7); ctx.stroke();
+      }
+      ctx.restore();
+      const alt = f.alt == null ? '?' : f.alt.toFixed(1);
+      const rng = f.rng == null ? 'no reading' : f.rng.toFixed(2) + ' m';
+      state.hits.push({...p, r: 16, html:
+        `<b>Aircraft</b> ${live ? f.state || 'flying'
+          : (ended ? 'last fix before the mission ended'
+                   : `no new fix for ${Math.round(age)} s`)}<br>` +
+        `${f.lat.toFixed(6)}, ${f.lon.toFixed(6)}<br>` +
+        `<span class="t">${alt} m above launch &middot; rangefinder ${rng}` +
+        `</span>`});
+    }
   }
 
   chrome(ctx, w, h);
@@ -2107,7 +2150,7 @@ function wireEvents() {
     await loadEvents(); render(); stats(); table(); status(); detList(); profile();
   });
   for (const id of ['ly-sat','ly-wp','ly-heat','ly-det','ly-drop','ly-abort',
-                    'ly-track','ly-site'])
+                    'ly-track','ly-drone','ly-site'])
     $(id).addEventListener('change', render);
   // re-ticking "sat" after a failure is the retry: forget the dead images
   // and start again from the direct source
@@ -2345,6 +2388,9 @@ setInterval(async () => {
     if (j !== state.lastEventsJson) {
       state.lastEventsJson = j;
       state.events = evs;
+      const mid = statusMissionId();
+      const n = mid ? ofMission('fix', mid).length : 0;
+      if (n !== state.fixCount) { state.fixCount = n; state.fixFresh = Date.now(); }
       $('updated').textContent = 'updated ' +
         new Date().toLocaleTimeString([], {hour12: false});
       render(); stats(); table(); status(); detList(); profile();

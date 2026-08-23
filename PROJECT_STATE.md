@@ -2104,3 +2104,47 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
   before filming; the CENTRELINE line immediately after it is accurate.
 - **THE BOARD MUST PULL AND RESTART THE DASHBOARD** for this. It is a front-end
   and server change, so a browser refresh alone is not enough.
+
+### 2026-08-23 ~21:55 IST: LIVE AIRCRAFT POSITION ON THE SITE MAP
+
+- User asked for the drone's current position on the map. **A version already
+  existed** and was nearly invisible: a 6 px `--ink` dot drawn INSIDE the
+  `ly-track` block (old `index.html:1728`), so it vanished whenever the track
+  layer was unticked, and it was the same colour as every other dark marker.
+  Rebuilt rather than added.
+- Source of position is unchanged and needs no new plumbing: `missionlog.fix()`
+  writes lat/lon/alt/rng/state once a second (`fix_period_s=1.0`), the front end
+  already refetches events every 3 s, so the marker updates on that tick.
+- **NEW `--drone` colour** (`#d9730d` light, `#ff9f43` dark), deliberately not
+  reusing `--det-dot` blue, `--good`, `--critical` or `--track`. Own layer
+  toggle `ly-drone`, own legend chip, drawn AFTER every other layer so a dense
+  route cannot cover it.
+- Live marker: 15 px translucent halo, filled 7 px disc, white stroke, thin
+  outer ring. Stale or ended: hollow dashed outline in the same colour. The
+  halo is there because this is being read off a laptop screen on video.
+- **FRESHNESS IS MEASURED FROM WHEN THE BROWSER SAW A NEW FIX ARRIVE, never by
+  subtracting the fix timestamp from the browser clock.** WHY: the fix `t` is
+  `time.time()` on the UNO Q and the dashboard is read from the laptop; the
+  board has no guaranteed clock agreement, so a clock-difference bug would
+  paint a perfectly live aircraft as stale, or worse, a dead one as live.
+  `state.fixCount`/`state.fixFresh` update whenever the fix count for the shown
+  mission changes. `LIVE_FIX_STALE_S = 10` (fixes arrive every 1 s, polled
+  every 3 s, so 10 s is three missed polls).
+- Tooltip: state, lat/lon to 6 dp, altitude above launch, rangefinder reading
+  or "no reading". When not live it says WHY, either "last fix before the
+  mission ended" or "no new fix for N s".
+- TESTED IN A REAL BROWSER, not by reading it. Injected a 12-fix mission and
+  called `render()`: live marker present with the correct tooltip; stale at 25 s
+  says "no new fix for 25 s"; after `mission_end` says "last fix before the
+  mission ended"; unticking `ly-drone` removes it; **unticking `ly-track` no
+  longer removes it** (the actual bug); zero fixes does not throw. Canvas
+  pixels read back: live centre `rgb(217,115,13)` = `#d9730d` filled, stale
+  centre is the satellite image showing through, so hollow is really hollow.
+- **LIMITATION, STATED BECAUSE IT MATTERS ON FILMING NIGHT: there is no
+  position until a mission is running.** Fixes come from the mission JSONL, so
+  an armed aircraft sitting on the ground before START shows nothing. Giving it
+  a position pre-launch would mean the dashboard opening MAVLink itself, and
+  that port is held by `run_mission.py` during a flight, so it is a real
+  contention risk and was NOT done hours before filming.
+- Board must pull and restart the dashboard: this is a front-end change, so a
+  browser refresh alone will not pick it up.
