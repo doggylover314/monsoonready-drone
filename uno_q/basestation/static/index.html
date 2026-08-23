@@ -524,6 +524,7 @@ const RAMP = ['#cde2fb','#9ec5f4','#6da7ec','#3987e5','#256abf','#1c5cab','#1042
 /* Vocabulary and thresholds are uno_q/predict.py's; keep them in step. */
 const PERSIST_RADIUS_M = 5, RECURRING_MIN_FLIGHTS = 2, BLOB_RADIUS_M = 8;
 const LIVE_FIX_STALE_S = 10;   // fixes land every 1 s, polled every 3 s
+const GHOST_FIX_S = 60;        // older than this and it is a past flight
 
 const $ = id => document.getElementById(id);
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -1885,11 +1886,17 @@ function render() {
   if (layer('ly-drone')) {
     const mid = statusMissionId();
     const fx = mid ? ofMission('fix', mid) : [];
-    if (fx.length) {
+    const ended = mid ? ofMission('mission_end', mid).length > 0 : true;
+    const age = (Date.now() - (state.fixFresh || 0)) / 1000;
+    /* A finished flight must NOT leave a dot behind (user, 2026-08-23: it sat
+       at the previous site and read as the aircraft's position). The marker
+       means "the aircraft is there NOW", so it is drawn only while the
+       mission is alive: no mission_end, and either the control poll says
+       run_mission is up or a fix has landed inside GHOST_FIX_S. */
+    const alive = !ended && (ctl.running || age < GHOST_FIX_S);
+    if (fx.length && alive) {
       const f = fx[fx.length - 1], p = proj.px(f.lat, f.lon);
-      const ended = ofMission('mission_end', mid).length > 0;
-      const age = (Date.now() - (state.fixFresh || 0)) / 1000;
-      const live = !ended && age < LIVE_FIX_STALE_S;
+      const live = age < LIVE_FIX_STALE_S;
       const col = css('--drone');
       ctx.save();
       if (live) {                       // halo: findable at a glance on video
@@ -1911,8 +1918,7 @@ function render() {
       const rng = f.rng == null ? 'no reading' : f.rng.toFixed(2) + ' m';
       state.hits.push({...p, r: 16, html:
         `<b>Aircraft</b> ${live ? f.state || 'flying'
-          : (ended ? 'last fix before the mission ended'
-                   : `no new fix for ${Math.round(age)} s`)}<br>` +
+                                : `no new fix for ${Math.round(age)} s`}<br>` +
         `${f.lat.toFixed(6)}, ${f.lon.toFixed(6)}<br>` +
         `<span class="t">${alt} m above launch &middot; rangefinder ${rng}` +
         `</span>`});

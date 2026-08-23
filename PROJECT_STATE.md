@@ -2148,3 +2148,33 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
   contention risk and was NOT done hours before filming.
 - Board must pull and restart the dashboard: this is a front-end change, so a
   browser refresh alone will not pick it up.
+
+### 2026-08-23 ~22:05 IST: GHOST DOT FIXED. MARKER MEANS "NOW", NOT "LAST SEEN"
+
+- User pulled, restarted, and reported the dot in "a completely wrong
+  position". Diagnosed without touching the board: it was the last fix of the
+  PREVIOUS flight, which was flown at a different site, so the marker was
+  parked kilometres from tonight's field.
+- **MY REGRESSION, INTRODUCED AN HOUR EARLIER.** The original code hid the
+  marker once the newest mission had a `mission_end`. I removed that guard and
+  drew a hollow marker instead, reasoning that "last known position" was more
+  informative. It is not: on a map with no other context a dot reads as WHERE
+  THE AIRCRAFT IS, and a stale one is worse than none. Reverted to hiding, and
+  the lesson is recorded rather than the fix alone.
+- New gate: draw only while the mission is alive, meaning no `mission_end` AND
+  (`ctl.running` from the `/api/control` poll OR a fix inside
+  `GHOST_FIX_S = 60`). The control-poll term is what keeps the marker up during
+  a comms gap; the 60 s term is what keeps it up if a mission dies without
+  writing `mission_end`, but only briefly.
+- `LIVE_FIX_STALE_S = 10` still governs SOLID vs HOLLOW. A running mission with
+  no fix for 25 s shows hollow and says "no new fix for 25 s". The
+  "last fix before the mission ended" tooltip is deleted; that state no longer
+  draws anything.
+- RE-TESTED IN THE BROWSER, five cases: running + fresh = solid marker;
+  running + 25 s gap = hollow, marker kept; **ended mission = NO MARKER (the
+  reported bug)**; flight that died an hour ago with no mission_end = NO MARKER;
+  dashboard reopened mid-flight = marker present.
+- CONSEQUENCE, AND IT RECONCILES BOTH OF TONIGHT'S REPORTS: there is no dot
+  before START and no dot after the mission ends. The earlier "no dot even
+  though the checkbox is ticked" was this same rule working correctly, not a
+  failure. The map shows the aircraft only while it is flying.
