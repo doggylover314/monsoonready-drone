@@ -2254,3 +2254,41 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
   confidence.
 - NOT YET KNOWN. This entry records the analysis, not a conclusion. The logs
   are on the board and the assistant does not touch the board.
+
+### 2026-08-23 ~22:40 IST: LOGS READ. TWO FINDINGS, ONE OF THEM BLOCKS ARMING
+
+- Logs supplied by the user (assistant does not touch the board).
+
+- **GPS GATE RULED OUT, DEFINITIVELY.** run_mission printed "dry run complete,
+  0 detection(s)", NOT the "no GPS fix arrived" message. So `tel.lat` was
+  populated and `detector.poll()` really ran for the full 30 s. The prime
+  suspect from the previous entry is dead.
+
+- **THE MODEL ITSELF PRODUCED NOTHING.** detect_worker logged "seq 10/20/30/40:
+  no detections" with **sharpness 52 to 58**. Compare the 18:38-18:41 daylight
+  run in the same log: **sharpness 100 to 106**, and 129 to 131 at its best.
+  Roughly half the image detail, and the run was at 22:20 in the dark. This is
+  the photometry problem already computed on 2026-08-23: a 6 W LED gives at
+  most a few tens of lux at survey height against 1000 to 10000 in daylight,
+  and the fix needed is order 40,000 lm (~400 W), i.e. car headlights.
+  **A model cannot detect what the camera cannot see.** Confidence threshold is
+  not the lever here and lowering it further only buys false positives.
+- VERIFIABLE BY EYE, and this is the next step rather than more analysis: the
+  worker saves every frame under ~/monsoonready_data/photos and the dashboard
+  has a gallery. If a human cannot see the puddle in that frame, the model
+  never had a chance and the answer is light, not parameters.
+
+- **BLOCKING: `PreArm: PRX1: No Data`, repeated CRITICAL, four times in 20 s,
+  alongside `prx ring 4/4 up:ERR`.** A PreArm failure REFUSES ARMING. The
+  aircraft will not arm from the dashboard in this state, so this stops the
+  filming flight before the camera matters. PRX1_TYPE is 2 (MAVLink) per
+  `param_dumps/pixhawk_full_setup.param`.
+- The proximity ring STEERS NOTHING on this aircraft: OA_TYPE, AVOID_ENABLE and
+  GUID_OPTIONS are all 0 (recorded in `docs/06_judge_qa_prep.md`). So setting
+  PRX1_TYPE 0 costs only the reporting, not any protection that currently
+  exists. That makes it a legitimate way to clear the prearm and fly tonight.
+  Offered to the user; a param write is theirs to run.
+- NOT DIAGNOSED: why the ring stopped feeding the Pixhawk. "4/4 up:ERR" says
+  the ESP32 believes four sectors are up while the upward sensor errors, yet
+  the Pixhawk sees no data at all, so the break is between the ESP32 and
+  SERIAL1 rather than at the sensors. Out of scope tonight.
