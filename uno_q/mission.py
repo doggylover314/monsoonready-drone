@@ -51,18 +51,18 @@ class _NoLog:
 class MissionConfig:
     waypoints: list = field(default_factory=list)  # [(lat, lon), ...]
     survey_alt_m: float = 15.0
-    drop_alt_m: float = 2.0        # rangefinder AGL that triggers the drop
+    drop_alt_m: float = 1.0        # rangefinder AGL that triggers the drop
     descent_mps: float = 0.5
     climb_mps: float = 1.0
     wp_radius_m: float = 1.5
     # Hold at waypoint before advancing; settles airframe for stable imagery
     # (moving camera smears puddle-sized targets). Spacing set in
     # make_waypoints.densify; zero disables hold.
-    photo_hold_s: float = 2.0
+    photo_hold_s: float = 1.0
     alt_tol_m: float = 1.0
     rng_timeout_s: float = 1.0
     rng_expect_m: float = 6.0      # EKF alt by which rangefinder must have acquired
-    floor_margin_m: float = 1.0
+    floor_margin_m: float = 0.5
     drop_dwell_s: float = 2.0      # hold position after gate closes
     # Dose (dwell seconds) = area_m2 * dose_s_per_m2, clamped to min/max.
     # Clamps safety-net unknown areas (bounding box FOV error squared). Unknown
@@ -81,7 +81,7 @@ class MissionConfig:
     # translate back beside for climb. No rangefinder abort over water (dropout
     # expected). Offsets default north; override with run_mission flags for
     # one-sided ground. Zero offsets restore vertical descent (SITL drills).
-    lateral_offset_n_m: float = 3.0
+    lateral_offset_n_m: float = 1.5
     lateral_offset_e_m: float = 0.0
     cross_timeout_s: float = 20.0  # per translate; abort out, climb back
     # Re-approach attempts for each latched site before abandoning.
@@ -101,8 +101,8 @@ class MissionConfig:
     # stays in water and can be found again on better fix later.
     hdop_max: float = 1.4
     min_sats: int = 10
-    # CROSS arrival tighter tolerance: gate on 3 m cross could open 1.4 m off
-    # centre; 0.5 m radius keeps 2 m puddle treated at centre.
+    # CROSS arrival tolerance, tighter than wp_radius_m: the gate must open
+    # over the water, not near it.
     cross_radius_m: float = 0.5
     # Blind detector tolerance (worker or camera dead) while camera still
     # matters before abort.

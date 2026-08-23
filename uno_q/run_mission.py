@@ -64,16 +64,16 @@ def main():
     ap.add_argument('--data-dir', default='~/monsoonready_data')
     ap.add_argument('--survey-alt', type=float, default=3.0)
     # 2.0, not 3.0: prevents zero descent if survey is at tree line.
-    ap.add_argument('--drop-alt', type=float, default=2.0)
+    ap.add_argument('--drop-alt', type=float, default=1.0)
     # Metres from detected puddle centre. TF-Luna cannot range still water,
     # so descend this far to side before crossing over to release. North by default
     # (site decision). 0 disables offset.
-    ap.add_argument('--offset-n', type=float, default=3.0,
+    ap.add_argument('--offset-n', type=float, default=1.5,
                     help='metres north of the puddle to descend over')
     ap.add_argument('--offset-e', type=float, default=0.0,
                     help='metres east of the puddle to descend over')
     ap.add_argument('--conf', type=float, default=0.25)
-    ap.add_argument('--photo-hold', type=float, default=2.0,
+    ap.add_argument('--photo-hold', type=float, default=1.0,
                     help='seconds to hold at each waypoint so the frame is '
                          'taken stationary. 0 flies the rows continuously')
     # 'auto' resolves camera by name (camera.py). Bare indexes race Venus codecs;

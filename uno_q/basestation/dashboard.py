@@ -774,7 +774,7 @@ def main():
     # artificial light lowers scores further; false positives acceptable for one take
     ap.add_argument('--conf', type=float, default=0.25)
     # Photo hold (s): camera uses long exposure at night; hold keeps frame sharp
-    ap.add_argument('--photo-hold', type=float, default=2.0)
+    ap.add_argument('--photo-hold', type=float, default=1.0)
     ap.add_argument('--host', default='0.0.0.0')
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--enable-control', action='store_true',
