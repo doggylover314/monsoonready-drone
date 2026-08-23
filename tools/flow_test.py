@@ -3,42 +3,23 @@
 
     ./python tools/flow_test.py                 # default 0.5 s and 2.0 s
     ./python tools/flow_test.py --dwells 0.5 1 2 3 --repeats 2
-    ./python tools/flow_test.py --cycles 20     # 20 opens, ONE weighing
-    ./python tools/flow_test.py --grain-mg 0.6  # enter grain COUNT, not grams
+    ./python tools/flow_test.py --cycles 20     # 20 opens, one weighing
+    ./python tools/flow_test.py --grain-mg 0.6  # enter grain count, not grams
 
-WHEN THE SCALE CANNOT SEE ONE DOSE (2026-08-22, user: "grains are falling but
-they are too few for the weighing machine"). A 1 s dose can be a few tenths of
-a gram, under the resolution of a kitchen scale. Two ways out, and --cycles is
-the better one:
+Converts the mission's gate-open seconds into grams, which is what a dose is
+specified in.
 
-  --cycles N   fire the gate N times into the SAME tray, weigh once, divide by
-               N. A 0.3 g dose becomes 6 g at N=20, which any scale reads, and
-               averaging N shots also removes the shot-to-shot scatter that a
-               single dose has. Needs no extra constant, so nothing new can be
-               wrong. USE THIS unless you have a reason not to.
-  --grain-mg X enter a GRAIN COUNT at the prompt instead of grams; the tool
-               multiplies by X mg. Honest only for counts small enough to
-               actually count: a 1 mm mustard seed is about 0.6 mg, so one
-               gram is ~1700 seeds. Use it for tiny doses, or to calibrate the
-               per-grain mass in the first place (count 200, weigh them, X =
-               milligrams / 200).
+Two options for doses below the scale's resolution:
+  --cycles N    fire N times into the same tray, weigh once, divide by N.
+                Also averages out shot-to-shot scatter.
+  --grain-mg X  enter a grain count instead of grams. A 1 mm mustard seed is
+                about 0.6 mg. Calibrate X by counting 200 and weighing them.
 
-The two combine: --cycles 20 --grain-mg 0.6 counts the grains from 20 shots.
+Several dwells rather than one, because the question is whether flow is linear
+in time: a gate takes time to swing open, so short doses can under-deliver.
 
-NOT NEEDED TO FLY. This exists because the dropper now varies the DOSE by
-holding the gate open longer for a bigger puddle, and until this is measured
-those seconds are proportional to nothing: the mission can say "1.4 s" but
-nobody can say how many grams that is, which is what a report or a judge will
-ask.
-
-WHY MORE THAN ONE DWELL: the useful question is not the average rate, it is
-whether flow is LINEAR in time. A gate that takes 200 ms to swing open and
-settle delivers far less than half of a 1 s dose in 0.5 s, so a single
-measurement extrapolates wrongly at exactly the short doses small puddles get.
-Two dwells reveal the offset; three or more let you see the shape.
-
-Aircraft on the bench, hopper loaded, a tray or paper under the gate. Nothing
-here arms anything or touches a motor: it only commands the servo channel.
+Aircraft on the bench, hopper loaded, tray under the gate. Commands the servo
+channel only, nothing arms and no motor turns.
 """
 
 import argparse
@@ -54,19 +35,10 @@ from pymavlink import mavutil                                    # noqa: E402
 from mavlink_link import connect, send_and_ack                   # noqa: E402
 from dropper import PixhawkServoDropper as Gate                  # noqa: E402
 
-# BTI FIELD DOSE, for turning a measured g/s into a dose in seconds.
-# Sources, both label rates, looked up 2026-08-22:
-#   VectoBac G (Valent BioSciences): 2.5-20 lb/acre, the lower 2.5-10 band for
-#     1st-2nd instar larvae and 10-20 for 3rd-4th instars or polluted water.
-#     1 acre = 4046.86 m2, so 2.5 lb/acre = 0.28 g/m2 and 20 lb/acre = 2.24.
-#   Summit Mosquito Bits: 1 tsp per 25 sq ft = 1 tsp per 2.32 m2. At an
-#     ASSUMED 2.5 g per teaspoon of corn-cob granule that is ~1.1 g/m2.
-# THE TEASPOON-TO-GRAMS STEP IS AN ASSUMPTION, not a label figure, so the
-# Bits number is corroboration for the VectoBac range and not independent
-# evidence. Use the range, not the midpoint, when anything is at stake.
-# NONE OF THIS TRANSFERS TO THE SURROGATE: salt and sooji are stand-ins with
-# their own densities, so a dwell calibrated on salt delivers the right
-# SECONDS and the wrong GRAMS of anything else. Recalibrate for real Bti.
+# Bti label rates, VectoBac G (Valent BioSciences) 2.5-20 lb/acre over
+# 4046.86 m2/acre. Low band is 1st-2nd instar larvae, high band 3rd-4th or
+# polluted water. Surrogate granules give the right seconds, not the right
+# grams: recalibrate on real Bti.
 BTI_G_PER_M2_LOW = 0.28
 BTI_G_PER_M2_TYPICAL = 1.1
 BTI_G_PER_M2_HIGH = 2.24
@@ -80,9 +52,7 @@ def ask(prompt):
 
 
 def cycle(m, ch, open_us, closed_us, dwell, ack_timeout):
-    """Open the gate for `dwell` seconds, then close it. Returns True if both
-    commands were accepted, because a refused open with an accepted close
-    would otherwise read as a zero-gram result rather than a failed test."""
+    """Open the gate for `dwell` seconds, then close. True if both acked."""
     t0 = time.time()
     a = send_and_ack(m, mavutil.mavlink.MAV_CMD_DO_SET_SERVO, ch, open_us,
                      timeout=ack_timeout)
@@ -93,18 +63,16 @@ def cycle(m, ch, open_us, closed_us, dwell, ack_timeout):
     ok = a == 'MAV_RESULT_ACCEPTED' and b == 'MAV_RESULT_ACCEPTED'
     if not ok:
         print(f"    gate commands: open {a}, close {b}")
-    # The commanded dwell and the real one differ by the ack round trips,
-    # which over a radio link is not negligible. Report what actually
-    # happened, and divide by that, not by the number you asked for.
+    # Measured, not commanded: ack round trips add to the open time.
     return ok, actual
 
 
 def run_cycles(m, ch, open_us, closed_us, dwell, ack_timeout, cycles):
-    """Fire the gate `cycles` times into the same tray. Returns
-    (ok, total_open_seconds). Aborts the whole measurement on the first bad
-    cycle rather than pressing on: a partial run weighed as a full one reports
-    a low flow rate, which is the same wrong answer as a bridged hopper and
-    would be indistinguishable from it afterwards."""
+    """Fire the gate `cycles` times into one tray -> (ok, total_open_seconds).
+
+    Aborts on the first bad cycle, since a partial run weighed as a full one
+    reads as a low flow rate.
+    """
     total = 0.0
     for i in range(cycles):
         ok, actual = cycle(m, ch, open_us, closed_us, dwell, ack_timeout)
@@ -113,9 +81,7 @@ def run_cycles(m, ch, open_us, closed_us, dwell, ack_timeout, cycles):
             return False, total
         total += actual
         if cycles > 1:
-            # Let the servo settle and the column re-pack between shots, so
-            # shot N+1 starts from the same state as shot 1.
-            time.sleep(0.4)
+            time.sleep(0.4)     # servo settles, granule column re-packs
     return True, total
 
 
@@ -128,12 +94,9 @@ def main():
     ap.add_argument('--open-us', type=int, default=Gate.DEFAULT_OPEN_US)
     ap.add_argument('--closed-us', type=int, default=Gate.DEFAULT_CLOSED_US)
     ap.add_argument('--cycles', type=int, default=1,
-                    help='gate opens per weighing. Use 10-20 when one dose is '
-                         'below the scale resolution; the total is divided by '
-                         'this to give the per-dose figure.')
+                    help='gate opens per weighing, 10-20 for small doses')
     ap.add_argument('--grain-mg', type=float, default=None,
-                    help='milligrams per grain. If given, the prompt asks for '
-                         'a GRAIN COUNT instead of grams.')
+                    help='milligrams per grain; prompts for a count not grams')
     ap.add_argument('--conn', default=None)
     ap.add_argument('--baud', type=int, default=None)
     args = ap.parse_args()
@@ -147,12 +110,11 @@ def main():
     print(f"gate on ch{args.channel}: {args.closed_us}us closed -> "
           f"{args.open_us}us open")
     if args.cycles > 1:
-        print(f"{args.cycles} opens per weighing; do NOT empty the tray "
-              f"between them, only between dwells.")
+        print(f"{args.cycles} opens per weighing. Empty the tray between "
+              f"dwells only, not between opens.")
     if args.grain_mg:
         print(f"entering GRAIN COUNTS, at {args.grain_mg:g} mg per grain")
-    print("hopper loaded, tray under the gate, and weigh the TRAY EMPTY first "
-          "so you can subtract it.\n")
+    print("hopper loaded, tray under the gate, tray weighed empty first.\n")
 
     results = []
     for dwell in args.dwells:
@@ -175,13 +137,11 @@ def main():
                 print("    not a number, skipping this one")
                 continue
             if caught <= 0:
-                print("    nothing caught: the hopper is not flowing, and a "
-                      "zero is not a rate. Not recorded.")
+                print("    nothing caught, hopper not flowing. Not recorded.")
                 continue
             total_g = caught * args.grain_mg / 1000.0 if args.grain_mg \
                 else caught
-            # Per-cycle, so every downstream number (the fit, the g/s, the
-            # dose) is about ONE dose, which is what the mission commands.
+            # Per cycle, so every figure below describes ONE dose.
             grams = total_g / args.cycles
             actual = total_open / args.cycles
             results.append((dwell, actual, grams))
@@ -199,17 +159,9 @@ def main():
     for dwell, actual, grams in results:
         print(f"{dwell:>7.2f}{actual:>8.2f}{grams:>9.3f}{grams / actual:>8.2f}")
 
-    # Straight-line fit through the (time, grams) points. The INTERCEPT is the
-    # interesting number: markedly negative means the gate wastes time opening
-    # before anything flows, so short doses under-deliver and the mission's
-    # dose_s_min needs raising above that threshold.
-    # SUPPLY-LIMITED CHECK, BEFORE THE FIT, because it invalidates it.
-    # 2026-08-22: with an under-filled hopper the seeds around the hole run
-    # out mid-dwell, so the rate DECAYS during the open. Fitting a straight
-    # line to a decaying rate manufactures a large POSITIVE intercept, which
-    # reads exactly like a fixed slug falling at gate-crack. It is not one.
-    # Both are positive-intercept, so the intercept alone cannot tell them
-    # apart; the discriminator is whether g/s itself falls with dwell.
+    # Supply check first, since a hopper running dry mid-dwell fakes the same
+    # positive intercept as a fixed slug. The discriminator is g/s falling as
+    # dwell rises.
     starved = False
     if len(results) >= 2:
         by_dwell = sorted(results, key=lambda r: r[1])
@@ -217,17 +169,14 @@ def main():
         last = by_dwell[-1][2] / by_dwell[-1][1]
         if first > 0 and last < 0.7 * first:
             starved = True
-            print(f"\n*** SUPPLY-LIMITED, DO NOT TRUST THE FIT BELOW ***")
-            print(f"  g/s fell from {first:.2f} at the shortest dwell to "
-                  f"{last:.2f} at the longest, a {100 * (1 - last / first):.0f}% "
-                  f"drop. A gate that is open longer cannot deliver LESS per "
-                  f"second unless it is running out of material.")
-            print(f"  REFILL THE HOPPER and re-run. Until then the only "
-                  f"defensible number is the SHORTEST dwell's "
-                  f"{first:.2f} g/s, which is the least starved.")
-            print(f"  Any positive intercept below is this decay, not a slug.")
+            print(f"\n*** SUPPLY-LIMITED: refill the hopper and re-run ***")
+            print(f"  g/s fell {100 * (1 - last / first):.0f}%, "
+                  f"{first:.2f} at the shortest dwell to {last:.2f} at the "
+                  f"longest. Only a hopper running dry does that.")
+            print(f"  Best available figure is the shortest dwell, "
+                  f"{first:.2f} g/s.")
 
-    slope = None            # stays None unless the fit below actually runs
+    slope = None            # stays None if the fit does not run
     if len(results) >= 2:
         xs = [a for _, a, _ in results]
         ys = [g for _, _, g in results]
@@ -242,36 +191,25 @@ def main():
             if intercept < -0.05 * slope:
                 lost = -intercept / slope
                 print(f"  gate opening lag: about {lost:.2f}s of the dwell "
-                      f"delivers nothing, so raise MissionConfig dose_s_min "
-                      f"above it or short doses will under-deliver")
+                      f"delivers nothing. Raise MissionConfig dose_s_min "
+                      f"above it.")
             elif intercept > 0.05 * slope and starved:
-                print(f"  positive intercept {intercept:+.2f} g is the "
-                      f"supply decay flagged above, NOT a fixed slug. "
-                      f"Refill and re-run before reading anything into it.")
+                print(f"  intercept {intercept:+.2f} g is the supply decay "
+                      f"above, not a slug. Refill and re-run.")
             elif intercept > 0.05 * slope:
-                # The OPPOSITE failure, and the one this rig actually has
-                # (2026-08-22): a positive intercept means a fixed SLUG falls
-                # out the instant the gate cracks, no matter how short the
-                # dwell. The column sitting in the aperture is already past
-                # the gate. Flow is still linear, but it does NOT pass
-                # through the origin, so dose does NOT scale to zero and
-                # `grams / rate` OVERSTATES the dwell for every puddle.
+                # Granules already past the gate fall at gate-crack, so flow
+                # is linear but does not pass through the origin.
                 print(f"  fixed slug per open: about {intercept:.2f} g falls "
-                      f"regardless of dwell. This is the MINIMUM DOSE and it "
-                      f"cannot be reduced by shortening the open time; only a "
-                      f"smaller aperture reduces it.")
-                print(f"  so dwell for a target mass is "
-                      f"(grams - {intercept:.2f}) / {slope:.2f}, NOT "
-                      f"grams / {slope:.2f}")
+                      f"regardless of dwell. Minimum dose; only a smaller "
+                      f"aperture reduces it.")
+                print(f"  dwell for a target mass is "
+                      f"(grams - {intercept:.2f}) / {slope:.2f}")
             else:
-                print("  intercept is near zero: flow passes through the "
-                      "origin, so dose seconds scale proportionally")
-    # What the rate MEANS, in the only units a dosing decision is made in.
-    # Uses the straight mean rather than the fit's slope when there is only
-    # one point, and says which it used, because a judge asking "how many
-    # grams" deserves to know whether that came from one measurement.
+                print("  intercept near zero: dose seconds scale "
+                      "proportionally")
+    # Fitted slope when available, plain mean otherwise; the basis is printed.
     rate = None
-    offset = 0.0            # grams delivered at zero dwell (the fixed slug)
+    offset = 0.0            # grams at zero dwell, the fixed slug
     if slope is not None and slope > 0:
         rate, basis = slope, 'fitted slope'
         offset = intercept
@@ -280,19 +218,15 @@ def main():
         basis = 'mean of %d measurement(s)' % len(results)
     if rate and rate > 0 and starved:
         print("\n=== DOSE: NOT COMPUTED ===")
-        print("The hopper ran dry mid-measurement, so neither the rate nor "
-              "the intercept describes a full hopper. Refill and re-run; a "
-              "dose table built on starved data would be confidently wrong, "
-              "which is worse than no table.")
+        print("The hopper ran dry mid-measurement. Refill and re-run.")
     elif rate and rate > 0:
         print(f"\n=== DOSE, at {rate:.2f} g/s ({basis}) ===")
         print("Bti label rates: VectoBac G 2.5-20 lb/acre = "
               f"{BTI_G_PER_M2_LOW}-{BTI_G_PER_M2_HIGH} g/m2, "
               f"about {BTI_G_PER_M2_TYPICAL} g/m2 mid-label.")
         if offset > 0:
-            print(f"Dwell solves grams = {rate:.2f}*s + {offset:.2f}, so any "
-                  f"puddle wanting under {offset:.2f} g is OVER-DOSED by the "
-                  f"fixed slug and shown as 0.00s.")
+            print(f"Dwell solves grams = {rate:.2f}*s + {offset:.2f}. Any "
+                  f"puddle wanting under {offset:.2f} g shows as 0.00s.")
         print(f"{'puddle':>9}{'grams':>9}{'seconds':>9}")
         for area in (1, 2, 5, 10, 20):
             grams = area * BTI_G_PER_M2_TYPICAL
@@ -301,22 +235,15 @@ def main():
             if secs <= 0:
                 secs, flag = 0.0, '  <-- slug alone overshoots'
             print(f"{area:>7} m2{grams:>9.1f}{secs:>9.2f}{flag}")
-        print("READ THIS BEFORE QUOTING ANY OF IT: the seconds are real, the "
-              "grams are not. They were measured with a SURROGATE (salt, "
-              "sooji, seeds), whose density and grain size are not Bti's, so "
-              "the same dwell delivers a different mass of the real product. "
-              "Re-run this with actual Bti granules before any number here "
-              "goes in front of a judge.")
+        print("Measured on a surrogate granule, so the seconds carry over and "
+              "the grams do not. Re-run on real Bti to quote a mass.")
         smallest = max(0.0, (BTI_G_PER_M2_TYPICAL - offset) / rate)
         if smallest < 0.3:
-            print(f"\nNOTE: a 1 m2 puddle is only {smallest:.2f}s of gate "
-                  f"time, which is close to the servo's own travel time. At "
-                  f"that scale the dose is set by how fast the gate moves, "
-                  f"not by the dwell, so either shrink the hole or accept a "
-                  f"floor dose and set MissionConfig.dose_s_min to it.")
-    print("\nPut the g/s figure in PROJECT_STATE with the MATERIAL beside it, "
-          "and set MissionConfig.dose_s_per_m2 from the grams you actually "
-          "want per square metre of water.")
+            print(f"\nNOTE: a 1 m2 puddle is {smallest:.2f}s of gate time, "
+                  f"near the servo's own travel time. Shrink the aperture, or "
+                  f"set MissionConfig.dose_s_min to this floor.")
+    print("\nRecord the g/s figure with the material beside it, and set "
+          "MissionConfig.dose_s_per_m2 from the target grams per square metre.")
 
 
 if __name__ == '__main__':

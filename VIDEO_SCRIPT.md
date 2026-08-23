@@ -46,8 +46,11 @@ names it.
 > computer. It runs Linux, and it runs our puddle-detection model on board.
 > Nothing goes to a phone or the cloud. Next to it, the camera the model sees
 > through, and a TF-Luna laser measuring height above the ground. Around the
-> frame, time-of-flight sensors on an ESP32, an obstacle ring feeding
-> ArduPilot's own avoidance. And this is the payload: a hopper we built, with a
+> frame, time-of-flight sensors on an ESP32, an obstacle ring reporting
+> distances to ArduPilot. It's reporting, not steering: in bright daylight it
+> sees puddles of light that aren't there, so we took it off the flight
+> controls until we've fixed that. And this is the payload: a hopper we built,
+> with a
 > servo gate. In deployment it drops Bti, a larvicide that kills mosquito larvae
 > and nothing else. Today it drops mustard seed, because Bti is a real pesticide
 > and this is a test flight."
