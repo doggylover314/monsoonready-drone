@@ -380,6 +380,7 @@
           <label id="genInsetL">keep out <input id="genInset" type="number" min="0" max="50" step="0.5" value="4"> m</label>
           <button id="genStart">Set start point</button>
           <button id="genGo">Generate</button>
+          <button id="genLine">Centre line</button>
         </div>
         <div class="edRow">
           <button id="edUndo">Undo point</button>
@@ -1303,6 +1304,7 @@ function updateEditBox() {
   $('genBox').style.display = fenced ? 'none' : '';
   $('genInsetL').style.display = fenced ? '' : 'none';
   $('genStart').style.display = fenced ? '' : 'none';
+  $('genLine').style.display = fenced ? '' : 'none';   // needs a fence to halve
   $('genStart').textContent = edit.pick === 'start' ? 'click the map…'
                             : state.genStart ? 'Start point ✓ (move)'
                             : 'Set start point';
@@ -2257,24 +2259,34 @@ function wireEvents() {
     else { edit.pick = 'start'; canvasEl().style.cursor = 'crosshair'; }
     updateEditBox();
   });
-  $('genGo').addEventListener('click', async () => {
-    const btn = $('genGo'), fenced = state.fence.length >= 3;
+  async function runGenerate(mode) {
+    const line = mode === 'centre';
+    const btn = $(line ? 'genLine' : 'genGo'), fenced = state.fence.length >= 3;
+    const label = line ? 'Centre line' : 'Generate';
     btn.disabled = true;
     btn.textContent = fenced ? 'planning…' : 'reading GPS…';
     $('edNote').classList.remove('bad');
-    $('edNote').textContent = fenced
-      ? 'filling the fence with rows…'
-      : 'asking the aircraft where it is standing…';
+    $('edNote').textContent = !fenced
+      ? 'asking the aircraft where it is standing…'
+      : (line ? 'drawing one line down the middle…'
+              : 'filling the fence with rows…');
     const j = await ctlPost('/api/waypoints/generate', {
       rows: +$('genRows').value, length: +$('genLen').value,
       spacing: +$('genSp').value, inset: +$('genInset').value,
       heading: $('genHdg').value === '' ? null : +$('genHdg').value,
-      start: state.genStart,
+      start: state.genStart, mode: mode || '',
     }, $('edNote'));
-    btn.disabled = false; btn.textContent = 'Generate';
+    btn.disabled = false; btn.textContent = label;
     if (!j.ok) { $('edNote').classList.add('bad'); return; }
     state.wps = j.waypoints; state.wpDirty = true;
-    $('edNote').textContent = j.source === 'fence'
+    $('edNote').textContent = j.source === 'centreline'
+      ? `${j.waypoints.length} waypoints on one straight ${j.path_m} m line `
+        + `down the middle, along ${j.heading}°, ${j.inset} m clear of the `
+        + `fence`
+        + (j.dropped ? ` — the fence narrows, so ${j.dropped} shorter piece(s) `
+            + `of the centre line were left out. Flying them needs a second `
+            + `route.` : ` — drag to adjust, then Save`)
+      : j.source === 'fence'
       ? `${j.waypoints.length} waypoints, ${j.rows} rows along ${j.heading}°, `
         + `${j.inset} m clear of the fence, ${j.path_m} m of path`
         // never a silent omission: a piece of the field the aircraft cannot
@@ -2286,7 +2298,9 @@ function wireEvents() {
         + `${j.from[1].toFixed(6)}, rows along ${j.heading}° — drag to adjust, `
         + `then Save`;
     updateEditBox(); render();
-  });
+  }
+  $('genGo').addEventListener('click', () => runGenerate(''));
+  $('genLine').addEventListener('click', () => runGenerate('centre'));
   $('fnPush').addEventListener('click', async () => {
     // A silent "pushing…" for up to a minute reads as a hang (user,
     // 2026-08-19). The server does two named stages, upload then verify on a

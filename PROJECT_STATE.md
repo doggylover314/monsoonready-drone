@@ -2063,3 +2063,44 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - ARM WINDOW CONFIRMED FROM SOURCE, not memory: `index.html:1102`,
   `setTimeout(() => setArmed(false), 8000)`. START MISSION must be pressed
   within **8 seconds** of ARM or it silently greys out with no error text.
+
+### 2026-08-23 ~21:30 IST: CENTRE LINE ROUTE ADDED (user request, filming night)
+
+- User drew a long narrow diagonal fence, pressed Generate at 2.2 m spacing and
+  got 71 waypoints on 7 rows, 114 m of path. Correct for the settings and
+  useless for tonight: that is minutes of flying inside a fence a few metres
+  wide. Asked for one straight line down the middle instead.
+- **NEW `make_waypoints.build_centreline(polygon, heading_deg, inset_m, start,
+  step_m, min_row_m)`.** Projects the fence onto its long axis exactly the way
+  `build_coverage` does, takes the single scan line at the centre of the
+  across-track range, walks it at `step_m` and keeps the LONGEST contiguous run
+  that stays `inset_m` clear of every edge. Returns two endpoints plus an info
+  dict with the same keys `build_coverage` returns, so the dashboard and the
+  front end need no special cases. `densify(max_leg)` then splits it, which is
+  what puts a photo-hold stop every 1.8 m.
+- WHY the longest run rather than the whole line: on a waisted or concave fence
+  the centre line leaves the polygon in the middle. Taking the longest clear
+  piece keeps every leg legal. The pieces NOT flown are counted into
+  `info['dropped']` and said out loud in the UI, same policy as the coverage
+  route. Verified on a waisted 8-corner fence: 2 points, 12 m, dropped 1.
+- API: `POST /api/waypoints/generate` now honours `mode: 'centre'`
+  (`dashboard.py:341`). Anything else keeps the old behaviour byte for byte.
+  Returns `source: 'centreline'`.
+- UI: new **Centre line** button beside Generate (`index.html:383`). Both
+  buttons now call one shared `runGenerate(mode)`. The button is hidden unless
+  a fence exists (`index.html:1307`), because without one the request falls
+  through to the GPS serpentine branch and the word "centre" would be a lie.
+- TESTED THROUGH FLASK'S TEST CLIENT, not by reading it: centre line on a
+  30x8 m strip gives 16 waypoints on one 27 m line, **maximum deviation from a
+  straight line 0.000000 m**, every leg exactly 1.80 m; the coverage route is
+  unchanged (50 waypoints, 3 rows, 2.2 m); a forced heading works; a keep-out
+  too big for the fence returns a clean 400 with a readable reason.
+- **COVERAGE COST, STATED SO IT IS NOT A SURPRISE:** a centre line at 3 m
+  images a strip 3.20 m wide down the middle of the fence and nothing either
+  side of it. That is the deal the user asked for. Puddles outside that strip
+  will not be seen at any confidence threshold.
+- The GENERATE log line still prints "using rows 12 m" before the CENTRELINE
+  line even when rows are irrelevant. Cosmetic, left alone deliberately hours
+  before filming; the CENTRELINE line immediately after it is accurate.
+- **THE BOARD MUST PULL AND RESTART THE DASHBOARD** for this. It is a front-end
+  and server change, so a browser refresh alone is not enough.

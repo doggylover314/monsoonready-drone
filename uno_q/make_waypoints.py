@@ -97,6 +97,83 @@ def _inside(px, py, poly):
     return hit
 
 
+def build_centreline(polygon, heading_deg=None, inset_m=1.0, start=None,
+                     step_m=0.5, min_row_m=1.0):
+    """One straight line down the middle of the fence, along its long axis.
+
+    Returns (waypoints, info) with the same keys as build_coverage. The line is
+    the longest clear run, so a waisted fence gives the longer half, not a leg
+    that leaves the fence.
+    """
+    if len(polygon) < 3:
+        return [], {'problem': 'a fence needs at least 3 corners'}
+    lat0, lon0 = polygon[0]
+    mlon = EARTH_M_PER_DEG_LAT * math.cos(math.radians(lat0))
+    if abs(mlon) < 1.0:
+        return [], {'problem': 'polygon is at a pole; not supported'}
+
+    def to_m(lat, lon):
+        return ((lat - lat0) * EARTH_M_PER_DEG_LAT, (lon - lon0) * mlon)
+
+    def to_ll(n, e):
+        return (lat0 + n / EARTH_M_PER_DEG_LAT, lon0 + e / mlon)
+
+    poly = [to_m(a, b) for a, b in polygon]
+    if heading_deg is None:
+        best, heading_deg = -1.0, 0.0
+        for i in range(len(poly)):
+            (an, ae), (bn, be) = poly[i], poly[(i + 1) % len(poly)]
+            d = math.hypot(bn - an, be - ae)
+            if d > best:
+                best, heading_deg = d, math.degrees(math.atan2(be - ae, bn - an))
+    h = math.radians(heading_deg)
+    ca, sa = math.cos(h), math.sin(h)
+    fwd = lambda n, e: n * ca + e * sa                            # noqa: E731
+    rgt = lambda n, e: -n * sa + e * ca                           # noqa: E731
+    back = lambda a, c: (a * ca - c * sa, a * sa + c * ca)        # noqa: E731
+
+    alo = min(fwd(*p) for p in poly)
+    ahi = max(fwd(*p) for p in poly)
+    c = (min(rgt(*p) for p in poly) + max(rgt(*p) for p in poly)) / 2.0
+
+    def clear(n, e):
+        if not _inside(n, e, poly):
+            return False
+        for i in range(len(poly)):
+            (ax, ay), (bx, by) = poly[i], poly[(i + 1) % len(poly)]
+            if _seg_dist(n, e, ax, ay, bx, by) < inset_m:
+                return False
+        return True
+
+    runs, run, a = [], None, alo
+    while a <= ahi + step_m / 2:
+        if clear(*back(a, c)):
+            run = (a, a) if run is None else (run[0], a)
+        else:
+            if run and run[1] - run[0] >= min_row_m:
+                runs.append(run)
+            run = None
+        a += step_m
+    if run and run[1] - run[0] >= min_row_m:
+        runs.append(run)
+    if not runs:
+        return [], {'problem': f'the centre of this fence is never {inset_m:g} m '
+                               f'clear of an edge: shrink the keep-out or draw '
+                               f'a wider fence'}
+
+    lo, hi = max(runs, key=lambda r: r[1] - r[0])
+    p0, p1 = back(lo, c), back(hi, c)
+    if start is not None:
+        sn, se = to_m(start[0], start[1])
+        if (math.hypot(p1[0] - sn, p1[1] - se)
+                < math.hypot(p0[0] - sn, p0[1] - se)):
+            p0, p1 = p1, p0
+    return ([to_ll(*p0), to_ll(*p1)],
+            {'heading': round(heading_deg % 360, 1), 'rows': 1,
+             'spacing': 0.0, 'inset': inset_m, 'dropped': len(runs) - 1,
+             'lines': 1, 'path_m': round(hi - lo), 'problem': None})
+
+
 def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
                    start=None, step_m=0.5, min_row_m=1.0):
     """Serpentine waypoints filling interior of polygon; deterministic per fence.

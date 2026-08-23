@@ -339,6 +339,23 @@ def make_app(data_dir, control=None):
             f"apart; using rows {spacing:g} m, waypoints {max_leg:.1f} m")
 
         poly = fence.load(fence_path)
+        if len(poly) >= 3 and str(b.get('mode', '')) == 'centre':
+            from make_waypoints import build_centreline, densify
+            wps, info = build_centreline(poly, heading, inset, start)
+            if info.get('problem'):
+                log.warn(f"CENTRELINE refused: {info['problem']}")
+                return jsonify({'ok': False, 'error': info['problem']}), 400
+            wps = densify(wps, max_leg)
+            log(f"CENTRELINE: {len(wps)} waypoints on one {info['path_m']} m "
+                f"line down the middle of the {len(poly)}-corner fence along "
+                f"{info['heading']} deg, {inset:g} m keep-out, waypoints "
+                f"{max_leg:.1f} m apart, {info['dropped']} shorter piece(s) "
+                f"ignored (not saved yet)")
+            return jsonify({'ok': True, 'waypoints': [list(p) for p in wps],
+                            'heading': info['heading'], 'source': 'centreline',
+                            'rows': 1, 'path_m': info['path_m'],
+                            'dropped': info['dropped'], 'inset': inset})
+
         if len(poly) >= 3:
             from make_waypoints import build_coverage, densify
             wps, info = build_coverage(poly, heading, spacing, inset, start)
