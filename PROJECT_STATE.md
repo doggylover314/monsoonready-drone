@@ -2292,3 +2292,44 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
   the ESP32 believes four sectors are up while the upward sensor errors, yet
   the Pixhawk sees no data at all, so the break is between the ESP32 and
   SERIAL1 rather than at the sensors. Out of scope tonight.
+
+### 2026-08-23 ~23:10 IST: FENCE BREACHES AND THE 10 m MAP ERROR, FROM THE .BIN LOGS
+
+- SD card mounted at /media/sleuther/0403-0201. Analysed 00000064 (18:39,
+  daylight), 00000068 (22:04, the failed recording) and 00000069 (22:38) with
+  pymavlink on the laptop. **TWO DIFFERENT CAUSES, both real; the aircraft was
+  telling the truth on both occasions.**
+
+- **00000068, THE FAILED RECORDING: THE GPS WAS GENUINELY BAD.**
+  GPS Status: 128 samples at 1 (NO FIX), 223 at 3, 675 at 4. Satellites min
+  **0**, median 10. **HDOP max 99.99, and 40% of all samples above 1.5.**
+  Position scatter while stationary: **median 5.42 m, 95th percentile 15.90 m,
+  worst 28.26 m.** Messages: "Arm: GPS 1: Bad fix" x6, "Arm: Fence requires
+  position" x11, "Arm: Vehicle breaching Polygon fence" x7.
+  This single measurement explains BOTH reported symptoms. The dashboard was
+  over 10 m out because it draws what the flight controller believes, and the
+  flight controller's belief was wandering by up to 28 m. The fence "breach"
+  was true relative to that wrong belief. **The trees are the cause: this is
+  textbook canopy multipath and signal blocking.**
+- Compare open sky in the SAME logs, which is the control: 00000064 had 12 sats,
+  HDOP 0.85, DGPS for all 596 samples, 0% above 1.5. 00000069 had 13 sats, HDOP
+  0.83, **stationary scatter median 0.73 m, worst 1.96 m**. The receiver is
+  fine. The sky view was not.
+
+- **00000069: A SECOND, UNRELATED CAUSE. THE AIRCRAFT REALLY WAS OUTSIDE THE
+  FENCE.** GPS excellent (0.73 m scatter) and it STILL said "Arm: Vehicle
+  breaching Polygon fence" 11 times. Pulled the actual polygon from the FNCE
+  records and computed it: 5 corners, roughly 20 x 20 m, longest diagonal
+  26.7 m. Aircraft at 12.9929918, 77.7263713. **Point-in-polygon: FALSE.
+  Distance to the nearest fence edge: 4.54 m.** The drone was parked about
+  4.5 m outside the fence that was pushed to it. Not a bug, not GPS: the fence
+  did not contain the launch point.
+- PRACTICAL RULE FOR TOMORROW, both causes: launch in the open with clear sky,
+  and draw the fence so the aircraft's actual standing position is inside it,
+  not merely beside it. `PreArm: PRX1: No Data` also appears in 64 and 68 and
+  is still an arming blocker unless PRX1_TYPE is set to 0.
+
+- METHOD NOTE: the scatter figure is the honest way to state GPS error here.
+  There is no survey-grade truth to compare against, so the measurement is
+  spread about the mean while the vehicle is stationary (GPS ground speed
+  < 0.5 m/s). It is a lower bound on absolute error, not the absolute error.
