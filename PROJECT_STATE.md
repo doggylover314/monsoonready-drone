@@ -2003,3 +2003,23 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
   flight-controller link and the camera. Not a new risk, just newly stated.
 - The Claude design prompt was corrected before use. Anyone regenerating that
   diagram must draw UNO Q -> USB hub -> {Pixhawk, camera}.
+
+### 2026-08-23 ~21:05 IST: BLOCK DIAGRAM DELETED TOO. NO DIAGRAM IN THE REPO
+
+- User, explicit: delete `docs/block_diagram.svg` as well. Done. Both drawings
+  are now out of the repo (block diagram recoverable at ee5d1da, circuit
+  schematic at 5538645).
+- `docs/README.md` updated in the same commit so it no longer points at a file
+  that does not exist. Its last table row now reads `circuit_schematic.png`,
+  marked not committed yet.
+- **THIS MAKES THE CLAUDE DESIGN OUTPUT BLOCKING FOR THE SUBMISSION.** There is
+  no longer a fallback drawing of any kind. The report needs a wiring image and
+  the repo now contains none. If the design tool produces nothing usable, the
+  recovery is `git show 5538645:docs/circuit_schematic.svg` or
+  `git show ee5d1da:docs/block_diagram.svg`, redirected to a file.
+- Landing plan agreed with the user: the generated image gets committed as
+  `docs/circuit_schematic.png`, AFTER it is finished, not before. Do not commit
+  a placeholder.
+- Note for whoever regenerates it: the block diagram was the drawing that had
+  the USB topology RIGHT (through the hub). That correctness is now recorded in
+  the entry above rather than in any file, so read it before drawing.

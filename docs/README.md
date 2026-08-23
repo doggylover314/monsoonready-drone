@@ -22,7 +22,7 @@ in on 2026-08-23.
 | `06_judge_qa_prep.md` | Every design decision as a question and an answer |
 | `07_evidence_checklist.md` | Each photo, log and capture, and the claim it backs |
 | `08_ai_authorship_disclosure.md` | How AI was used, including where it was wrong |
-| `block_diagram.svg` | Power and serial wiring on one page |
+| `circuit_schematic.png` | Power and serial wiring on one page. Not committed yet. |
 
 `01` is the spine. The rest exist so it can stay short while every claim in it
 still has something behind it: crashes to `02`, licences to `03`, the mustard
