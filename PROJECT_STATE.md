@@ -1941,3 +1941,30 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - **EVERY VALUE ON IT IS FROM THE PARAM FILE OR THE FIRMWARE CONSTANTS, none from memory:** BATT_MONITOR 4 / VOLT_MULT 10.802 / AMP_PERVLT 24; SERIAL1 PROTOCOL 2 at 115200 to the ESP32; SERIAL2 PROTOCOL 2 at 57600 to the SiK; SERIAL4 PROTOCOL 9 at 115200 with RNGFND1_TYPE 20 and ORIENT 25; SERVO9_FUNCTION 0, MIN 500, MAX 1800, TRIM 500; FRAME_CLASS 2 / TYPE 1; PRX1_TYPE 2; TCA9548A at 0x70 on GPIO21/22 with VL53L0X at 0x29; ESP32 compid 195 at 10 Hz on GPIO16/17; SECTOR_NO_DATA 65535; the hexa motor map with angles and directions; UNO Q compid 191.
 - CARRIES THE TWO FACTS A JUDGE IS MOST LIKELY TO PROBE: the two bucks are separate **so a stalled gate cannot brown out the companion computer**, and SERIAL5 is retired at protocol -1 with RNGFND2 disabled because ch6 died on 2026-08-21.
 - **STILL UNSEEN BY HUMAN EYES, same as block_diagram.svg.** The generator rules out overflow, overlap and out-of-canvas, which are the faults that make a diagram unusable; it cannot rule out a drawing that is merely ugly. One look before it goes in the report.
+
+### 2026-08-23 ~20:30 IST: SCHEMATIC REDRAWN ON USER RENDERING FEEDBACK
+
+- User looked at `docs/circuit_schematic.svg` and reported four faults: too much
+  description, power drawn as a series chain, wire labels cut through by the
+  wire itself, camera and GPS boxes cut off. All four are fixed and the file is
+  regenerated from scratch.
+- **Descriptions gone.** Every box is now its short name only, no sublines. 20
+  boxes, no parameter values, no prose. The param detail lives in
+  `param_dumps/pixhawk_full_setup.param` where it belongs.
+- **Power is now explicitly parallel.** One vertical pack rail at x=150 from the
+  LiPo, with four tapped stubs (junction dots) to power module, Buck A, Buck B
+  and the ESC bank. The old drawing chained lipo -> pdb -> pm -> Buck A -> Buck B
+  top-to-bottom, which reads as series and is wrong.
+- **Labels sit beside the wire, not on it.** Each label is offset 10 px past the
+  exit point and 6 px above the run, anchored start or end by direction.
+- **Nothing is cut off.** A 50 px margin is enforced on all four sides of a
+  1560x1020 canvas and asserted before the file is written.
+- LOGICAL BUG FOUND AND FIXED IN THE GENERATOR, invisible to the earlier checks:
+  every wire leaving the Pixhawk used the same `p('r')` midpoint, so all eight
+  labels would have stacked on one spot. Exits are now distributed down the
+  right edge, one slot per wire, and the Pixhawk box is 580 px tall to hold
+  them. Validated: 0 duplicate label positions, 0 labels landing inside a box,
+  0 elements off canvas, XML well-formed, 20 rects / 24 paths / 44 texts.
+- **STILL NOT SEEN RENDERED BY THE ASSISTANT** (no renderer here, browser
+  preview blocked by the sandbox). The user is the only one who can confirm it
+  looks right, same standing caveat as `docs/block_diagram.svg`.
