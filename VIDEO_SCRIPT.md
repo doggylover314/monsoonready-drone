@@ -82,18 +82,20 @@ can never brown out the computer. The ring is hand-soldered to a central hub.
 The hopper is our own design. Bought: frame, flight controller, motors. Made:
 everything that makes it MonsoonReady."
 
-**3:15, the AI.** Both at the laptop. Reyansh runs it. Camera over their
-shoulders, screen legible.
+**3:15, the AI.** Both at the laptop. The aircraft has not flown yet, so this is
+the model run on a still from an earlier flight. Reyansh starts it. Camera over
+their shoulders, screen legible.
 
 **Reyansh:** "The brain is a YOLO26-nano network we trained ourselves on about
 twenty-six thousand images of standing water. On the Arduino's own CPU it runs
 an image in about half a second. That's fine, because the aircraft photographs
 while it hovers rather than processing video."
 
-Boxes appear.
+Boxes appear on the laptop screen.
 
-**Raghav:** "Detection. Every box the model draws gets a ground coordinate, and
-that coordinate is what the aircraft flies to."
+**Raghav:** "That's the model finding standing water in a photo from an earlier
+flight. Same weights that run on the Arduino in the air. Each box becomes a
+ground coordinate, and that's what the aircraft flies to."
 
 **4:00, the flight.** Camera steps back far enough to hold the aircraft, the
 tray and both of them at once. Reyansh has the transmitter.
