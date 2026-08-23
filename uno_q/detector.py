@@ -1,7 +1,6 @@
 """Detection sources for the mission state machine.
 
-The mission only ever sees this interface; swapping FakeDetector (SITL) for the
-real ONNX camera detector later must not change mission.py.
+Mission interface: swapping FakeDetector (SITL) for OnnxDetector must not require mission.py changes.
 """
 
 import math
@@ -15,16 +14,11 @@ RNG_FRESH_S = 1.0
 
 
 def quiet_import_onnxruntime():
-    """Import onnxruntime with stderr parked on /dev/null for the duration.
+    """Import onnxruntime, suppressing expected GPU-probe warnings from ort 1.28.
 
-    ort 1.28 probes /sys/class/drm for GPUs AT IMPORT TIME and warns loudly
-    when the probe fails, which on this GPU-less board is the expected
-    outcome every single run. set_default_logger_severity() cannot suppress
-    it: the function does not exist until the import that emits the warning
-    has already completed. The redirect is at the fd level because the
-    warning comes from C++ code that writes fd 2 directly, not sys.stderr.
-    A real import failure still surfaces: the exception propagates after
-    stderr is restored.
+    ort probes /sys/class/drm at import time; on this GPU-less board the warning must be
+    suppressed via fd redirection (set_default_logger_severity does not exist until after import).
+    Real import failures still surface.
     """
     import os as _os
     saved = _os.dup(2)
@@ -45,43 +39,34 @@ class Detection:
         self.lat = lat
         self.lon = lon
         self.confidence = confidence
-        # Estimated ground area of the detection box. None whenever the
-        # geometry or a height is missing, which the mission must treat as
-        # "unknown size", never as "small".
+        # Ground area of detection box in m2, or None if geometry/height missing.
+        # Mission must treat None as "unknown", not "small".
         self.area_m2 = area_m2
 
 
 class DetectionSource:
     def poll(self, tel):
-        """Called every tick while in SURVEY. Return Detection or None."""
+        """Return Detection or None; called every tick in SURVEY."""
         raise NotImplementedError
 
     def blind_for_s(self):
-        """Seconds this source has been unable to see anything at all.
+        """Seconds detector output has been stale; 0.0 means healthy.
 
-        0.0 means healthy. This exists because None from poll() is ambiguous:
-        it means BOTH "no puddle here" and "I have no eyes", and the mission
-        cannot tell a clean survey from a blind one without asking. Sources
-        that cannot go blind (a scripted FakeDetector) inherit this and always
-        report 0.0.
+        None from poll() is ambiguous (no puddle vs. no eyes).
+        Sources that cannot go blind (FakeDetector) return 0.0.
         """
         return 0.0
 
 
 class _RowResolver(DetectionSource):
-    """Shared 'model rows -> Detection' logic for OnnxDetector (in-process
-    inference) and FileDetector (detect_worker.py results read from a file).
+    """Converts model output rows (LETTERBOX space) to Detection via geom and telemetry.
 
-    Rows are in LETTERBOX (model input) space: x1,y1,x2,y2,conf[,cls].
-    at_t: the time.monotonic() the frame's telemetry was captured at, so
-    rangefinder freshness is judged against frame time, not read time.
+    Rows format: x1,y1,x2,y2,conf[,cls]. at_t is frame capture time (for rangefinder freshness vs. read time).
     """
 
     def _init_resolver(self, conf, skip_radius_m, geom, mount_yaw_deg, log):
-        # conf <= 0 would accept the end-to-end export's zero-confidence
-        # padding rows as detections (the (1,300,6) output is always 300 rows
-        # long, most of them empty), so the aircraft would fly to whatever
-        # pixel happened to sort first. Refuse it here.
+        # conf <= 0 would treat zero-confidence padding rows (model output is always 300 rows, mostly empty)
+        # as detections, flying to whatever pixel sorted first. Must reject it.
         if not 0 < conf <= 1:
             raise ValueError(f"conf must be in (0, 1], got {conf}")
         self.conf = conf
@@ -95,12 +80,9 @@ class _RowResolver(DetectionSource):
     SIZE = 640
 
     def _resolve(self, tel, rows, w, h, at_t=None):
-        """Rows above threshold -> first un-treated site, or None."""
-        # The geometry is only valid at the resolution it was built for. If
-        # MJPG negotiation quietly fell back to something else mid-flight,
-        # every offset would be scaled wrong with no visible symptom, so drop
-        # to the nadir assumption instead: a known bounded error beats an
-        # invisible systematic one.
+        """Return first un-treated site above threshold, or None."""
+        # Geometry is frame-resolution-specific. If MJPG resolution changed mid-flight,
+        # offsets would be scaled wrong silently. Fall back to nadir: bounded error > invisible systematic error.
         if self.geom is not None and (w, h) != (self.geom.width,
                                                 self.geom.height):
             if not self._size_warned:
@@ -109,17 +91,14 @@ class _RowResolver(DetectionSource):
                          f"to nadir for the rest of the flight")
                 self._size_warned = True
             self.geom = None
-        # EVERY row above threshold, best first, not just the argmax. A single
-        # frame routinely holds a puddle we already treated and one we have
-        # not; taking only the strongest row means the treated one suppresses
-        # its neighbour on every frame until it leaves the footprint.
+        # All rows above threshold, best first. A frame holds both treated and untreated puddles;
+        # taking only strongest would suppress neighbours on every frame until they leave footprint.
         rows = sorted((r for r in rows if float(r[4]) >= self.conf),
                       key=lambda r: -float(r[4]))
         for row in rows:
             conf = float(row[4])
             lat, lon, how, area = self._locate(tel, row, w, h, at_t)
-            # Dedup on the SITE, not on where the drone happened to be: the
-            # same puddle seen from two positions must resolve to one target.
+            # Dedup on puddle site, not drone position: same puddle seen from two positions is one target.
             if any(dist_m(lat, lon, flat, flon) <= self.skip_radius_m
                    for flat, flon in self._fired):
                 continue                  # already treated this site
@@ -134,14 +113,10 @@ class _RowResolver(DetectionSource):
 
     @staticmethod
     def _height_agl(tel, at_t=None):
-        """Height above the ground the camera is looking at, and its source.
+        """Height above ground (AGL) and its source.
 
-        ground_offset()'s contract is AGL, not altitude above home, and the
-        two are only the same over ground level with the launch point. Prefer
-        the downward rangefinder whenever it has a fresh valid return, since
-        that IS the AGL by definition; fall back to the EKF's above-home
-        figure otherwise (which is what survey altitude will normally use,
-        the TF-Luna being blind above ~8 m).
+        Prefer fresh rangefinder (true AGL), fall back to EKF rel_alt (for altitude above home).
+        TF-Luna blind above ~8 m.
         """
         ref = at_t if at_t is not None else time.monotonic()
         if (tel.rng_valid and tel.rng_m is not None
@@ -152,11 +127,9 @@ class _RowResolver(DetectionSource):
         return None, 'none'
 
     def _locate(self, tel, row, frame_w, frame_h, at_t=None):
-        """Detection box centre -> (lat, lon, description).
+        """Map detection box centre to (lat, lon, description).
 
-        Falls back to the nadir assumption whenever the geometry is not
-        configured or the telemetry it needs is missing, so a lost heading
-        degrades the target to 'below us' instead of throwing mid-mission.
+        Falls back to nadir when geometry missing or telemetry incomplete, never throws mid-mission.
         """
         height_m, source = self._height_agl(tel, at_t)
         if (self.geom is None or height_m is None
@@ -180,8 +153,7 @@ class _RowResolver(DetectionSource):
 
 
 class FakeDetector(DetectionSource):
-    """SITL stand-in: 'sees' a planted puddle once the drone flies within
-    radius_m of it (proxy for the nadir camera footprint at survey alt)."""
+    """SITL stand-in: detects planted puddle when drone enters radius_m (proxy for nadir footprint)."""
 
     def __init__(self, lat, lon, radius_m=6.0, max_fires=1):
         self.lat = lat
@@ -201,31 +173,12 @@ class FakeDetector(DetectionSource):
 class OnnxDetector(_RowResolver):
     """Real detector: B525 still -> yolo26n ONNX -> Detection at drone nadir.
 
-    The yolo26 export is end-to-end (output (1,300,6) rows of
-    x1,y1,x2,y2,conf,cls, NMS baked in), so postprocessing is one threshold.
-    Preprocessing (letterbox 640, RGB, /255) is byte-identical to
-    spotcheck_onnx.py, which proved laptop/board parity on 2026-07-29.
-
-    Detection position comes from camera_geom when a CameraGeometry is
-    supplied (box centre -> ground offset -> NED -> lat/lon), and degrades to
-    the drone's own lat/lon (nadir) whenever the geometry or the telemetry it
-    needs is missing. It never raises mid-mission for want of a heading.
-
-    Behaviour shaped by the mission loop being single-threaded:
-      - poll() runs capture+inference at most every interval_s (board
-        inference is ~0.5s; unthrottled polling would starve the MAVLink
-        pump). Between inferences poll() returns None instantly.
-      - A fire is suppressed within skip_radius_m of any earlier fire,
-        else the just-treated puddle would re-latch forever after CLIMB.
-
-    NOTE 2026-08-01: in-process poll() blocks the mission loop for the full
-    capture+inference time, which is why flights now default to
-    detect_worker.py + FileDetector (below). This class stays both as the
-    inference engine the worker itself uses (infer_rows) and as the
-    --inline-detector fallback.
-
-    frame_source: optional callable returning a BGR image, for tests and
-    SITL (defaults to the B525 via OpenCV V4L2 at MJPG 1280x720).
+    Model output: (1,300,6) rows of x1,y1,x2,y2,conf,cls with NMS baked in; threshold only.
+    Preprocessing: letterbox 640, RGB, /255 (byte-identical to spotcheck_onnx.py).
+    Position: camera_geom (box centre -> ground offset -> NED -> lat/lon) or nadir fallback.
+    Never raises mid-mission. Single-threaded: poll() throttled by interval_s; deduped within skip_radius_m.
+    Blocking poll() is obsoleted by FileDetector + detect_worker.py in production flights.
+    frame_source: optional BGR image source (defaults to B525 via V4L2 MJPG 1280x720).
     """
 
     def __init__(self, model_path, camera='auto', conf=0.5, interval_s=1.0,
@@ -244,12 +197,8 @@ class OnnxDetector(_RowResolver):
         if frame_source is not None:
             self._grab = frame_source
         else:
-            # BY NAME, never by bare index: /dev/video numbers on this board
-            # are an enumeration race with the Venus codecs, and losing it is
-            # exactly the farm failure of 2026-08-15. camera.open_camera
-            # resolves the real camera, locks focus, and raises with a
-            # plain-words diagnosis (errno, holder process, or "missing from
-            # USB") when nothing usable opens.
+            # Open by name, never bare index: /dev/video enumeration races with Venus codecs.
+            # camera.open_camera resolves real device, locks focus, diagnoses failures clearly.
             import cv2
             from camera import open_camera
             self._cv2 = cv2
@@ -262,11 +211,9 @@ class OnnxDetector(_RowResolver):
         return frame if ok else None
 
     def preflight(self):
-        """Bench check, called before arming. True if the camera works.
+        """Bench check before arming. Returns True if camera works.
 
-        Exists because the alternative is discovering a dead camera by
-        flying an entire survey and landing with zero detections, which
-        looks identical to "there were no puddles".
+        Detects dead camera before flight (not after survey with zero detections).
         """
         frame = self._grab()
         if frame is None:
@@ -285,15 +232,10 @@ class OnnxDetector(_RowResolver):
         return True
 
     def infer_rows(self):
-        """Grab one frame and run the model. No telemetry, no dedup: this is
-        the piece detect_worker.py runs in its own process.
+        """Grab frame and run model; returns (t_frame, w, h, rows, frame) or None.
 
-        Returns (t_frame_wall, w, h, rows, frame) with rows = every model row
-        at or above conf, in letterbox space; or None if the camera gave no
-        frame. t_frame is time.time() AT CAPTURE, not after inference: the
-        consumer pairs it with the telemetry from when the frame was taken.
-        The BGR frame comes back too so a caller can save annotated evidence
-        without grabbing a second, different image.
+        This is the worker-process piece. rows = model output above conf in letterbox space.
+        t_frame is capture time (not inference time) to pair with frame's original telemetry.
         """
         frame = self._grab()
         t_frame = time.time()
@@ -309,17 +251,9 @@ class OnnxDetector(_RowResolver):
             import cv2
             self._cv2 = cv2
         boxed[top:top + nh, left:left + nw] = self._cv2.resize(frame, (nw, nh))
-        # SHARPNESS, MEASURED NOT GUESSED (2026-08-17). Motion and vibration
-        # blur is the one failure mode nothing in this repo could see: the
-        # camera picks its own exposure, and a smeared frame is inferred on
-        # exactly like a sharp one. Variance of the Laplacian on the very
-        # image the model receives is the cheap standard proxy (~1 ms against
-        # a ~500 ms inference), and it is DELIBERATELY NOT A GATE: no frame is
-        # skipped and no detection is suppressed. A threshold picked without
-        # in-flight numbers would silently blind the aircraft, so the number
-        # is logged now and the pre-take flight supplies the distribution to
-        # choose from. Absolute values mean nothing across scenes; compare
-        # sharp and blurred frames from the SAME flight.
+        # Sharpness (Laplacian variance) logged for analysis; motion blur is invisible to model.
+        # Not a gate (no frame skipped), no gating without in-flight distribution.
+        # Absolute values meaningless across scenes; compare within single flight only.
         self.last_sharpness = float(self._cv2.Laplacian(
             self._cv2.cvtColor(boxed, self._cv2.COLOR_BGR2GRAY),
             self._cv2.CV_64F).var())
@@ -348,9 +282,7 @@ class OnnxDetector(_RowResolver):
 
 
 class _TelSnap:
-    """Frozen copy of the Telemetry fields _locate needs, stamped with when
-    it was taken, so a detection computed seconds later still uses the fix
-    from frame time."""
+    """Frozen telemetry snapshot at capture time, so detection computed later uses correct fix."""
 
     __slots__ = ('t_wall', 't_mono', 'lat', 'lon', 'rel_alt_m',
                  'heading_deg', 'rng_m', 'rng_valid', 'rng_t')
@@ -368,26 +300,11 @@ class _TelSnap:
 
 
 class FileDetector(_RowResolver):
-    """Reads detect_worker.py results from a file instead of inferring.
+    """Reads detect_worker.py results from file; mission loop never blocks on inference.
 
-    WHY (2026-08-01, measured): in-process inference blocks the single-
-    threaded mission loop for the model's whole latency (yolo26n 511ms,
-    yolo26s 1518ms on the board), and for that time no MAVLink is pumped and
-    no pilot-override is noticed. With inference in its own process the loop
-    never blocks; poll() here is a stat() plus, when the worker has produced
-    a new result, one small JSON read.
-
-    THE PAIRING RULE, which is the one subtle part: a result read now is for
-    a frame captured one inference ago, and at survey speed the aircraft has
-    moved metres since. So poll() keeps a short history of telemetry
-    snapshots and computes the puddle position against the snapshot closest
-    to the frame's capture time, not against the current fix. Same-machine
-    wall clock on both sides, so the timestamps are comparable.
-
-    Liveness: the worker writes every cycle even with zero detections, so
-    the file's mtime is its heartbeat. Stale file => warn (worker died);
-    payload camera_ok false => warn (worker alive, camera dead). Both
-    degrade to 'no detections', never to an exception mid-flight.
+    Inference in separate process: loop pumps MAVLink freely (in-process blocks for model latency).
+    Pairing rule: result is one frame old; poll() keeps telemetry history and uses snapshot nearest frame capture time.
+    Liveness: file mtime is worker heartbeat; stale or camera_ok=false degrades to no detections, never exception.
     """
 
     STALE_S = 5.0
@@ -410,9 +327,7 @@ class FileDetector(_RowResolver):
         self._blind_since = None
 
     def _read(self):
-        """Latest worker payload if it is new since last read, else None.
-        Never raises: a half-written or vanished file is skipped, not fatal
-        (the worker writes via os.replace, so this is belt and braces)."""
+        """Return latest payload if new, else None. Never raises; half-written or vanished file skipped."""
         try:
             mtime = os.stat(self.path).st_mtime
         except OSError:
@@ -432,11 +347,9 @@ class FileDetector(_RowResolver):
         return payload, stale
 
     def preflight(self):
-        """Wait for a live worker producing correctly-sized frames.
+        """Wait for live worker with correct frame size.
 
-        Replaces the camera preflight: the camera now lives in the worker,
-        so 'fresh file with camera_ok' is the proof that the whole capture
-        and inference path works before arming.
+        Waits up to 30s for fresh output file with camera_ok=true before arming.
         """
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
@@ -468,30 +381,26 @@ class FileDetector(_RowResolver):
         return False
 
     def blind_for_s(self):
-        """How long the worker's output has been stale. A dead worker, a
-        dead camera or a full disk all end up here, because all three stop
-        the file being rewritten."""
+        """Seconds since output file went stale (dead worker, dead camera, or full disk all stop writes)."""
         if self._blind_since is None:
             return 0.0
         return time.monotonic() - self._blind_since
 
     def _snap_for(self, t_frame):
-        """History snapshot nearest the frame's capture time."""
+        """Return telemetry snapshot closest to frame capture time."""
         if not self._hist:
             return None
         return min(self._hist, key=lambda s: abs(s.t_wall - t_frame))
 
     def poll(self, tel):
-        # Record telemetry history on every tick (cheap), even ticks with no
-        # new result: the snapshot a future result needs is being taken NOW.
+        # Record telemetry every tick (cheap); history needed by future results being taken now.
         if tel.lat is not None and (
                 not self._hist or
                 time.monotonic() - self._hist[-1].t_mono >= self._HIST_MIN_GAP_S):
             self._hist.append(_TelSnap(tel))
 
         payload, stale = self._read()
-        # Blindness is a DURATION, not an event: the mission decides how long
-        # is too long, this only records when it started.
+        # Track blindness onset (mission decides duration threshold).
         if stale and self._blind_since is None:
             self._blind_since = time.monotonic()
         elif not stale:
@@ -525,13 +434,14 @@ class FileDetector(_RowResolver):
 
 
 def dist_m(lat1, lon1, lat2, lon2):
-    """Equirectangular approximation; fine for survey-scale distances."""
+    """Distance in metres; equirectangular approximation for survey-scale distances."""
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1) * math.cos(math.radians((lat1 + lat2) / 2))
     return 6371000.0 * math.hypot(dlat, dlon)
 
 
 def offset_latlon(lat, lon, north_m, east_m):
+    """Add NED offset to lat/lon."""
     dlat = north_m / 6371000.0
     dlon = east_m / (6371000.0 * math.cos(math.radians(lat)))
     return lat + math.degrees(dlat), lon + math.degrees(dlon)

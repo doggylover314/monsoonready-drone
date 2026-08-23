@@ -1,42 +1,11 @@
 #!/usr/bin/env python3
-"""First-look analysis of an ArduPilot .bin log. Run this after EVERY flight,
-before drawing any conclusion from memory of what the aircraft looked like.
+"""First-look analysis of an ArduPilot .bin log.
 
     ./python tools/check_log.py ~/logs/00000037.BIN
 
-EXIT CODE IS THE VERDICT: 0 = analysed and cleared, 1 = a gate failed, 2 = the
-log could not be judged. Chaining `check_log.py x.BIN && next-step` is therefore
-safe; before 2026-08-08 it was not, because every path exited 0.
-
-Reports, in the order they can stop the project:
-
-  VIBRATION   VibeX/Y/Z PER IMU INSTANCE while the motors are running. VibeZ
-              median < 15 on EVERY instance is THE gate before AltHold or
-              Loiter. Per instance matters: the EKF flies on one IMU, and
-              pooling instances lets a bad one hide behind good ones.
-  CLIPPING    the in-window RISE in each IMU's clip counter. The counter is
-              cumulative since boot, so the raw value includes bench handling.
-  GPS         worst sats/HDOP BEFORE the motors spun (the arming window, which
-              is the one the C3 crash was about) and again while flying.
-  COMPASS     magnetic field strength per instance, split BEFORE the motors
-              spin and while flying. The split is the diagnosis: high at rest
-              means the calibration is stale or something magnetic sits near
-              the compass, while low at rest and high under throttle means
-              current in nearby wiring. Recalibrating only fixes the first.
-  HOVER       learned hover throttle from CTUN.ThH. Not from PARM: PARM only
-              carries the value at log start, and hover learning never writes
-              a PARM record, so reading it there always reports the old value.
-  BATTERY     lowest voltage and total consumed. The consumed figure is worth
-              comparing against what your charger puts back in: that is the
-              only independent check on the current sensor's calibration.
-  ERRORS      ERR events decoded to subsystem names, plus autopilot messages.
-
-WHY THE THROTTLE FILTER, AND WHERE IT DOES NOT APPLY: vibration on the bench is
-near zero, so including pre-arm samples drags the median down and can turn a
-failing aircraft into a passing number. It is applied to VIBE only. GPS quality
-is deliberately NOT filtered, because arming happens at zero throttle and the
-arming window is exactly what the GPS rule exists to police.
-"""
+Exit: 0 = pass, 1 = gate failed, 2 = cannot judge.
+Reports: vibration per IMU, clipping, GPS quality, compass field, hover throttle, battery, errors.
+VibeZ median < 15 per IMU gates AltHold/Loiter. Throttle-gated on VIBE only: bench zeros drag median. GPS unfiltered at arming (zero throttle). Compass before/after-throttle split diagnoses calibration vs. wiring current."""
 
 import argparse
 import math
@@ -45,19 +14,15 @@ import sys
 
 from pymavlink import mavutil
 
-VIBE_GATE = 15.0          # VibeZ median, PROJECT_STATE flight gate
-MIN_SATS = 10             # CRASH LESSONS rule
+VIBE_GATE = 15.0          # VibeZ median gate
+MIN_SATS = 10             # Arming requirement
 MAX_HDOP = 1.5
-MAX_HOVER_THR = 0.5       # above this the thrust margin is too thin
-# Milligauss. NOT a universal constant: ArduPilot's arming check compares the
-# measured field against the field expected at YOUR location, and 875 is the
-# ceiling this aircraft itself printed at the farm ("Check mag field (1038,
-# max 875)", logs 43 and 45). Somewhere with a different earth field the
-# board will quote a different number, so treat this as the site figure the
-# aircraft gave us rather than a rule from the wiki.
+MAX_HOVER_THR = 0.5       # Above this, thrust margin too thin
+# Site-measured milligauss. ArduPilot compares measured vs. local Earth field.
+# Not a universal constant: each location's field differs.
 MAG_FIELD_GATE = 875.0
 
-# ArduPilot LogErrorSubsystem, the ones worth naming. Unlisted codes print raw.
+# ArduPilot ERR subsystem names. Unlisted codes print raw.
 ERR_SUBSYS = {
     2: 'RADIO', 3: 'COMPASS', 5: 'FAILSAFE_RADIO', 6: 'FAILSAFE_BATT',
     7: 'FAILSAFE_GPS', 8: 'FAILSAFE_GCS', 9: 'FAILSAFE_FENCE', 10: 'FLIGHT_MODE',
@@ -67,20 +32,17 @@ ERR_SUBSYS = {
     25: 'EKF_PRIMARY', 26: 'THRUST_LOSS_CHECK', 27: 'FAILSAFE_SENSORS',
     28: 'FAILSAFE_LEAK', 29: 'PILOT_INPUT', 30: 'FAILSAFE_VIBE',
 }
-# Subsystems whose presence should fail the run outright.
+# Subsystems that fail the run.
 ERR_FATAL = {12, 16, 17, 26, 30}
 
-# Substrings worth surfacing from MSG. 'Crash' and 'Thrust' are here because
-# "Crash: Disarming" and "Potential Thrust Loss (n)" are how ArduPilot reports
-# the prop/motor failure mode this airframe has already suffered, and neither
-# contains any of the generic keywords.
+# MSG substrings to highlight. 'Crash' and 'Thrust': ArduPilot encodes prop/motor failures without generic keywords.
 MSG_KEYS = ('EKF', 'Vibration', 'Failsafe', 'failsafe', 'Error', 'PreArm',
             'Glitch', 'Bad', 'Crash', 'Thrust', 'Motor', 'Yaw', 'Compass',
             'Baro', 'Internal')
 
 
 def pct(values, p):
-    """Percentile without numpy (this runs anywhere pymavlink does)."""
+    """Percentile, no numpy dependency."""
     if not values:
         return float('nan')
     s = sorted(values)
@@ -101,7 +63,7 @@ def main():
     except Exception as exc:                              # noqa: BLE001
         sys.exit(f"cannot open {args.logfile}: {exc}")
 
-    vibe = {}                 # imu -> [VibeZ ...]        (throttle-gated)
+    vibe = {}                 # imu -> [VibeZ...] throttle-gated
     vibe_xy = {}              # imu -> ([VibeX], [VibeY])
     clip_first, clip_last = {}, {}
     thr, thr_max = 0.0, 0.0
@@ -114,21 +76,11 @@ def main():
     errs, msgs = [], []
     volt_min, consumed, energy = None, None, None
     peak_amp = 0.0
-    # Battery-monitor calibration AS FLOWN. The board's current settings are not
-    # evidence about an old flight: these are the only trustworthy source for
-    # what scaling produced the amps in THIS log.
-    #
-    # TIMESTAMPED, AND THAT IS THE WHOLE POINT. A log records a parameter at
-    # boot AND every time it changes, so a value written while the aircraft sat
-    # on the ground AFTER landing appears LATER in the file than the one that
-    # actually flew. Taking the last record burned this project once already:
-    # log 39 was read as having flown at BATT_AMP_PERVLT=17 when 17 was set at
-    # t=758s, 131 seconds after the motors stopped, and the flight really ran
-    # at 90.6866. That single mistake produced a confident and completely wrong
-    # "the current does not respond to the parameter" conclusion. Resolve every
-    # parameter to its value AT THE MOMENT THE MOTORS STARTED.
-    batt_parms = []          # (time_s, name, value), in log order
-    first_fly_t = None       # time the motors first passed the throttle gate
+    # Battery parameters must be resolved to their value when motors started.
+    # Log records parameters at boot and when changed; post-flight changes
+    # appear later in file than values that actually flew.
+    batt_parms = []          # (time_s, name, value), log order
+    first_fly_t = None       # Time motors first passed throttle gate
 
     while True:
         msg = m.recv_match()
@@ -139,15 +91,14 @@ def main():
 
         if t == 'CTUN':
             ctun_seen = True
-            # Sum the time the motors were actually running, so endurance is
-            # measured rather than guessed. A log can hold many arm/disarm
-            # cycles, and CurrTot accumulates across all of them.
+            # Measure flight time from gap sums: endurance measured, not guessed.
+            # CurrTot accumulates across arm/disarm cycles.
             ts = getattr(msg, 'TimeUS', 0) / 1e6
             if thr >= args.min_throttle and first_fly_t is None:
                 first_fly_t = ts
             if thr >= args.min_throttle and last_ctun_t is not None:
                 gap = ts - last_ctun_t
-                if 0 < gap < 1.0:      # ignore gaps across a disarm
+                if 0 < gap < 1.0:      # Ignore gaps > 1s (disarm/rearm)
                     flight_s += gap
             last_ctun_t = ts
             thr = getattr(msg, 'ThO', thr)
@@ -163,8 +114,7 @@ def main():
                 xy = vibe_xy.setdefault(imu, ([], []))
                 xy[0].append(msg.VibeX)
                 xy[1].append(msg.VibeY)
-                # Cumulative since boot: record first and last inside the
-                # window so the report can show the rise, not the lifetime.
+                # Cumulative since boot: capture rise within flight window, not lifetime.
                 c = getattr(msg, 'Clip', None)
                 if c is not None:
                     clip_first.setdefault(imu, c)
@@ -174,8 +124,7 @@ def main():
             if ns is not None and hd is not None:
                 (gps_fly if flying else gps_pre).append((ns, hd))
         elif t == 'MAG':
-            # |B| from the RAW field, which is what the arming check tests.
-            # Offsets are logged separately and must not be subtracted here.
+            # |B| from RAW field: what the arming check uses. Offsets logged separately, don't subtract.
             x = getattr(msg, 'MagX', None)
             y = getattr(msg, 'MagY', None)
             z = getattr(msg, 'MagZ', None)
@@ -273,10 +222,6 @@ def main():
               "be cleared from it.")
 
     # --- compass field strength ----------------------------------------------
-    # Finding 8 of the 2026-08-17 scan: the farm logs read 1038 and 1058
-    # against a stated max of 875 and the CAUSE was never established. The
-    # before/after-throttle split below is what separates the two candidates,
-    # because a recalibration is wasted effort against a current-driven field.
     print(f"\nCOMPASS    |B| in mG, gate {MAG_FIELD_GATE:.0f} (this site's "
           f"figure, from the aircraft's own arming message)")
     if not mag_pre and not mag_fly:
@@ -322,10 +267,7 @@ def main():
             failed.append('hover throttle')
 
     # --- battery -------------------------------------------------------------
-    # Resolve each parameter to the value in force when the motors started, and
-    # keep anything written later aside so it can be called out rather than
-    # silently believed. With no flight in the log, the last value is all there
-    # is and is the honest answer.
+    # Resolve parameters to motor-start values; track later changes separately.
     batt_cal, batt_late = {}, {}
     for pt, name, val in batt_parms:
         if first_fly_t is None or pt <= first_fly_t:
@@ -352,21 +294,7 @@ def main():
                   + ", ".join(f"{k}->{v:g}" for k, v in sorted(batt_late.items()))
                   + ". The board carries these values NOW; the line above is "
                     "what produced the numbers below.")
-            # NO CEILING CHECK HERE ANY MORE. A previous version computed a
-            # "maximum readable current" as 3.3 V x BATT_AMP_PERVLT and called
-            # anything above it IMPOSSIBLE. Log 39 flew with PERVLT=17 and
-            # logged 143 A, which that rule declared impossible while the
-            # aircraft was demonstrably in the air, so the 3.3 V assumption was
-            # simply wrong and the check was a false alarm. Guessing at the
-            # board's analog scaling is how that happened; this file will not
-            # do it again without a datasheet.
-            #
-            # This check needs no hardware assumption at all: an aircraft
-            # cannot draw more out of a pack than the pack holds. When counted
-            # consumption passes BATT_CAPACITY the remaining-percentage hits
-            # zero and ArduPilot fires the battery failsafe on a number rather
-            # than on the cells, which is exactly how a flight gets cut short
-            # with a healthy pack still aboard.
+            # Reality check: consumption > pack capacity is impossible.
             cap = batt_cal.get('BATT_CAPACITY')
             if cap and consumed and consumed > cap:
                 print(f"  PHANTOM CAPACITY CUTOFF: counted {consumed:.0f} mAh "

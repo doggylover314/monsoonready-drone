@@ -1,21 +1,11 @@
-"""Generate a serpentine survey waypoint file from where the aircraft IS.
+"""Generate waypoint file for serpentine survey from aircraft's GPS position.
 
-The farm plot's coordinates are unknowable until the aircraft stands on it,
-so waypoints are made on site, from its own GPS, in one command:
+Usage: position aircraft at survey corner, point nose along row direction, then:
+  python uno_q/make_waypoints.py --out wp_field.txt
+  run_mission.py --waypoints wp_field.txt
 
-  1. Put the aircraft at the plot corner where the survey should START.
-  2. Point its NOSE along the direction the rows should run.
-  3. With a 3D fix (link is the Pixhawk's USB, resolved automatically):
-         ~/venv/bin/python uno_q/make_waypoints.py --out wp_field.txt
-  4. Fly:  run_mission.py --waypoints wp_field.txt
-
-Defaults make a 20 m x 10 m box (3 rows, 5 m apart): small enough to watch
-and film, wide enough that the camera footprint (16.0 m across at 15 m
-with the B525's measured 56.2 deg HFOV) overlaps rows heavily. The tray
-goes under the MIDDLE row.
-
-Read-only toward the aircraft: it listens for position and heading, writes
-a text file, and commands nothing.
+Reads position and heading only. Defaults: 3 rows 5 m apart, 20 m x 10 m box.
+B525 HFOV 56.2 deg gives footprint 16.0 m at 15 m alt. Place tray under middle row.
 """
 
 import argparse
@@ -30,12 +20,10 @@ EARTH_M_PER_DEG_LAT = 111320.0
 
 def spacing_for_overlap(alt_m, overlap_m=1.0, width=1280, height=720,
                         hfov_deg=None):
-    """(row_spacing_m, waypoint_spacing_m) that leave overlap_m between frames.
+    """(row_spacing_m, waypoint_spacing_m) for overlap_m between frames.
 
-    The camera's 1280 px axis lies ACROSS track and its 720 px axis ALONG it
-    (camera_geom.camera_to_ned: image up is aircraft forward), so the two
-    spacings differ. Never returns less than 1 m, so a low altitude cannot
-    generate a route of thousands of points.
+    1280 px axis is ACROSS track, 720 px ALONG (camera_to_ned: image up = forward).
+    Minimum 1 m returned to prevent huge routes at low altitude.
     """
     from camera_geom import CameraGeometry
     geom = (CameraGeometry(width, height) if hfov_deg is None
@@ -45,11 +33,10 @@ def spacing_for_overlap(alt_m, overlap_m=1.0, width=1280, height=720,
 
 
 def densify(points, max_leg_m):
-    """Split any leg longer than max_leg_m into equal pieces.
+    """Split legs longer than max_leg_m into equal pieces.
 
-    The builders emit only row ends, so the aircraft crosses a whole row
-    without stopping. With a photo hold at each waypoint, waypoint spacing is
-    what sets the photo interval. max_leg_m <= 0 returns the list unchanged.
+    Builders emit only row ends. Photo hold at waypoint means spacing sets interval.
+    max_leg_m <= 0 returns list unchanged.
     """
     if max_leg_m is None or max_leg_m <= 0 or len(points) < 2:
         return list(points)
@@ -66,10 +53,10 @@ def densify(points, max_leg_m):
 
 
 def build_serpentine(lat0, lon0, heading_deg, rows, spacing_m, length_m):
-    """Waypoints (lat, lon) for a serpentine starting AT (lat0, lon0),
-    rows running along heading_deg, stepping right of that heading."""
+    """Waypoints (lat, lon) for serpentine starting at (lat0, lon0),
+    rows along heading_deg, stepping right."""
     h = math.radians(heading_deg)
-    fwd = (math.cos(h), math.sin(h))                    # (north, east)
+    fwd = (math.cos(h), math.sin(h))                    # north, east vectors
     right = (math.cos(h + math.pi / 2), math.sin(h + math.pi / 2))
 
     def offset(north_m, east_m):
@@ -112,43 +99,18 @@ def _inside(px, py, poly):
 
 def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
                    start=None, step_m=0.5, min_row_m=1.0):
-    """Serpentine rows that COVER the inside of a geofence polygon.
+    """Serpentine waypoints filling interior of polygon; deterministic per fence.
 
-    build_serpentine above lays a fixed rows x length box from wherever the
-    aircraft happens to stand, which is a different job: it can hang the box
-    half outside the fence, and it cannot be planned at home. This takes the
-    fence the operator has already drawn and fills it, so the route is a
-    property of the FIELD rather than of where the aircraft was parked, and
-    needs no GPS fix to build.
+    Parameters: polygon [(lat, lon)...] in order; heading_deg (default: longest edge);
+    inset_m (distance inside fence); start (operator's click; default: southwest-most);
+    step_m (sampling interval); min_row_m (minimum row length).
 
-    polygon    [(lat, lon), ...], the fence corners, in order
-    heading_deg  direction the rows run; default = along the longest fence
-                 edge, which is the fewest turns for a field-shaped polygon
-    inset_m    every waypoint stays at least this far INSIDE the fence
-    start      (lat, lon) the operator picked; the route is arranged so its
-               first waypoint is the row end nearest that point. Without it,
-               the start is the southwest-most row end (deterministic, so the
-               same fence always generates the same route).
+    Inset enforced via scan lines sampled every step_m, kept if inside polygon AND
+    >= inset_m from all edges. Accurate to step_m. Handles concave fences: all pieces
+    flown with leg checks preventing transitions across notches.
 
-    HOW THE INSET IS ENFORCED: each scan line is sampled every step_m, a
-    sample is kept only if it is inside the polygon AND at least inset_m from
-    every edge, and the kept samples become runs. That is exact for any
-    polygon shape to within step_m, with no polygon-offsetting maths to get
-    wrong.
-
-    CONCAVE FENCES (user's is one: it has a corner that turns back on itself,
-    so a scan line through the pinch has TWO separate pieces). Every piece is
-    flown, not just the longest, because the dropped ones are real ground the
-    camera never sees. What makes that safe is the leg check: the straight
-    line the aircraft flies from one piece to the next must itself stay
-    inset_m inside the fence, sampled the same way. A piece whose entry leg
-    would cut across the notch is DROPPED and counted in info['dropped'],
-    never flown and never silently omitted. On a convex fence the check
-    costs nothing: the inset region of a convex polygon is convex, so a leg
-    between two points inside it is inside it.
-
-    Returns (waypoints, info). waypoints is [(lat, lon), ...], empty if the
-    inset leaves no room, in which case info['problem'] says so.
+    Returns (waypoints, info dict). waypoints empty if inset too tight; info['problem']
+    describes issue, info['dropped'] counts skipped pieces on concave fences.
     """
     if len(polygon) < 3:
         return [], {'problem': 'a fence needs at least 3 corners'}
@@ -174,8 +136,7 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
                 best, heading_deg = d, math.degrees(math.atan2(be - ae, bn - an))
     h = math.radians(heading_deg)
     ca, sa = math.cos(h), math.sin(h)
-    # (north, east) -> (along the rows, across them). fwd = (cos h, sin h) and
-    # right = (-sin h, cos h), matching build_serpentine's frame exactly.
+    # (north, east) to (along rows, across). fwd=(cos h, sin h), right=(-sin h, cos h).
     fwd = lambda n, e: n * ca + e * sa                            # noqa: E731
     rgt = lambda n, e: -n * sa + e * ca                           # noqa: E731
     back = lambda a, c: (a * ca - c * sa, a * sa + c * ca)        # noqa: E731
@@ -204,10 +165,9 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
     _legs = {}
 
     def leg_ok(p, q):
-        """Is the straight flight from p to q inside the keep-out everywhere?
+        """Is straight flight from p to q inside keep-out zone?
 
-        Memoised because the traversal below is tried from every possible
-        starting end, and the same legs come up again and again.
+        Memoised: traversal tries all starting ends, same legs repeat.
         """
         v = _legs.get((p, q))
         if v is not None:
@@ -223,7 +183,7 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
         _legs[(p, q)] = v
         return v
 
-    lines = []                   # [[(near_pt, far_pt), ...] per scan line]
+    lines = []                   # segments per scan line
     for k in range(n_lines):
         c = clo + pad + k * spacing_m
         segs, run = [], None
@@ -245,13 +205,9 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
         return [], {'problem': f'no row survived a {inset_m:g} m keep-out at '
                                f'{spacing_m:g} m spacing'}
 
-    # NEAREST-REACHABLE, not a fixed line-by-line sweep. On a rectangle the
-    # two are identical: after flying a row, the nearest unflown end IS the
-    # next row's near end, which is the serpentine. They differ exactly where
-    # the fence is concave, and there the sweep is wrong: it would either fly
-    # a leg through the notch or drop pieces it could have reached by going
-    # round. Greedy also makes the start point mean what it says, since the
-    # first row is simply the end nearest the click.
+    # Greedy nearest-reachable ordering (not line-by-line sweep) handles concave
+    # fences: sweep would cut corners or drop reachable pieces. Greedy makes start
+    # point meaningful: first row is nearest end to operator's click.
     segs = [s for line in lines for s in line]
 
     def greedy(from_pt):
@@ -282,11 +238,8 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
     if start is not None:
         pts, dropped, length = greedy(to_m(start[0], start[1]))
     else:
-        # No click, so no operator intent to honour: try starting from EVERY
-        # row end and keep the best route. The old rule (southwest-most end)
-        # is arbitrary once the fence is concave - on the user's own fence it
-        # began in the middle and paid a 64 m dead leg to come back for the
-        # pieces below the notch.
+        # No start point: try all row ends, keep best route (fewest drops, shortest).
+        # Southwest-most default is arbitrary on concave fences.
         pts, dropped, length = min((greedy(p) for s in segs for p in s),
                                    key=lambda r: (r[1], r[2]))
     if not pts:
@@ -302,8 +255,7 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    # wp_field.txt since 2026-08-16: filming moved to the nearby field, and
-    # start_dashboard.sh's START button flies ~/wp_field.txt.
+    # Default wp_field.txt is used by start_dashboard.sh START button.
     ap.add_argument('--out', default='wp_field.txt')
     ap.add_argument('--conn', default='auto',
                     help="'auto' (default) = the Pixhawk's USB via "
@@ -332,8 +284,7 @@ def main():
     while time.monotonic() < deadline:
         io.step()
         t = io.tel
-        # 0.0 is what GLOBAL_POSITION_INT carries before a fix; a real
-        # fix anywhere on Earth is nonzero in at least one axis.
+        # GLOBAL_POSITION_INT = 0.0 before fix; real fix has nonzero lat or lon.
         if (t.lat is not None and (abs(t.lat) > 0.01 or abs(t.lon) > 0.01)
                 and t.heading_deg is not None):
             break

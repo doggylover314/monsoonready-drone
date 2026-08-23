@@ -1,38 +1,20 @@
-"""Recurrence scoring over past missions (TODO 14): which sites hold water
-again, and which are worth revisiting first.
+"""Recurrence scoring over past missions (TODO 14): which sites persist and rank for revisit.
 
-This is the honest version of the "predictive model" idea. It does NOT
-forecast rainfall or invent a physical model of drainage. It answers a
-narrower question that the mission data can actually support:
+Does NOT forecast rainfall. Measures what data supports: site recurrence across
+flights to establish stagnation. Site seen once is a puddle. Site on four days
+is a breeding site.
 
-    given every site this drone has found before, which ones keep coming
-    back, and which are therefore worth flying over first next time?
-
-That matters because of the claim boundary the project set for itself: the
-detector finds standing-water CANDIDATES, and stagnation is only established
-by the same site persisting across passes on different days. A site seen once
-is a puddle. A site seen on four separate days is a breeding site. Recurrence
-is the measurable part of that, so recurrence is what this scores.
-
-Read-only over the same JSONL logs the base station serves; it never writes
-to them and never touches the base station's code.
+Read-only over base station JSONL logs.
 
     .venv/bin/python uno_q/predict.py --data-dir ~/monsoonready_data
     .venv/bin/python uno_q/predict.py --json      # machine-readable
 
-Scoring, deliberately simple enough to explain to a judge in one breath:
+Score = flights_seen * recency_weight * treatment_gap:
+  flights_seen    distinct missions that saw the site.
+  recency_weight  halves every `half_life_days`; sites fade over time.
+  treatment_gap   1.0 if untreated, 0.5 if treated.
 
-    score = flights_seen * recency_weight * treatment_gap
-
-  flights_seen    distinct missions that saw the site. The core signal.
-  recency_weight  halves every `half_life_days`, so a site that stopped
-                  appearing fades instead of ranking forever on old history.
-  treatment_gap   1.0 if it has never been successfully treated, 0.5 if it
-                  has. A treated site still deserves rechecking, just not
-                  ahead of one never treated.
-
-Every term is a number you can defend. Nothing here is fitted, so there is
-nothing to overfit and no training set to leak.
+Simple defensible terms, no fitting or training set.
 """
 
 import argparse
@@ -46,11 +28,9 @@ from detector import dist_m
 CLUSTER_RADIUS_M = 5.0     # same radius the dashboard uses for clustering
 HALF_LIFE_DAYS = 14.0
 
-# Vocabulary shared with the dashboard, which draws a ring at RECURRING and
-# up. The two used to both say "persistent" while meaning different things
-# (dashboard: 2 flights; here: 3 flights over 7 days), so a judge could read
-# "persistent" off the map and "recurring" off this table for the same site.
-# This file holds the stricter definition and the dashboard follows it.
+# Vocabulary shared with dashboard. Past ambiguity: "persistent" meant 2
+# flights in dashboard, 3 flights over 7 days here, confusing judges reading
+# the map and table. This file holds stricter definition; dashboard follows.
 RECURRING_MIN_FLIGHTS = 2
 PERSISTENT_MIN_FLIGHTS = 3
 PERSISTENT_MIN_SPAN_DAYS = 7.0
@@ -68,20 +48,14 @@ class Site:
         self.drops = 0          # gate cycles that actually actuated
         self.failed_drops = 0   # attempted but the gate never opened
         self.aborts = 0
-        # None, not 0.0. Epoch zero is a REAL timestamp to the arithmetic in
-        # score(): a site whose every event lacked a "t" kept last_t = 0.0,
-        # giving age_days ~20000 and recency = 0.5**(20000/14), which
-        # underflows to exactly 0.0 and zeroes the whole score. Such a site
-        # sorted below one that had never been seen at all, which is the
-        # opposite of what this tool is for. stamp() treats missing times as
-        # absent (its own docstring says so); this makes the initial value
-        # agree with that. Found in review 2026-08-15.
+        # None, not 0.0, to match stamp()'s treatment of missing times.
+        # Using 0.0 caused undated sites to underflow recency to zero,
+        # zeroing their scores, opposite of the goal.
         self.last_t = None
         self.first_t = float('inf')
 
     def absorb(self, lat, lon, mission_id, t):
-        # Running mean keeps the cluster centred as more sightings arrive,
-        # rather than pinning it to whichever detection happened to be first.
+        # Running mean centers cluster as sightings arrive, not pinned to first.
         self._n += 1
         self.lat += (lat - self.lat) / self._n
         self.lon += (lon - self.lon) / self._n
@@ -89,9 +63,7 @@ class Site:
         self.stamp(t)
 
     def stamp(self, t):
-        """Fold one event time in. t=None (missing or null in the log) is
-        ignored rather than treated as epoch zero, which used to turn one
-        undated event into a 20000-day span."""
+        """Add event time. t=None ignored, not epoch zero."""
         if t is None:
             return
         self.last_t = t if self.last_t is None else max(self.last_t, t)
@@ -107,23 +79,20 @@ class Site:
     def score(self, now, half_life_days=HALF_LIFE_DAYS):
         if half_life_days <= 0:
             raise ValueError(f"half_life_days must be > 0, got {half_life_days}")
-        # An undated site is not an ancient one. With no usable timestamp
-        # anywhere, recency is simply not evidence, so it drops out of the
-        # product (weight 1.0) and the site is ranked on flights and
-        # treatment gap alone.
+        # Undated site: recency is not evidence, so weight 1.0;
+        # ranked on flights and treatment gap alone.
         if self.last_t is None:
             recency = 1.0
         else:
             age_days = max(0.0, (now - self.last_t) / 86400.0)
             recency = math.pow(0.5, age_days / half_life_days)
-        # Only a drop that actually actuated counts as treatment. A gate that
-        # failed leaves the site untreated, so it must keep full priority.
+        # Only successful drops count as treatment; failed gates leave site
+        # untreated and retain full priority.
         gap = 0.5 if self.drops > 0 else 1.0
         return len(self.flights) * recency * gap
 
     def verdict(self):
-        """Plain-language label. Deliberately conservative wording: nothing
-        here is allowed to assert that larvae are present."""
+        """Plain-language label. Conservative wording: no assertion of larvae presence."""
         n = len(self.flights)
         if n >= PERSISTENT_MIN_FLIGHTS and self.span_days >= PERSISTENT_MIN_SPAN_DAYS:
             return 'persistent (likely breeding site)'
@@ -133,16 +102,14 @@ class Site:
 
 
 def _num(v):
-    """True if v is a usable number. Explicitly rejects bool, which is an int
-    in Python and would otherwise sail through as a coordinate."""
+    """True if v is usable as a number (rejects bool, which is int in Python)."""
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
 def read_missions(data_dir):
     """Yield (mission_id, [event, ...]) for every log, oldest first.
 
-    Tolerates a truncated final line, because a mission killed mid-write
-    leaves one, and refusing to read the whole flight over it would be worse.
+    Tolerates truncated final line (mission killed mid-write).
     """
     d = os.path.join(os.path.expanduser(data_dir), 'missions')
     if not os.path.isdir(d):
@@ -186,8 +153,8 @@ def build_sites(data_dir, radius_m=CLUSTER_RADIUS_M):
             if kind == 'detection':
                 hit.detections += 1
             elif kind == 'drop':
-                # ok is absent in logs written before 2026-08-01, when every
-                # recorded drop was assumed to have worked; absent means true.
+                # 'ok' absent in older logs (all drops assumed successful);
+                # absent defaults to true.
                 if ev.get('ok', True):
                     hit.drops += 1
                 else:

@@ -7,35 +7,19 @@
     ./python tools/sik.py set S2 64                # one register, then AT&W + ATZ
     ./python tools/sik.py sweep-air                # hunt the far radio's AIR_SPEED
 
-Parameters are addressed by REGISTER NUMBER (S0, S1, S2 ...), not by name.
-`probe` dumps ATI5, which prints each register's number and its name side by
-side, so read the mapping off your own radio rather than off a table
-somewhere: the numbering has not been verified from SiK source here and it is
-not worth guessing at.
+Parameters addressed by REGISTER NUMBER (S0, S1, S2, ...). Run `probe` to dump
+ATI5 with register mapping; do not guess at numbers.
 
-WHY THIS EXISTS (2026-08-22): QGC flashed the GROUND radio and then stopped
-detecting it. A SiK firmware upgrade RESETS the radio's parameters to the new
-firmware's defaults, and defaults have changed across SiK versions, so a
-one-sided flash can leave the two ends on different SERIAL_SPEED, AIR_SPEED or
-NETID. Healthy radios that disagree on any of those simply never link, which
-looks identical to a dead radio from the ground station.
+Radio-only tool; separate from parameters.py, bench.py, mavlink_link.py.
 
-This is a radio tool only. It never touches the autopilot, so it does not
-belong in parameters.py (params), bench.py (probes) or mavlink_link.py (the
-MAVLink link library).
+Command mode: radio watches for `+++` between >= 1 second silence blocks.
+ATI/ATI5 run locally; RT forms run remote. RT needs established link and cannot
+rescue mismatched pair. Firmware flashes need bootloader over direct serial; QGC
+handles firmware, not this tool.
 
-HOW SiK COMMAND MODE WORKS, and why the timing below is not arbitrary: the
-radio watches its serial stream for `+++` surrounded by at least one second of
-silence on both sides. Send it too soon after other traffic, or follow it with
-a newline, and the radio passes it through as data instead of entering command
-mode. Once in, `ATI` returns the version, `ATI5` dumps every parameter, and
-the `RT` forms of the same commands run on the REMOTE radio through the link.
-RT commands only work when the link is already up, which is exactly why they
-cannot rescue a mismatched pair.
-
-FIRMWARE CANNOT BE LOADED FROM HERE. SiK firmware goes in through the
-bootloader over a direct local serial connection, which is what QGC does. No
-AT command uploads firmware and neither does this tool.
+Firmware upgrades reset radio to new defaults; old and new ends can differ on
+SERIAL_SPEED, AIR_SPEED, or NETID. Mismatch prevents link; indistinguishable
+from dead radio without LEDs.
 """
 
 import argparse
@@ -48,9 +32,7 @@ try:
 except ImportError:
     sys.exit("pyserial missing: ./pip install pyserial")
 
-# Ordered by how likely each is on this project's radios. 57600 is the SiK
-# default and what QGC tries first; 115200 shows up on radios someone has
-# reconfigured for a faster host link.
+# Ordered by likelihood. 57600 is SiK default; 115200 for reconfigured host links.
 BAUDS = [57600, 115200, 38400, 19200, 9600, 230400]
 
 # AIR_SPEED values the firmware accepts, in kbps. Both ends must agree exactly.
@@ -60,8 +42,7 @@ GUARD_S = 1.2          # silence either side of +++, spec minimum is 1.0
 
 
 def find_port():
-    """A SiK ground radio shows up as a USB-serial bridge. So does an ESP32,
-    so print what was found rather than silently picking."""
+    """Find SiK radio USB-serial bridge. Print options to avoid confusion with ESP32."""
     cands = [p for p in list_ports.comports()
              if 'USB' in p.device or 'ACM' in p.device]
     if not cands:
@@ -76,14 +57,10 @@ def find_port():
 
 
 def command_mode(ser):
-    """Get the radio into AT command mode, or confirm it is already there.
+    """Enter command mode or confirm already there.
 
-    ASK BEFORE KNOCKING. A radio ALREADY in command mode does not answer `+++`
-    with OK, it answers with nothing, so a tool that only knows how to knock
-    reports a healthy radio as dead. That is a real bug this file shipped with
-    on 2026-08-22: `probe` succeeded, left the radio in command mode, and the
-    very next `sweep-air` said "does not answer at any baud". So try a plain
-    ATI first and treat a version string as proof we are already in.
+    Radio already in command mode does not answer `+++` with OK (no response);
+    check with ATI first to detect existing mode.
     """
     ser.reset_input_buffer()
     ser.write(b'\r\nATI\r\n')
@@ -100,9 +77,7 @@ def command_mode(ser):
 
 
 def leave_command_mode(ser):
-    """ATO returns the radio to passing data. WITHOUT THIS THE RADIO STAYS IN
-    COMMAND MODE AND CARRIES NO MAVLINK, so a diagnostic run would leave QGC
-    with a link that enumerates and never talks. Shipped missing, same day."""
+    """Exit command mode with ATO; without it radio stays in command mode and carries no MAVLink."""
     try:
         ser.write(b'ATO\r\n')
         ser.flush()
@@ -125,10 +100,8 @@ def open_at(port, baud, quiet=False):
     try:
         ser = serial.Serial(port, baud, timeout=0.5)
     except serial.SerialException as exc:
-        # NEVER quiet. "Device or resource busy" means QGC or another shell
-        # holds the port, which is a completely different problem from a
-        # silent radio, and hiding it behind --quiet sends the reader off
-        # chasing a dead radio that is fine.
+        # Do not quiet busy errors: different root cause from radio silence.
+        # Hiding this error sends search toward dead radio when port is held.
         busy = 'busy' in str(exc).lower()
         print(f"  {baud:>6}: cannot open ({exc})")
         if busy:
@@ -137,10 +110,7 @@ def open_at(port, baud, quiet=False):
         return None
     if command_mode(ser):
         if not quiet:
-            # This line is a SUCCESS, not a symptom. Command mode is where AT
-            # commands are answered; the tool puts the radio back into data
-            # mode on the way out. An earlier wording read like a fault report
-            # and sent the user power-cycling a radio that was working.
+            # Success: radio answers in command mode.
             print(f"  {baud:>6}: radio answers here")
         return ser
     if not quiet:
@@ -171,12 +141,7 @@ def probe(port):
     print(local.strip())
 
     print("\nREMOTE RADIO (through the link)")
-    # A remote dump is sixteen lines fetched over the AIR link, not over USB,
-    # and with ECC on the air link carries about half its nominal rate. 1.5 s
-    # was a guess and it was too short: on 2026-08-23 the ground radio showed
-    # a SOLID green LED, meaning linked, while this same call reported "no
-    # answer". Three attempts at 4 s, and the verdict below now defers to the
-    # LED rather than pretending a silent RTI5 proves anything.
+    # Remote dump over air link with ECC is slow; 4s timeout per attempt, 3 retries.
     remote = ''
     for _ in range(3):
         remote += at(ser, 'RTI5', wait=4.0) or ''
@@ -217,15 +182,9 @@ def read_reg(ser, n):
 
 
 def sweep_air(port):
-    """Walk the local radio's AIR_SPEED until the remote answers.
+    """Sweep local radio's AIR_SPEED until remote answers.
 
-    NO CONFIRMATION PROMPT (user, 2026-08-22: "why do you need a confirmation
-    for the air-sweep? It is nothing dangerous at all"). He is right, it is a
-    reversible radio setting. The prompt was friction pretending to be safety.
-    What it should have done instead, and now does, is PUT THE SETTING BACK
-    when the sweep finds nothing: the first version walked to the end of the
-    list and abandoned the radio on AIR_SPEED 250, which is not where it
-    started and not a value anything else on this project uses.
+    No confirmation prompt; reversible setting. Restores original on failure.
     """
     print("\nfinding a baud that reaches the local radio")
     ser = None
@@ -247,10 +206,7 @@ def sweep_air(port):
         at(ser, 'AT&W')
         at(ser, 'ATZ', wait=2.0)
         ser.close()
-        # A SiK pair does not link the instant both ends boot: they hop a
-        # shared channel sequence and have to find each other. Asking RTI too
-        # early reports "nothing" for a pair that would have linked a second
-        # later, which turns the whole sweep into a false negative.
+        # SiK pair hops channel sequence to sync; sleep 3s to allow link before query.
         time.sleep(3.0)
         ser = open_at(port, baud, quiet=True)
         if not ser:

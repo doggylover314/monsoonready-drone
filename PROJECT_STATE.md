@@ -1875,3 +1875,22 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - **EVERY NUMBER IN THE NEW TEXT IS ONE THIS FILE ALREADY RECORDS**, not a new claim: 489 ms/frame, the 40/80/160 px detection curve at 10/30/48%, 44 px at 15 m and 220 px at 3 m, 30% per look becoming 76% over four, the 532 us output differential and -13.6 to -155.9 deg roll, PRX returns of 0.27-0.80 m at 8.6 m over 53 s of RTL, 0.63 confidence at 1.9 m within 0.2 m, 1.9 V sag at 30 A, 116 s and 250 mAh of 8000.
 - **THE REPORT NOW SAYS PLAINLY THAT THE FULL AUTONOMOUS LOOP IS UNPROVEN IN THE AIR.** That is deliberate and matches the video script's own rule against overclaiming; a judge who checks the logs will find the same story there.
 - STILL EMPTY AND ONLY THE USER CAN FILL THEM: the block diagram image, the 2-3 project photos, and the demo video link.
+
+### 2026-08-23 ~20:20 IST: COMMENT SWEEP ACROSS 12 FILES, with a mechanical guard that caught 3 agents
+- USER: use the weakest agents available to sweep the codebase to the comment style ruled on earlier today. Ran as a Workflow, **one Haiku agent per file, 14 files, effort low**, matching the standing rule that audits use cheap models.
+- **THE GUARD IS THE POINT, NOT THE SWEEP.** `scratchpad/astguard.py` hashes each file's AST with docstrings stripped. Comments never reach the AST so they are free to change; anything else changing means real code moved. Snapshot before, check after. Without it, three separate agent edits to flight code would have shipped tonight unnoticed.
+- **THREE OF FOURTEEN AGENTS CHANGED EXECUTABLE CODE, all the same way: they shortened STRING LITERALS, which are data, not comments.**
+  | file | what drifted | action |
+  | uno_q/test_everything.py | print string, RNGFND2 note | **reverted whole file**, it is what the dashboard's Test everything button runs tonight |
+  | tools/ring_channels.py | 12 diagnostic print strings | **reverted whole file** |
+  | uno_q/basestation/dashboard.py | one argparse help string | string restored, sweep kept |
+  | uno_q/mission.py | two log strings, GUIDED-not-confirmed and the arm warning | **strings restored, sweep kept**; those exact lines are what gets grepped when a flight fails |
+- RESULT after fixes: **14/14 code-identical**, every tracked module compiles, every uno_q and tools module imports, the dropper still cycles 500 -> 1600 -> 500 with gate_open False, and the survey walk still reaches DONE 5/5 at 3 m with a 2 s hold costing exactly 10.5 s over 5 waypoints.
+- SIZE: comments roughly halved where they were worst. mission.py 175 -> 82 comment lines and 749 -> 611 total; dashboard.py 76 -> 32; check_log.py 65 -> 24; run_mission.py 46 -> 20; detector.py 40 -> 17. **Zero em-dashes introduced and zero personal pronouns left in any `#` comment**, both checked mechanically.
+- test_everything.py and ring_channels.py KEEP THEIR OLD COMMENTS and that is a deliberate trade: a diagnostic tool with verbose comments beats one with quietly altered operator output on the night it gets used.
+
+### 2026-08-23 ~20:20 IST: DOC DRIFT FROM THE ALTITUDE CHANGE, FIXED
+- Dropping the survey to 3 m made `docs/01_project_writeup.md` untrue in three places, all of which stated 15 m as the operating altitude.
+- FIXED: the loop section now states altitude is a per-site trade AND carries the measured reason ("at 15 m a half-metre puddle is 44 pixels wide and the model finds it about one frame in ten, at 3 m it is 220 pixels"). The other two now say "survey altitude" rather than a number that is no longer the number.
+- CHECKED AND CLEAN: no doc claims avoidance is active, no em-dashes anywhere in the doc set, mean rhythm score 12 across 11 files. `VIDEO_SCRIPT.md:177` also says 15 metres but that is RTL_ALT, which really is 15, so it was correctly left alone.
+- **`docs/block_diagram.svg` IS STILL NOT VISUALLY VERIFIED.** No renderer is installed and the browser preview was blocked by the sandbox. What IS now checked: well-formed XML, viewBox 0 0 1500 1000, and no element positioned outside it. Text overflow inside a box cannot be ruled out without eyes on it.

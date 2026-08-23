@@ -1,60 +1,15 @@
 #!/usr/bin/env python3
-"""Bench wiring check: one listen on the Pixhawk USB, one PASS/FAIL line per
-wired subsystem (2026-08-02 port assignments).
+"""Bench wiring check: PASS/FAIL per subsystem via Pixhawk USB or SiK radio.
 
-    ./python tools/wiring_check.py            # auto-detect
-    ./python tools/wiring_check.py --wiggle   # + servo
-    ./python tools/wiring_check.py --conn /dev/ttyUSB1
+    ./python tools/wiring_check.py
+    ./python tools/wiring_check.py --wiggle
+    ./python tools/wiring_check.py --conn /dev/ttyUSB0 --baud 57600
 
-Port and baud are worked out when exactly one serial device is present: a
-ttyUSB is taken as the SiK radio (57600), a ttyACM as the Pixhawk USB
-(115200). With several present it refuses to guess.
-
-Pixhawk on USB, battery or USB power, PROPS OFF. Listens for --seconds
-(default 25) and then judges.
-
-OVER THE SiK RADIO instead of USB: the aircraft runs on battery, the ground
-radio is the PC's serial port (--conn /dev/ttyUSB0, --baud 57600 = the
-radio's PC-side rate, unrelated to SERIAL2_BAUD on the aircraft). Everything
-still works, and the run additionally PROVES the SiK link, which USB never
-can. The stream rate is halved automatically on a low-baud link because 4 Hz
-of everything does not fit through the air link, and the losses would print
-as spurious FAILs. Param pushes are still best done on USB: they are many
-small round trips and each retry costs radio time.
-
-What each check proves, and what it cannot:
-
-  FC         heartbeat from the autopilot at all
-  GPS        SERIAL3 wiring: the autopilot's GPS-driver-present bit, since
-             GPS_RAW_INT keeps flowing with no receiver attached. Sat count
-             is reported but not required (0 sats indoors is normal)
-  COMPASS    I2C splice: mag sensor present+enabled+healthy per SYS_STATUS
-  TF-LUNA    SERIAL4 half of the split cable: a downward DISTANCE_SENSOR
-             reading INSIDE the sensor's own min/max, because ArduPilot keeps
-             publishing the message with a 0/out-of-range value when the
-             sensor is disconnected
-  ESP32      TELEM1: heartbeat from compid 195; plus OBSTACLE_DISTANCE ring
-             and the upward DISTANCE_SENSOR when the sketch is in a
-             transmitting mode (fake mode needs the GPIO4 jumper)
-  RC         RCIN: the autopilot's RC-receiver HEALTH bit, which it clears
-             on link loss or failsafe. NOT the channel values: a receiver in
-             failsafe emits perfectly in-range numbers, which is why this
-             check passed with the transmitter off until 2026-08-08
-  UP-SENSOR  the 7th VL53L0X on mux ch6: upward DISTANCE_SENSOR flow
-             (needs RNGFND2_TYPE=10 pushed)
-  SERVO      only with --wiggle (bare flag = ch9 = AUX1): DO_SET_SERVO
-             open/close cycle. Needs SERVOn_FUNCTION=0 pushed. WATCH THE GATE:
-             an ack proves the command was accepted, only your eyes prove the
-             servo moved.
-  MOTORS     only with --motor-test, PROPS OFF: spins each motor in turn to
-             prove ESC wiring, motor order and direction (all verified by eye)
-
-  NOT CHECKABLE FROM USB: SiK radio on TELEM2 (verify separately: QGC over
-  the radio link with USB unplugged), buzzer/switch (audible/visible), OLED
-  (look at it), UNO Q SERIAL5 half (blocked on TODO 7 anyway).
-
-Uses only pymavlink (same venv as the other tools). Read-only except the
-explicit --wiggle.
+Listens --seconds (default 12); exits when all checks satisfied. Requires two
+heartbeats per source (first = existence, second = still-sending). Stream
+rate: 4 Hz over USB, 2 Hz over SiK radio (auto). Read-only except --wiggle.
+Uses pymavlink. FC/GPS/COMPASS/TF-LUNA/ESP32/RC/UP-SENSOR/SERVO/MOTORS checks.
+Not checkable from USB: SiK TELEM2, buzzer, OLED, UNO Q SERIAL5.
 """
 
 import argparse
@@ -64,17 +19,12 @@ import time
 
 from pymavlink import mavutil
 
-# One source of truth for the gate pulses. wiring_check used to hard-code
-# 1900/1000 of its own, so changing the dropper's travel silently did nothing
-# to the bench test (found 2026-08-10: the gate kept opening the old way).
+# Single source of truth for gate pulses, shared with dropper.py
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 '..', 'uno_q'))
 from dropper import PixhawkServoDropper as _Gate
 
-# Link plumbing moved to tools/mavlink_link.py on 2026-08-10. It was
-# defined here, which meant bench.py, flow_test.py and the param tools
-# all imported this PASS/FAIL test just to open a serial port. This file
-# is a wiring VERDICT and nothing else now.
+# Link handling in mavlink_link.py; this file is wiring verdict only.
 from mavlink_link import (drain_statustext, require_port,  # noqa: F401
                           resolve_link, send_and_ack, serial_candidates,
                           wait_autopilot)
@@ -84,18 +34,14 @@ UP = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_90      # 24
 
 MAG_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_MAG
 GPS_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_GPS
-# The autopilot's own opinion of the RC link. This is the ONLY trustworthy
-# "is the transmitter on" signal: see the RC check below for why the channel
-# values are not.
+# Autopilot's RC-link verdict, trustworthy unlike channel values alone
 RC_BIT = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_RC_RECEIVER
 
-# Must match the ESP32: mavlink_proximity.h SECTOR_NO_DATA, config.h ring size.
+# Must match ESP32 mavlink_proximity.h SECTOR_NO_DATA and config.h ring size
 SECTOR_NO_DATA = 65535
 RING_SECTORS = 6
-# Bearing of each ring sector, for naming the dead one in plain language
-# (config.h: bearing = SENSOR_ANGLE_OFFSET_DEG + 60*s, clockwise from nose).
-# Offset is 0 on this airframe: the ring sits BETWEEN the arms with sensor 0
-# facing straight out the nose (measured 2026-08-06). Keep in step with
+# Bearing of each ring sector (SENSOR_ANGLE_OFFSET_DEG + 60*s, clockwise).
+# Offset = 0 (ring between arms, sensor 0 faces nose). Keep in step with
 # config.h SENSOR_ANGLE_OFFSET_DEG.
 RING_ANGLE_OFFSET_DEG = 0
 SECTOR_BEARING = [RING_ANGLE_OFFSET_DEG + 60 * s for s in range(RING_SECTORS)]
@@ -157,16 +103,11 @@ def main():
     print(f"autopilot is system {m.target_system} component "
           f"{m.target_component}\nlistening (up to {args.seconds:.0f}s, "
           f"exits early once everything has reported) ...")
-    # Ask for everything at a modest rate; ArduPilot honours this legacy
-    # request and it is one call instead of one per message id. Over a SiK
-    # radio 4 Hz of everything does not fit (the air link is far slower than
-    # its 57600 serial port), and the dropped messages would show up as
-    # spurious FAILs, so slow the stream down on any low-baud link.
+    # Low-baud links (SiK radio) can't handle 4 Hz of everything. Slow to
+    # 2 Hz to avoid spurious FAILs from dropped messages.
     rate = 4 if args.baud > 57600 else 2
-    # A radio link adds latency and drops packets, so an ack that would
-    # arrive comfortably over USB can miss a 5s window and print a false
-    # "NO ACK" on a command that actually worked. Be more patient on a slow
-    # link rather than teaching the operator to ignore the ack line.
+    # Radio link adds latency and drops packets. Long timeout prevents
+    # false "NO ACK" for slow links.
     ack_timeout = 5.0 if args.baud > 57600 else 12.0
     m.mav.request_data_stream_send(
         m.target_system, m.target_component,
@@ -189,10 +130,9 @@ def main():
     sys_status_seen = False
 
     def all_satisfied():
-        """Everything a healthy aircraft must produce. Deliberately requires
-        TWO heartbeats from each source: one proves the sender exists, two
-        prove it is still sending. Nothing here waits for a GPS fix, which
-        indoors would never come."""
+        """Healthy aircraft must produce all core messages. Requires TWO
+        heartbeats per source: first proves sender exists, second proves
+        still-sending. Does not wait for GPS fix (indoors won't arrive)."""
         core = (seen['fc_hb'] >= 2 and seen['gps_msgs'] and gps_present
                 and seen['rng_down'] and sys_status_seen and rc_healthy)
         if not args.expect_esp32:
@@ -209,31 +149,28 @@ def main():
         t = msg.get_type()
         if t == 'HEARTBEAT':
             if msg.get_srcComponent() == 191:
-                continue                      # a running mission process
+                continue                      # mission process, not autopilot
             if msg.get_srcComponent() == 195:
                 seen['esp_hb'] += 1
             elif msg.get_srcSystem() == m.target_system:
                 seen['fc_hb'] += 1
         elif t == 'OBSTACLE_DISTANCE':
             seen['obst'] += 1
-            # The message arriving proves the ESP32 is transmitting, NOT that
-            # every sensor works: a dead ring sensor still occupies its slot,
-            # filled with SECTOR_NO_DATA. Checking only that the message
-            # exists hid a dead ch1 for days (2026-08-06), so score sectors.
+            # Message proves ESP32 transmitting, not that all sensors work.
+            # Score sectors, not just presence, to catch dead sensors.
             for s in range(RING_SECTORS):
                 d = msg.distances[s]
-                # 0 cm is what a failed I2C read looks like, not an obstacle
-                # touching the airframe; mirror the TF-LUNA bounds check.
+                # 0 cm = failed I2C read, not actual obstacle. Mirror
+                # TF-LUNA bounds check.
                 if d != SECTOR_NO_DATA and 0 < d <= msg.max_distance:
                     ring_ok.add(s)
         elif t == 'DISTANCE_SENSOR':
             if msg.orientation == DOWN:
                 seen['rng_down'] += 1
                 rng_down_m = msg.current_distance / 100.0
-                # Keep the sensor's own declared bounds so the verdict can
-                # tell a real return from the 0 / out-of-range value a
-                # disconnected serial rangefinder reports while ArduPilot
-                # keeps dutifully publishing the message.
+                # Keep sensor's declared bounds to distinguish real returns
+                # from the 0/out-of-range value a disconnected rangefinder
+                # publishes while ArduPilot keeps dutifully streaming.
                 rng_bounds = (msg.min_distance / 100.0,
                               msg.max_distance / 100.0)
             elif msg.orientation == UP:
@@ -243,29 +180,23 @@ def main():
             sats, fix = msg.satellites_visible, msg.fix_type
         elif t == 'RC_CHANNELS':
             seen['rc_msgs'] += 1
-            # Deliberately NOT used to decide whether the link is alive: a
-            # receiver in failsafe keeps emitting perfectly in-range values
-            # (held last-known, or its programmed failsafe positions), so
-            # "the numbers look plausible" passed with the transmitter
-            # switched OFF (found 2026-08-08). Kept only to show movement.
+            # Not used for link status: failsafe receivers emit valid values.
+            # Kept only to show channel movement.
             vals = [getattr(msg, f'chan{i}_raw') for i in range(1, 9)]
             rc_frames.append(tuple(vals))
         elif t in ('RADIO_STATUS', 'RADIO'):
-            # Injected by the SiK ground radio itself, so its presence proves
-            # the whole radio path end to end. Only ever seen on a radio link.
+            # Injected by SiK radio only, proves end-to-end radio path.
             seen['radio'] += 1
             rssi, remrssi = msg.rssi, msg.remrssi
         elif t == 'SYS_STATUS':
             sys_status_seen = True
             mag_present = bool(msg.onboard_control_sensors_enabled & MAG_BIT)
             mag_healthy = bool(msg.onboard_control_sensors_health & MAG_BIT)
-            # The autopilot's own RC verdict. ArduPilot clears this health bit
-            # when the RC link is lost or in failsafe, which is exactly the
-            # condition the channel values fail to show.
+            # Autopilot's RC verdict: cleared on link loss or failsafe
+            # (channel values won't show this).
             rc_present = bool(msg.onboard_control_sensors_enabled & RC_BIT)
             rc_healthy = bool(msg.onboard_control_sensors_health & RC_BIT)
-            # Sticky: the safety property is "solid for the whole window",
-            # not "healthy in the last frame we happened to look at".
+            # Sticky check: safety property is solid for whole window.
             if not rc_healthy:
                 rc_ever_bad = True
             if not bool(msg.onboard_control_sensors_health & MAG_BIT):
@@ -284,20 +215,18 @@ def main():
     print("\nresults:")
     ok = True
     gps_word = 'up' if gps_present else 'NOT PRESENT (receiver not detected)'
-    # Two, not one: the file's own all_satisfied() documents that one
-    # heartbeat proves the sender existed and two prove it is still sending.
-    # A controller that beats once and browns out used to read PASS.
+    # Two heartbeats required: first proves existence, second proves
+    # still-sending. Single beat then brown-out used to pass.
     ok &= verdict('FC', seen['fc_hb'] >= 2,
                   f"{seen['fc_hb']} heartbeats")
-    # GPS_RAW_INT keeps flowing with NO receiver attached (fix 0, sats 0), so
-    # counting messages proves only that the autopilot is talking to us. The
-    # enabled bit is the autopilot saying a GPS driver actually came up.
+    # GPS_RAW_INT flows with no receiver attached. Message count proves only
+    # autopilot talks to us; enabled bit proves GPS driver came up.
     ok &= verdict('GPS', seen['gps_msgs'] > 0 and gps_present,
                   f"{seen['gps_msgs']} msgs, driver {gps_word}, "
                   f"fix_type {fix}, {sats} sats "
                   f"(0 sats indoors is normal, a missing driver is not)")
-    # Detail must follow the VERDICT, not merely whether SYS_STATUS arrived:
-    # a FAIL line used to print the words "mag enabled+healthy".
+    # Detail printed after verdict, not before: old code printed
+    # "mag enabled+healthy" even on FAIL.
     if not sys_status_seen:
         mag_detail = "no SYS_STATUS received"
     elif mag_present and mag_healthy:
@@ -308,9 +237,8 @@ def main():
                          if not mag_present else
                          "  (detected but reporting unhealthy)"))
     ok &= verdict('COMPASS', mag_present and mag_healthy, mag_detail)
-    # A disconnected serial rangefinder gets a published 0.00; a HEALTHY one
-    # sitting on its legs legitimately reads BELOW RNGFND1_MIN. Treating
-    # below-min as broken made a working Luna FAIL on the bench (2026-08-08).
+    # Disconnected rangefinder publishes 0.00. Healthy one on legs reads
+    # below RNGFND1_MIN. Treating below-min as broken broke working Luna.
     rng_real = (rng_down_m is not None and rng_bounds is not None
                 and 0.0 < rng_down_m <= rng_bounds[1])
     rng_low = rng_real and rng_down_m < rng_bounds[0]
@@ -360,12 +288,9 @@ def main():
                   + (", channels moving" if moving else
                      ", channels static (either you did not touch the sticks "
                      "or the receiver is holding failsafe values)"))
-    # Is this run coming over the air? RADIO_STATUS is the nice proof, but a
-    # SiK only injects it when its MAVLink framing mode is on, so its absence
-    # proves nothing. The link itself is the better evidence: autopilot
-    # telemetry cannot arrive on a non-USB serial port unless it crossed the
-    # radio (the Pixhawk's own USB is a ttyACM, and the ESP32's USB port
-    # carries no autopilot traffic at all).
+    # Over air link? RADIO_STATUS is nice proof but may be off. Better
+    # evidence: autopilot telemetry on non-USB serial must cross radio
+    # (Pixhawk USB = ttyACM, ESP32 USB carries no autopilot traffic).
     via_radio = ('ACM' not in args.conn
                  and not args.conn.startswith(('tcp:', 'udp:', 'tcpin:')))
     if via_radio:
@@ -406,8 +331,7 @@ def main():
                     wiggle_ok = False
                 time.sleep(1.5)
         finally:
-            # The gate must never be left open by an interrupted run or a lost
-            # ack. Re-command closed unconditionally and say whether it took.
+            # Gate must never be left open. Re-command closed unconditionally.
             closed = send_and_ack(m, mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
                                   args.wiggle, args.servo_closed_us,
                                   timeout=ack_timeout)
@@ -429,24 +353,12 @@ def main():
 
 
 def motor_test(m, motors, throttle_pct, rc_live, ack_timeout=5.0):
-    """Spin each motor briefly, in ArduPilot's TEST ORDER, one at a time.
+    """Spin each motor in ArduPilot's TEST ORDER, one at a time.
 
-    TRANSMITTER MUST BE ON. Observed 2026-08-02: identical commands at the
-    same 8% throttle did nothing with the TX off and spun the motors with it
-    on, so ArduPilot is gating the motor test on live RC input. (The exact
-    check in the firmware has not been read; the behaviour is empirical, but
-    it reproduced three times.) The check below refuses to send rather than
-    let a dead-quiet run look like broken ESCs.
-
-    MAV_CMD_DO_MOTOR_TEST numbers motors in ArduPilot's test sequence, which
-    for a hexa X goes clockwise from the front-right. That is the point of the
-    test: motor 1 must be the front-right arm, and each subsequent number the
-    next one clockwise. A motor that spins out of sequence is a swapped ESC
-    signal lead, which flies exactly once.
-
-    Direction is checked by eye at the same time (alternating CW/CCW per
-    ArduPilot's hexa layout). Neither can be checked in software: this only
-    commands the spin, your eyes do the verifying.
+    TRANSMITTER MUST BE ON: ArduPilot gates motor test on live RC.
+    Motors numbered clockwise from front-right. Out-of-sequence motor =
+    swapped ESC signal lead. Direction alternates CW/CCW per hexa layout.
+    Verify by eye: software only commands spin, eyes verify motion.
     """
     if not rc_live:
         print("\nMOTOR TEST SKIPPED: no live RC. Switch the transmitter on "

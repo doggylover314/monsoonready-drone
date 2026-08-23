@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""Small bench/field probes against the flight controller, over USB or the
-SiK radio. Replaces the throwaway pymavlink one-liners with something that
-gets the link details right in one place.
+"""Bench probes for the flight controller: mode, battery, failsafe, GPS, rangefinder, nodes.
 
     ./python tools/bench.py mode          # watch mode switch
     ./python tools/bench.py battery       # V/A as the FC sees them
@@ -10,27 +8,13 @@ gets the link details right in one place.
     ./python tools/bench.py rng           # downward rangefinder
     ./python tools/bench.py nodes         # who else is on the MAVLink bus
 
-PARAMETERS ARE NOT HERE. getparam/setparam moved to
-tools/parameters.py on 2026-08-10: reading and writing the board's
-configuration is a different job from probing whether a sensor works,
-and keeping them together meant two copies of the write-and-verify
-logic, only one of which checked for a clamped value.
+Parameters go to tools/parameters.py (distinct from sensor probing).
 
-PORT AND BAUD ARE WORKED OUT FOR YOU when only one serial device is present:
-a ttyUSB is assumed to be the SiK radio (57600), a ttyACM the Pixhawk's USB
-(115200). With several plugged in it refuses to guess; name one with --conn.
+PORT/BAUD auto-detect on single device: ttyUSB (SiK, 57600) or ttyACM (Pixhawk USB, 115200).
+With multiple present, use --conn.
 
-Two things this gets right that a hand-typed one-liner does not:
-
-  TARGETING. wait_heartbeat() returns the FIRST heartbeat from anyone, and
-  this bus has had a second MAVLink talker on it (the ESP32, compid 195).
-  Locking onto that leaves target_system 0 = broadcast, and commands then go
-  to nobody in particular with no ack. wait_autopilot() waits for the real
-  autopilot. See tools/wiring_check.py for the full story.
-
-  LINK RATE. A SiK link is far slower than its 57600 serial port suggests.
-  Requesting the usual stream rates saturates it and the losses look like
-  faults. Stream requests here are 2 Hz on a low-baud link.
+Critical: wait_autopilot() locks onto Pixhawk, not first heartbeat (ESP32 may respond at compid 195).
+SiK links saturate with standard stream rates; probes use 2 Hz to prevent losses mimicking faults.
 """
 
 import argparse
@@ -42,8 +26,7 @@ from pymavlink import mavutil
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Shared link plumbing. Lives in its own library so this file does not
-# have to import a 623-line PASS/FAIL test just to open a serial port.
+# Shared MAVLink setup in separate module.
 from mavlink_link import connect, request_streams
 
 DOWN = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_270
@@ -77,17 +60,10 @@ KNOWN_COMPONENTS = {
 
 
 def cmd_nodes(m, args):
-    """Every MAVLink talker on the bus, by system and component.
+    """MAVLink nodes on bus by system and component.
 
-    THE POINT OF THIS IS TODO 7. The UNO Q sits sealed inside the airframe with
-    no readable screen, so the probe sketch answers by TRANSMITTING a heartbeat
-    as component 191 and letting the Pixhawk relay its existence to here. A row
-    for comp 191 is the pass; its absence is the fail. The ESP32 at 195 already
-    proves the channel works.
-
-    Heartbeats are ~1 Hz per node, so give it a few seconds before believing an
-    absence. This listens without filtering by target, unlike everything else
-    in this file, precisely because the unknown node is the interesting one.
+    Component 191 heartbeat from UNO Q confirms its transmit path to Pixhawk.
+    Listens unfiltered since unknown nodes are the interesting case.
     """
     request_streams(m, args.baud)
     print(f"listening {args.seconds:.0f}s for heartbeats from anyone ...")
@@ -115,11 +91,8 @@ def cmd_nodes(m, args):
         print(f"  sys {sysid:3d} comp {compid:3d}  {rec['n']:4d} heartbeats  "
               f"{KNOWN_COMPONENTS.get(compid, 'UNKNOWN')}")
     if not any(c == 191 for _, c in seen):
-        # NOT a link failure on its own, and saying so cost real time at the
-        # farm on 2026-08-15. Nothing on the UNO Q heartbeats unless a python
-        # process using MavIO is RUNNING; an idle board is silent by design.
-        # (Since 2026-08-16 the companion link is the Pixhawk's own USB into
-        # the board's hub; the SERIAL5 byte-shovel is deleted.)
+        # Component 191 only heartbeats while a MavIO process is running.
+        # Idle board is silent by design; absence alone does not indicate link failure.
         print("\n  no component 191 heard. THIS ALONE DOES NOT MEAN THE LINK "
               "IS BROKEN.\n"
               "  Nothing on the UNO Q heartbeats unless a MavIO process is "
@@ -166,8 +139,7 @@ def cmd_gps(m, args):
         if g is None:
             continue
         hdop = g.eph / 100.0
-        # fix_type must be 3D: a 2D fix has no usable altitude and ArduPilot
-        # will not navigate on it, yet it can show 10+ sats and a good HDOP.
+        # 3D fix required: 2D fix has no altitude and won't navigate despite good sats/HDOP.
         ok = (g.fix_type >= mavutil.mavlink.GPS_FIX_TYPE_3D_FIX
               and g.satellites_visible >= 10 and 0 < hdop < 1.5)
         print(f"  {time.time() - t0:5.0f}s  fix {g.fix_type}  "
@@ -177,10 +149,7 @@ def cmd_gps(m, args):
 
 def cmd_rng(m, args):
     request_streams(m, args.baud)
-    # NOT for the over-water bench any more: Raghav recorded 2026-08-09 that
-    # the TF-Luna over water DOES NOT WORK and never will, so TODO 6 is closed
-    # by verdict and descend-BESIDE is the only route. This probe is now just
-    # "is the downward rangefinder healthy and continuous over ground".
+    # TF-Luna does not work over water; probe tests rangefinder over ground.
     print("downward rangefinder over GROUND (the over-water question is "
           "settled: it does not work, descend-beside only):")
     end = time.time() + args.seconds
@@ -188,9 +157,7 @@ def cmd_rng(m, args):
     misses = 0
     while time.time() < end:
         d = m.recv_match(type='DISTANCE_SENSOR', blocking=True, timeout=0.5)
-        # Time the gap between DOWNWARD frames specifically. Keying on
-        # recv_match's timeout hid every dropout whenever the upward sensor
-        # was streaming, since its frames reset the clock.
+        # Track gap between DOWNWARD frames; other sensors reset recv_match timeout.
         if time.time() - last_down > 1.0:
             misses += 1
             print(f"  --- NO DOWNWARD READING for "
@@ -228,9 +195,7 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        # Ctrl-C is the NORMAL way to end these: every probe runs until
-        # --seconds expires and you usually have what you need before then.
-        # Letting it raise printed a pymavlink traceback that looks exactly
-        # like a tool crash, on a run that in fact worked perfectly.
+        # Probes run until --seconds expires; Ctrl-C is normal termination.
+        # Suppress traceback since this is not an error.
         print("\nstopped.")
         sys.exit(0)

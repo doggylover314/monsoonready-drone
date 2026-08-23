@@ -1,27 +1,9 @@
-"""MonsoonReady dashboard - Flask server on the UNO Q (was app.py; renamed
-2026-08-16 so the script and its log carry the same name: dashboard.py ->
-~/logs/dashboard.log).
+"""Flask mission map and flight-control server on UNO Q. Logs all control
+actions and launch failures to ~/logs/dashboard.log (plain GETs excluded).
 
-Serves the mission map and, with --enable-control, the flight-control panel:
-start/stop the mission, run the no-motors self-test, take a manual photo.
-Started BY HAND (SCOPE RULES 6: nothing on the board runs automatically):
-
-    ~/venv/bin/python uno_q/basestation/dashboard.py --enable-control \
-        --waypoints wp_field.txt
-
-Every control action, launch attempt, and failure reason goes to
-~/logs/dashboard.log (SCOPE RULES 1). Plain page GETs and the 3 s status
-poll are NOT logged (user, 2026-08-16: the dashboard is for humans, not a
-request ledger).
-
-Mission data = per-flight JSONL from uno_q/missionlog.py under
-~/monsoonready_data; schema changes happen in missionlog.py ONLY.
-
-Optional site image background: put an aerial screenshot in the data dir plus
-site_image.json beside it:
-    {"file": "site.png", "lat_top": .., "lat_bottom": ..,
-     "lon_left": .., "lon_right": ..}
-Corners are the geographic bounds of the (north-up) image.
+Mission data: per-flight JSONL in ~/monsoonready_data; schema changes in
+missionlog.py only. Optional aerial background: site_image.json with
+geographic bounds (corners as lat/lon).
 """
 
 import argparse
@@ -48,21 +30,12 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 LOG_DIR = os.path.expanduser('~/logs')
 
-log = None   # BoardLog, bound in main() (module-level so handlers see it)
+log = None   # BoardLog, bound in main() for handler scope
 
 
 def find_pids(needle):
-    """PIDs of PYTHON processes whose command line contains `needle`.
-
-    Reads /proc rather than tracking Popen handles, so the answer stays right
-    across a dashboard restart and covers a process someone started by
-    hand over SSH. Linux-only, which is what the board is.
-
-    The 'python' requirement is not cosmetic: without it an editor open on
-    run_mission.py, or a `grep run_mission.py`, counts as a running mission,
-    and the consequence is the START button refusing with "a mission is
-    already running" in the middle of the take. Excludes this process by pid
-    so the server can never find itself.
+    """PIDs of Python processes with needle in command line (reads /proc,
+    requires 'python' to exclude editors/greps, excludes self).
     """
     out = []
     me = os.getpid()
@@ -124,9 +97,7 @@ def summarize(mission_id, events):
         't_end': events[-1]['t'] if events else None,
         'final': end[-1]['final'] if end else 'in progress / interrupted',
         'detections': len(by('detection')),
-        # Only gates that actually actuated count as treatments, matching the
-        # dashboard tile and mission_end's dropper.succeeded. ok absent means
-        # true (pre-2026-08-01 logs predate the field).
+        # Only actuated gates counted (ok defaults true for pre-2026 logs)
         'drops': len([e for e in by('drop') if e.get('ok', True)]),
         'aborts': len(by('abort')),
         'fixes': len(by('fix')),
@@ -134,9 +105,9 @@ def summarize(mission_id, events):
 
 
 def read_waypoints_tolerant(path):
-    """Same 'lat,lon per line, # comments' format run_mission.read_waypoints
-    enforces, but tolerant: bad lines are reported, not fatal. The dashboard
-    must still render 9 good waypoints when line 3 is mangled."""
+    """Parse lat,lon waypoints (same format as run_mission, tolerant of
+    bad lines; returns errors list too).
+    """
     wps, errors = [], []
     try:
         f = open(os.path.expanduser(path))
@@ -162,28 +133,20 @@ def make_app(data_dir, control=None):
     layout_path = os.path.join(data_dir, 'layout.json')
     selftest_path = os.path.join(data_dir, 'selftest.json')
     fence_path = os.path.join(data_dir, 'fence.json')
-    # control is None => read-only dashboard, exactly as before. A dict =>
-    # the flight-control endpoints below are live. Opt-in on purpose: these
-    # arm and fly an aircraft, so the capability must be asked for
-    # (--enable-control), never inherited by accident.
+    # control: None=read-only dashboard; dict=live flight-control endpoints
     ctl = control
 
     @app.get('/')
     def index():
         resp = send_from_directory(STATIC_DIR, 'index.html')
-        # Explicit, not left to Werkzeug defaults: the whole UI is this one
-        # file, and a browser reusing a stale copy makes every fix look
-        # broken (2026-08-16, satellite tiles). no-cache = revalidate every
-        # load; unchanged file still answers 304, so nothing gets slower.
+        # Revalidate on every load to prevent stale UI after git pull
         resp.headers['Cache-Control'] = 'no-cache'
         return resp
 
     def ui_mtime():
-        """mtime of index.html, sent with every /api/control poll. The page
-        remembers the first value it sees and turns a later change into a
-        RELOAD banner: an open tab survives a git pull untouched, and on
-        2026-08-16 a pre-pull tab kept drawing the old grey map for hours
-        while the board had been serving the fixed page all along."""
+        """Timestamp of index.html sent with /api/control poll; client
+        detects changes and prompts reload.
+        """
         try:
             return os.stat(os.path.join(STATIC_DIR, 'index.html')).st_mtime
         except OSError:
@@ -250,9 +213,9 @@ def make_app(data_dir, control=None):
 
     @app.get('/api/control')
     def api_control():
-        """Always present so the dashboard can grey the panel out when
-        control is off, rather than guessing from a 404. Polled every 3 s;
-        deliberately NOT logged."""
+        """Control status; always present so dashboard detects disabled state
+        (polled every 3 s, not logged).
+        """
         if not ctl:
             return jsonify({'enabled': False, 'ui_mtime': ui_mtime()})
         mission = find_pids('run_mission.py')
@@ -283,8 +246,7 @@ def make_app(data_dir, control=None):
 
     @app.get('/api/waypoints')
     def api_waypoints_get():
-        """The route the Start button would fly. Read-only; polling-free
-        (fetched once at load and after each save), so not logged."""
+        """Route for Start button; fetched at load and after edits, not polled."""
         if not ctl:
             return jsonify({'available': False})
         path = os.path.expanduser(ctl['waypoints'])
@@ -296,11 +258,9 @@ def make_app(data_dir, control=None):
 
     @app.post('/api/waypoints')
     def api_waypoints_post():
-        """Overwrite the waypoint file with the dragged route.
-
-        Refused while a mission runs: run_mission read the file at launch,
-        so a mid-flight save could NOT redirect the aircraft, and letting it
-        appear to succeed would leave the operator believing it had."""
+        """Save dragged route; refused mid-flight because run_mission read
+        the route at launch.
+        """
         if not ctl:
             abort(403)
         if find_pids('run_mission.py'):
@@ -334,22 +294,9 @@ def make_app(data_dir, control=None):
 
     @app.post('/api/waypoints/generate')
     def api_waypoints_generate():
-        """Build a survey route, from the FENCE when there is one.
-
-        Two generators, same maths as make_waypoints.py (imported, not
-        duplicated):
-
-          * a fence is saved -> build_coverage fills its inside with rows,
-            every waypoint at least `inset` m from the boundary, rows along
-            `heading`, arranged to begin at the point the operator clicked.
-            This needs NO LINK and NO GPS, so the route can be planned at
-            home the night before, which is exactly what the from-aircraft
-            generator could not do (user, 2026-08-19).
-          * no fence -> the old from-where-it-stands serpentine, which does
-            need the link and a 3D fix.
-
-        Does NOT write the file either way: the route comes back for the
-        operator to look at (and drag) on the map, and only Save writes it.
+        """Generate survey route from saved fence (no link/GPS) or from
+        aircraft position (requires GPS fix). Unsaved: operator can drag
+        before Save writes file.
         """
         if not ctl:
             abort(403)
@@ -359,10 +306,8 @@ def make_app(data_dir, control=None):
             spacing = float(b.get('spacing', 12))
             length = float(b.get('length', 20))
             inset = float(b.get('inset', 4))
-            # Waypoint spacing ALONG a row: where the aircraft STOPS for a
-            # still frame. Default overlap 0 puts a stop every time the
-            # camera has moved onto completely new ground. The gaps are not
-            # gaps: the detect worker keeps imaging in transit at ~0.5 s.
+            # Spacing along row (m): stop for still frame. Default 0 stops
+            # when camera reaches new ground; worker images continuously (~0.5 s)
             overlap = float(b.get('overlap', 0.0))
             max_leg = b.get('max_leg')
             max_leg = None if max_leg in (None, '') else float(max_leg)
@@ -383,8 +328,7 @@ def make_app(data_dir, control=None):
                                      'overlap 0-20 m, '
                                      'waypoint spacing 0-200 m'}), 400
 
-        # Derived from the altitude the mission will actually fly, not from a
-        # constant, so the frames overlap at whatever altitude is set.
+        # Frame spacing derived from mission altitude to maintain overlap
         from make_waypoints import spacing_for_overlap
         alt = ctl.get('survey_alt', 15.0)
         row_rec, leg_rec = spacing_for_overlap(alt, overlap)
@@ -461,9 +405,9 @@ def make_app(data_dir, control=None):
 
     @app.post('/api/control/start')
     def api_start():
-        """Launch run_mission detached. start_new_session is the same
-        protection `setsid` gives on the command line: the mission must not
-        die of a SIGHUP when this server or an ssh session goes away."""
+        """Launch run_mission detached; start_new_session prevents SIGHUP
+        termination if server or SSH session dies.
+        """
         if not ctl:
             abort(403)
         if find_pids('run_mission.py'):
@@ -488,8 +432,7 @@ def make_app(data_dir, control=None):
             cmd.append('--no-drop')
         if body.get('dry_run'):
             cmd.append('--dry-run')
-        # run_mission owns ~/logs/run_mission.log itself (boardlog); stdout
-        # here would only duplicate it.
+        # run_mission owns ~/logs/run_mission.log; suppress stdout duplication
         p = subprocess.Popen(cmd, cwd=REPO, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL,
                              start_new_session=True)
@@ -498,9 +441,9 @@ def make_app(data_dir, control=None):
 
     @app.post('/api/control/stop')
     def api_stop():
-        """SIGTERM, never SIGKILL. run_mission's handler treats it as 'wind
-        up at the next tick', which commands RTL through the normal path. A
-        kill would abandon the aircraft holding its last setpoint."""
+        """Send SIGTERM for graceful RTL (not SIGKILL); run_mission handler
+        winds up cleanly.
+        """
         if not ctl:
             abort(403)
         pids = find_pids('run_mission.py')
@@ -518,8 +461,9 @@ def make_app(data_dir, control=None):
 
     @app.post('/api/control/test')
     def api_test():
-        """Run test_everything.py (30 s, no motors, no servos). Detached;
-        the dashboard polls /api/control until selftest.json refreshes."""
+        """Run test_everything.py (30 s, no motors); detached. Dashboard
+        polls /api/control until selftest.json updates.
+        """
         if not ctl:
             abort(403)
         if find_pids('run_mission.py'):
@@ -547,11 +491,10 @@ def make_app(data_dir, control=None):
 
     @app.post('/api/control/photo')
     def api_photo():
-        """Manual photo (user spec 2026-08-16): saved to manual_photos/ and
-        shown on the dashboard, never processed by the detector.
+        """Manual photo: saved to manual_photos/, never processed by detector.
 
-        Two paths: a running detect_worker owns the camera, so ask IT via
-        the request file; with no worker, open the camera directly here.
+        Two paths: request running detect_worker via file, or open camera
+        directly if no worker.
         """
         if not ctl:
             abort(403)
@@ -602,11 +545,8 @@ def make_app(data_dir, control=None):
             log.error(f'PHOTO: direct capture failed: {exc}')
             return jsonify({'ok': False, 'error': str(exc)}), 500
 
-    # ---------------- Wi-Fi settings (user 2026-08-16; the WISP router
-    # plan failed, so the board joins the phone hotspot directly) ----------
-    # Passwords are never logged and never put in a command line (see
-    # wifi.py). Switching networks kills the very connection serving this
-    # page, which the panel says out loud before you press the button.
+    # Wi-Fi settings: passwords never logged or in command line (see wifi.py)
+    # Switching networks kills the connection serving this page
 
     @app.get('/api/wifi')
     def api_wifi():
@@ -656,8 +596,7 @@ def make_app(data_dir, control=None):
         log(f'WIFI: {note}; now on {st.get("connection")} {st.get("ips")}')
         return jsonify({'ok': True, 'note': note, **st})
 
-    # ---------------- geofence polygon (user 2026-08-16: the field is an
-    # irregular shape hemmed in by trees, so it is drawn by hand) ----------
+    # Geofence polygon: drawn by hand on map
 
     @app.get('/api/fence')
     def api_fence_get():
@@ -667,8 +606,7 @@ def make_app(data_dir, control=None):
 
     @app.post('/api/fence')
     def api_fence_post():
-        """Store the drawn polygon. Storing is NOT pushing: nothing reaches
-        the aircraft until the operator presses Push."""
+        """Store drawn polygon (not pushed to aircraft until Push button)."""
         if not ctl:
             abort(403)
         body = request.get_json(silent=True) or {}
@@ -688,12 +626,9 @@ def make_app(data_dir, control=None):
 
     @app.post('/api/fence/push')
     def api_fence_push():
-        """Upload the polygon to the Pixhawk and read it back to prove it.
+        """Upload polygon to Pixhawk and verify by reading back (not just ACK).
 
-        Refused while the mission owns the serial port. Read-back is not
-        decoration: MISSION_ACK only says the exchange was liked, and a
-        fence the operator believes in but the aircraft never stored is
-        worse than no fence at all.
+        Refused while mission or test owns the serial port.
         """
         if not ctl:
             abort(403)
@@ -707,16 +642,7 @@ def make_app(data_dir, control=None):
         bad = fence.validate(poly)
         if bad:
             return jsonify({'ok': False, 'error': bad}), 400
-        # VERIFY ON A FRESH LINK, NOT THE ONE THAT JUST UPLOADED (2026-08-19).
-        # The dashboard's push kept reporting "the Pixhawk holds 0" while
-        # `fence.py read` on the SAME board, the SAME link and the SAME code
-        # listed every corner seconds later. The one structural difference was
-        # the connection: the CLI reads down a socket that has just been
-        # opened, the dashboard re-used the socket that had just finished a
-        # mission-item exchange. So the verify step now does what the working
-        # path does, and each stage is logged and named in the error, because
-        # the previous message ("sent 7 but holds 0") could not distinguish an
-        # upload that failed from a read that did.
+        # Verify on fresh link (not reusing socket from upload, which caches stale state)
         stage, io = 'connect', None
         try:
             from mavlink_io import MavIO
@@ -771,15 +697,8 @@ def make_app(data_dir, control=None):
                         'note': f'{len(back)} corners are in the Pixhawk '
                                 f'(read back and matched)'})
 
-    # ---------------- satellite tiles (user 2026-08-16: "the satellite
-    # imagery isn't working at all") ----------------------------------------
-    # The page tries Esri directly from the browser first. When the LAPTOP
-    # has no route to the internet (at the field it is on the board's or the
-    # phone's network, which may not forward), it falls back to this proxy,
-    # which fetches from the BOARD instead and caches every tile on disk.
-    # Consequences that make this worth the code: whichever machine has
-    # internet, the map works; and once a site's tiles are cached, the map
-    # keeps working with NO internet at all, which is the actual field case.
+    # Satellite tiles: page tries Esri directly, proxies through board when
+    # offline, caches on disk for map to work with no internet
     tile_dir = os.path.join(data_dir, 'tiles')
     ESRI = ('https://server.arcgisonline.com/ArcGIS/rest/services/'
             'World_Imagery/MapServer/tile/{z}/{y}/{x}')
@@ -802,8 +721,7 @@ def make_app(data_dir, control=None):
             with urllib.request.urlopen(req, timeout=8) as r:
                 blob = r.read()
         except Exception as exc:                        # noqa: BLE001
-            # Once per dashboard run: a field with no internet would
-            # otherwise write one line per tile per pan.
+            # Log once to avoid spam in offline field
             if not tile_state['fail_logged']:
                 tile_state['fail_logged'] = True
                 log.warn(f'satellite tiles unavailable from the board: {exc}')
@@ -816,11 +734,8 @@ def make_app(data_dir, control=None):
         return send_from_directory(os.path.dirname(path),
                                    os.path.basename(path), max_age=86400)
 
-    # ---------------- photo browser (read-only, user 2026-08-16) -----------
-    # 'auto' = every frame the worker captured (future training data);
-    # 'manual' = the dashboard button's shots. Names are IST timestamps, so
-    # reverse-sorted = newest first. Available without --enable-control:
-    # viewing photos is as read-only as viewing missions.
+    # Photo browser: 'auto'=captured frames (training data), 'manual'=dashboard
+    # shots. Reverse-sorted newest first. Available without --enable-control.
     photo_dirs = {'auto': os.path.join(data_dir, 'photos'),
                   'manual': manual_dir}
 
@@ -852,20 +767,13 @@ def main():
     global log
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--data-dir', default='~/monsoonready_data')
-    # Passed straight to run_mission, so START MISSION can be retuned between
-    # flights without editing code or leaving the dashboard.
-    # 5 m, not 15: at 15 m a 55 cm target is 44 px and the model misses it.
-    # THESE THREE GOVERN WHAT THE BUTTONS DO. Both DRY RUN and START MISSION
-    # launch run_mission with exactly these, so no flag has to be typed and a
-    # dry run rehearses the real flight rather than a different one.
+    # Survey altitude (m): passed to run_mission for tuning between flights
+    # 5 m: at 15 m, 55 cm targets shrink to 44 px below model threshold
     ap.add_argument('--survey-alt', type=float, default=3.0)
-    # 0.25, not the model default 0.5: measured on val images, true detections
-    # at the apparent size 5 m gives mostly score BELOW 0.5 (60% recall at
-    # 0.25 against 42% at 0.50), and artificial light pushes scores lower
-    # still. Costs false positives, which is the right trade on one take.
+    # Confidence threshold: measured at 5 m, 60% recall at 0.25 vs 42% at 0.5;
+    # artificial light lowers scores further; false positives acceptable for one take
     ap.add_argument('--conf', type=float, default=0.25)
-    # 2 s, not 1: at night the camera picks a long exposure and the hold is
-    # the only thing keeping the frame sharp.
+    # Photo hold (s): camera uses long exposure at night; hold keeps frame sharp
     ap.add_argument('--photo-hold', type=float, default=2.0)
     ap.add_argument('--host', default='0.0.0.0')
     ap.add_argument('--port', type=int, default=8080)
@@ -894,9 +802,8 @@ def main():
     log = BoardLog('dashboard')
     log(f"===== dashboard starting: {' '.join(sys.argv)} =====")
 
-    # No per-request lines (user, 2026-08-16): werkzeug logs every GET at
-    # INFO, which is 1200 poll lines an hour into the captured log. Errors
-    # still surface. Control actions are logged explicitly above.
+    # Suppress werkzeug INFO (logs every GET including polls = ~1200 lines/hour);
+    # errors still surface
     import logging
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
 

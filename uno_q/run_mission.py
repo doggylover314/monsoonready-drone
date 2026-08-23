@@ -1,67 +1,8 @@
-"""Onboard mission runner: the thing that actually flies on the UNO Q.
+"""Onboard mission runner for UNO Q.
+Usage: setsid nohup python uno_q/run_mission.py --waypoints wp_field.txt &
 
-Wires the real parts together, where sitl_test.py wires the fake ones:
-
-    sitl_test.py                 run_mission.py
-    ------------                 --------------
-    FakeDetector (planted)       FileDetector reading detect_worker.py's
-                                 output (camera + ONNX in their own process;
-                                 --inline-detector restores in-loop inference)
-    LogDropper (prints)          PixhawkServoDropper (moves the gate)
-    tcp:127.0.0.1:5760           auto (the Pixhawk's USB via the hub)
-    no base station              basestation_cmd set, launched on DONE
-
-Everything else, above all mission.py, is identical. That is the point: the
-state machine that was proven in simulation is the one that flies.
-
-    setsid nohup ~/venv/bin/python uno_q/run_mission.py \
-        --waypoints wp_field.txt &
-
---conn defaults to 'auto' (2026-08-16): the link is now the Pixhawk's own
-USB plug on the board's hub, resolved from /dev/serial/by-id by
-mavlink_io.resolve_conn, so no device number can shuffle underneath us. The
-byte-shovel (STM32 + pump + SERIAL5) this replaces is deleted; SITL still
-works by passing --conn tcp:127.0.0.1:5760.
-
-Everything prints AND appends to ~/logs/run_mission.log (boardlog): the
-program owns its log file, so it logs identically launched by hand, by the
-dashboard, or detached under nohup. The farm-day rule (SCOPE RULES 1):
-every launch, every command, every failure reason, in the file.
-
---hfov-deg DEFAULTS to the measured 56.2 deg (camera_geom, tape measure
-2026-08-15), so it no longer has to be passed and no flight can silently
-fall back to the nadir assumption. Re-measure with
-uno_q/calibrate_camera.py if the camera or its housing ever changes, and
-update camera_geom.DEFAULT_HFOV_DEG, not a command line.
-
-LAUNCH IT DETACHED, exactly like that. `setsid` puts the runner in its own
-session so closing the ssh connection does not deliver SIGHUP to an aircraft
-in the middle of a descent. This is the primary defence; the signal handling
-below is the backstop for when it was forgotten.
-
-Waypoint file: one "lat,lon" per line, blank lines and #comments ignored.
-
-DRY RUN FIRST. --no-drop swaps in the logging dropper so the whole loop can
-be flown with nothing to clean up afterwards, and --dry-run additionally
-refuses to arm, so the detector and the log can be exercised on the bench.
-
-CONTAINMENT. Everything from arming onward is wrapped, because the failure
-this protects against is specific and bad: the old runner called
-Mission.run() bare, so any exception, or a SIGHUP from a dropped ssh
-session, killed the loop wherever it stood. Mid-DESCEND that leaves a copter
-a few metres over water with the autopilot still holding the last velocity
-setpoint it was given and nothing left alive to send another. Now:
-
-  * SIGINT / SIGTERM / SIGHUP ask the state machine to wind up at the next
-    tick, which commands RTL through the normal path;
-  * any exception out of run() triggers a best-effort RTL and is logged;
-  * the mission log is closed either way, so the flight is never missing its
-    mission_end record.
-
-What this still cannot cover: SIGKILL, a panic, or the UNO Q losing power.
-Nothing in userspace can. In those cases the aircraft holds position in
-GUIDED and the backstops are the pilot's mode switch and the battery
-failsafe, which is the same place the design has always put final authority.
+Logs to ~/logs/run_mission.log. Signals enable graceful shutdown with RTL;
+exceptions trigger emergency RTL. Waypoint file: lat,lon per line.
 """
 
 import argparse
@@ -81,8 +22,7 @@ from mavlink_io import MavIO
 from mission import Mission, MissionConfig
 from missionlog import MissionLog
 
-# <repo>/models/best.onnx, found relative to this file so it is correct on the
-# laptop, on the board, and in any future checkout location.
+# Found relative to this file so works on laptop, board, and any checkout.
 DEFAULT_MODEL = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     'models', 'best.onnx')
@@ -118,23 +58,16 @@ def main():
                     help="'auto' (default) = the Pixhawk's USB, resolved "
                          "from /dev/serial/by-id. SITL: tcp:127.0.0.1:5760.")
     ap.add_argument('--baud', type=int, default=115200)
-    # Resolved from THIS FILE's location, not from $HOME. The old default was
-    # ~/uno_q/best.onnx, a path that stopped existing when the board was
-    # reflashed on 2026-08-13; models/best.onnx has been tracked in git since,
-    # so the checkout always carries it wherever the checkout happens to be.
+    # Resolved from THIS FILE's location so checkout always carries it.
     ap.add_argument('--model', default=DEFAULT_MODEL)
     ap.add_argument('--waypoints', required=True)
     ap.add_argument('--data-dir', default='~/monsoonready_data')
     ap.add_argument('--survey-alt', type=float, default=3.0)
-    # 2.0, not 3.0: the survey is at 3 m for the tree line, so a 3 m drop
-    # altitude would leave no descent at all.
+    # 2.0, not 3.0: prevents zero descent if survey is at tree line.
     ap.add_argument('--drop-alt', type=float, default=2.0)
-    # DESCEND-BESIDE OFFSET, in metres from the detected puddle centre. The
-    # TF-Luna cannot range still water, so the descent happens this far to one
-    # side, on dry ground, before the aircraft crosses over the water to
-    # release (mission.py). North by default; which side is a site decision,
-    # so it is a flag rather than a constant. 0 0 restores the old
-    # descend-directly-overhead behaviour.
+    # Metres from detected puddle centre. TF-Luna cannot range still water,
+    # so descend this far to side before crossing over to release. North by default
+    # (site decision). 0 disables offset.
     ap.add_argument('--offset-n', type=float, default=3.0,
                     help='metres north of the puddle to descend over')
     ap.add_argument('--offset-e', type=float, default=0.0,
@@ -143,16 +76,13 @@ def main():
     ap.add_argument('--photo-hold', type=float, default=2.0,
                     help='seconds to hold at each waypoint so the frame is '
                          'taken stationary. 0 flies the rows continuously')
-    # 'auto' = resolve the camera BY NAME (camera.py). Bare indexes are an
-    # enumeration race with the Venus codecs and losing that race is exactly
-    # the 2026-08-15 farm failure. A number or /dev/videoN pins it for bench.
+    # 'auto' resolves camera by name (camera.py). Bare indexes race Venus codecs;
+    # use number or /dev/videoN to pin for bench.
     ap.add_argument('--camera', default='auto')
     ap.add_argument('--frame-w', type=int, default=1280)
     ap.add_argument('--frame-h', type=int, default=720)
-    # Defaults to the MEASURED value in camera_geom (56.2 deg, tape measure at
-    # the farm 2026-08-15), so geometry is ALWAYS on and no flight can
-    # accidentally fall back to the nadir assumption by forgetting a flag.
-    # Pass --hfov-deg 0 to deliberately disable geometry.
+    # Defaults to measured 56.2 deg in camera_geom; geometry is always on.
+    # Pass 0 to disable.
     ap.add_argument('--hfov-deg', type=float, default=DEFAULT_HFOV_DEG,
                     help=f'MEASURED horizontal FOV, default {DEFAULT_HFOV_DEG} '
                          f'(camera_geom.DEFAULT_HFOV_DEG). 0 = nadir only.')
@@ -161,11 +91,7 @@ def main():
                     help='AUX OUT 1 = ch9 (wired 2026-08-02); '
                          'SERVO9_FUNCTION=0 must be pushed or DO_SET_SERVO '
                          'is silently ignored')
-    # ONE SOURCE OF TRUTH, and this is why. These were hard-coded 1000/1900
-    # while dropper.py had been reversed to 1600 closed / 1000 open, so
-    # run_mission's idea of "closed" WAS THE OPEN POSITION. Flying that empties
-    # the hopper on the ground the moment the servo is initialised. Same class
-    # of bug as wiring_check's hard-coded 1900/1000, found the same way.
+    # Use PixhawkServoDropper defaults for consistency (single source of truth).
     ap.add_argument('--servo-closed-us', type=int,
                     default=PixhawkServoDropper.DEFAULT_CLOSED_US)
     ap.add_argument('--servo-open-us', type=int,
@@ -207,11 +133,8 @@ def main():
         log("[run] no --hfov-deg: detections assumed directly below "
             "the aircraft (nadir)")
 
-    # Detection default (2026-08-01): inference in its own PROCESS
-    # (detect_worker.py), results read from a file. Measured reason: in-line
-    # inference blocks this single-threaded loop 511ms/frame with yolo26n and
-    # 1518ms with yolo26s, during which no MAVLink is pumped and a pilot
-    # flipping the mode switch goes unnoticed.
+    # Inference in separate process (detect_worker.py) to avoid blocking MAVLink.
+    # Inline inference causes 511ms/frame (yolo26n) to 1518ms/frame (yolo26s) lag.
     if args.inline_detector:
         detector = OnnxDetector(model, camera=args.camera, conf=args.conf,
                                 geom=geom, mount_yaw_deg=args.mount_yaw_deg,
@@ -227,9 +150,7 @@ def main():
         sys.exit("[run] camera preflight failed, refusing to fly a blind survey")
 
     if args.dry_run:
-        # Deliberately BEFORE the MissionLog is created. Building it first
-        # left a phantom "in progress" flight on the judged dashboard after
-        # every bench dry-run.
+        # Before MissionLog creation to prevent phantom in-progress state.
         log("[run] DRY RUN: not arming. Polling the detector for 30s.")
         deadline = time.monotonic() + 30
         seen = 0
@@ -269,12 +190,9 @@ def main():
                           'basestation', 'dashboard.py')
         bs_cmd = [sys.executable, bs, '--data-dir', args.data_dir]
 
-    # THE SAME FENCE THE OPERATOR DREW AND PUSHED. The mission needs it to
-    # refuse detections outside the boundary (2026-08-22): the camera sees
-    # about 8 m either side of the aircraft while the rows sit only a few
-    # metres inside the polygon. An empty or missing fence.json disables the
-    # check rather than inventing a boundary, and that is logged either way so
-    # a flight can never quietly lose the protection.
+    # Fence defines detection boundary. Camera sees ~8m either side of aircraft
+    # while rows sit only metres inside. Missing fence disables check; this is
+    # logged so protection cannot silently fail.
     import fence as fence_mod
     poly = fence_mod.load()
     if len(poly) >= 3:
@@ -295,9 +213,7 @@ def main():
     stop = {'why': None}
 
     def _wind_up(signum, _frame):
-        # Signal handlers must do almost nothing: set a flag and return. The
-        # state machine notices on its next tick and exits through the normal
-        # path, which is what commands RTL and closes the log.
+        # Set flag and return. State machine will RTL at next tick via normal path.
         if stop['why'] is None:
             stop['why'] = f"{signal.Signals(signum).name} received"
             log(f"[run] {stop['why']}: winding up, {cfg.end_mode} at the "
@@ -315,8 +231,7 @@ def main():
         log(f"[run] finished in state {final}, "
             f"drops={getattr(dropper, 'succeeded', dropper.fired)}")
     except BaseException as exc:                       # noqa: BLE001
-        # Anything at all, including KeyboardInterrupt that landed between
-        # ticks. The aircraft is airborne; get it home before re-raising.
+        # Aircraft airborne; emergency RTL before re-raising.
         log.error(f"[run] MISSION RAISED in state {mission.state}: "
                   f"{type(exc).__name__}: {exc}")
         _emergency_rtl(io, cfg.end_mode, log)
@@ -334,22 +249,9 @@ def main():
 
 
 def _spawn_or_reuse_worker(args, model, log):
-    """Start detect_worker.py unless one is already publishing.
-
-    'Already publishing' = the output file is fresher than FileDetector's
-    staleness window, which is the same test FileDetector applies in flight:
-    whoever wrote that recently owns the camera. This covers both a
-    hand-started worker and one left behind by a SIGKILLed runner, and it is
-    what makes double-spawning (two processes fighting over one V4L2 device)
-    impossible from this entry point.
-
-    The worker writes its own ~/logs/detect_worker.log (boardlog), so its
-    stdout goes to /dev/null here: redirecting it into the same file would
-    duplicate every line.
-
-    A worker WE spawn is stopped again at interpreter exit (atexit covers
-    every path out of main, including sys.exit and the wind-up-on-signal
-    path). A reused worker is left running: we did not start it.
+    """Start detect_worker.py unless already publishing (fresher than STALE_S).
+    Prevents double-spawn on V4L2 device. Spawned workers stopped at exit.
+    Logs to ~/logs/detect_worker.log; stdout redirected to /dev/null.
     """
     det_file = os.path.expanduser(args.det_file)
     try:
@@ -385,8 +287,7 @@ def _stop_worker(proc, log):
 
 
 def _emergency_rtl(io, mode, log, attempts=3):
-    """Best effort, and it really is best effort: if the runner is dying
-    because the link died, this cannot work and says so rather than hanging."""
+    """Attempt emergency RTL; best-effort, fails cleanly if link is dead."""
     for i in range(1, attempts + 1):
         try:
             confirmed = io.set_mode(mode)

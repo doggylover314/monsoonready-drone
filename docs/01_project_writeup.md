@@ -21,9 +21,11 @@ problem: find the water, get over it, drop a measured amount.
 
 ## The loop
 
-Pixhawk flies the survey rows at 15 m while the UNO Q takes downward photos and
-runs them through the model. Water in frame means the coordinates get locked
-right then, at altitude. The aircraft repositions beside the water, comes down
+Pixhawk flies the survey rows while the UNO Q takes downward photos and runs
+them through the model. Survey altitude is a trade and gets set per site: at
+15 m a half-metre puddle is 44 pixels wide and the model finds it about one
+frame in ten, at 3 m it is 220 pixels. Water in frame means the coordinates get
+locked right then, at altitude. The aircraft repositions beside the water, comes down
 on the TF-Luna, crosses over the middle, opens the gate, crosses back. Climb,
 next row. Once it lands, the UNO Q stops being a mission computer and becomes a
 web dashboard showing where it flew and what it treated.
@@ -38,8 +40,8 @@ that height across the water.
 The model finds standing water. That is the whole claim.
 
 It cannot tell you the water has been there long enough to breed anything. From
-15 m, this morning's puddle and a two-week-old breeding site are the same
-handful of pixels. Stagnation has to come from repeat visits: fly again on
+survey altitude, this morning's puddle and a two-week-old breeding site are the
+same handful of pixels. Stagnation has to come from repeat visits: fly again on
 another day, see which pools are still there, then have someone confirm on the
 ground. One flight produces candidates and nothing more.
 
@@ -110,8 +112,8 @@ height. The third changed the architecture instead.
 
 Each of these exists because something went wrong, or was going to.
 
-**The target gets locked at altitude.** First detection from 15 m sets the
-coordinates and the aircraft stops looking. Close-range frames are where the
+**The target gets locked at altitude.** The first detection at survey altitude
+sets the coordinates and the aircraft stops looking. Close-range frames are where the
 model is least reliable, so re-detecting would hand steering to its worst input.
 
 **Descents abort upward.** The rule separates the cases rather than treating

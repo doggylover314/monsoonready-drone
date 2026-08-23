@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Everything to do with Pixhawk parameters, and nothing else.
+"""Pixhawk parameters: get, set, push, pull, merge.
 
     ./python tools/parameters.py get  BATT_AMP_PERVLT
     ./python tools/parameters.py set  BATT_AMP_PERVLT 24
@@ -7,15 +7,9 @@
     ./python tools/parameters.py pull                  # dump the whole board
     ./python tools/parameters.py merge [qgc_dump]      # offline file build
 
-RUN WITH QGC CLOSED. It owns the serial port while connected.
-
-USB, NOT THE RADIO, for push: it is many small round trips and every retry
-costs radio time. get/set are fine over the SiK link.
-
-THE ECHO IS THE PROOF. ArduPilot silently clamps out-of-range values and
-silently ignores writes to parameters gated behind a parent enable, so a
-write with no readback is not a write. Values compare at float32, the board's
-native storage, because 0.14 does not survive a float64 round trip intact.
+QGC must be closed (owns serial). Push via USB, not radio. Board silently
+clamps and gates sub-parameters; readback confirms actual write. Float32
+precision only.
 """
 
 import argparse
@@ -36,10 +30,8 @@ SETUP = DUMPS / "pixhawk_full_setup.param"
 FULL = DUMPS / "pixhawk_every_param.param"
 MERGED = DUMPS / "pixhawk_complete.params"
 
-# Parameters this project has confirmed need a REBOOT before the new value
-# does anything. Not exhaustive: ArduPilot marks many others the same way and
-# there is no way to ask the board which, so treat a silent no-op after a
-# successful write as "probably needs a reboot" and re-read after one.
+# Board requires reboot to apply these. Not exhaustive; re-read after reboot
+# if write produces silent no-op.
 NEEDS_REBOOT = {
     'BATT_MONITOR': 'selects the battery monitor DRIVER, which is built once '
                     'at startup. The value you just wrote is inert until the '
@@ -82,13 +74,7 @@ def load_param_file(path=SETUP):
 
 
 def await_param(m, name, timeout=10.0):
-    """The PARAM_VALUE for THIS name, discarding others.
-
-    ArduPilot broadcasts PARAM_VALUE whenever any parameter changes, and a
-    second GCS on the same link produces more, so taking "the next one" and
-    labelling it with the name you asked for can report a completely
-    different parameter's value.
-    """
+    """Return PARAM_VALUE for this name; discard others (overlapping broadcasts)."""
     end = time.time() + timeout
     while time.time() < end:
         p = m.recv_match(type='PARAM_VALUE', blocking=True, timeout=1)
@@ -101,12 +87,7 @@ def await_param(m, name, timeout=10.0):
 
 
 def write_param(m, name, value, attempts=3):
-    """Write one parameter and confirm the board echoed THAT name back.
-
-    Returns (ok, echoed_value_or_None). ok is False both for a refused write
-    and for a clamped one, because a value the board changed on the way in is
-    not the value you asked for and must never be reported as success.
-    """
+    """Write parameter and verify board stored exact value. False on clamp/refusal."""
     for _ in range(attempts):
         m.mav.param_set_send(m.target_system, m.target_component,
                              name.encode(), float(value),
@@ -129,11 +110,7 @@ def reboot_note(names):
 
 def cmd_get(args):
     m, _, _ = connect(args.conn, args.baud)
-    # ASK MORE THAN ONCE. A single dropped request is indistinguishable from a
-    # misspelt parameter, and the old single-shot version accused the user of
-    # a typo when a real read had simply been lost (seen 2026-08-10: the same
-    # BATT_AMP_PERVLT read failed then succeeded, unchanged). Requests are
-    # cheap; a wrong accusation costs a debugging detour.
+    # Retry on timeout: single loss looks like wrong name.
     for attempt in range(3):
         m.mav.param_request_read_send(m.target_system, m.target_component,
                                       args.name.encode(), -1)
@@ -194,8 +171,7 @@ def cmd_push(args):
         print("NO-ECHO (likely gated until a parent enable + reboot; "
               "reboot and rerun):\n  " + "\n  ".join(missing))
     reboot_note(overrides)
-    # The verdict has to reach the exit code: this tool is chained in the
-    # bench sequence, and a refused safety parameter must stop the chain.
+    # Exit code propagates through bench; refused safety param must stop.
     sys.exit(1 if (failed or missing) else 0)
 
 
@@ -238,10 +214,7 @@ def cmd_pull(args):
         print(f"WARNING: {total - len(params)} parameters never arrived. This "
               f"dump is INCOMPLETE; do not treat it as a backup.")
 
-    # TIMESTAMPED, so a pull can never destroy the previous backup. The old
-    # pull_params.py wrote one fixed filename, so a bad pull (board half
-    # awake, link dropping) silently overwrote the last good snapshot with a
-    # short one. param_dumps/* is gitignored, so keeping every pull is free.
+    # Timestamped to preserve backups; incomplete pulls don't destroy last good.
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     raw = DUMPS / f"board_dump_{stamp}.param"
     raw.write_text(
@@ -271,10 +244,7 @@ def cmd_pull(args):
 
 
 def cmd_merge(args):
-    """Offline: apply the project's overrides onto a QGC dump, in QGC format.
-
-    No board involved. Output loads via QGC Tools > Load from file.
-    """
+    """Apply overrides to QGC dump offline; output loads via QGC Tools > Load."""
     if args.file:
         dump = Path(args.file)
     else:
@@ -300,11 +270,7 @@ def cmd_merge(args):
             if f32(new) != f32(value):
                 print(f"  override {name}: {value.rstrip('0').rstrip('.')} "
                       f"-> {new}")
-            # TRUNCATION BUG, fixed 2026-08-10 (found in the 2026-08-08 audit):
-            # this used to write str(int(float(new))) for every non-float type,
-            # so an override of 0.14 on a param QGC typed as an int was written
-            # to the file as 0. Silent, and exactly the kind of thing that gets
-            # loaded and flown. Only integer-ify a value that really is one.
+            # Preserve fractional values: truncation to int writes zero.
             if ptype == "9" or not float(new).is_integer():
                 if ptype != "9":
                     print(f"    NOTE {name}={new} is fractional but the dump "

@@ -1,20 +1,11 @@
 """MAVLink link layer for the UNO Q mission computer.
 
-Single-threaded by design: one pump (step()) receives everything and updates
-the telemetry cache; commands that need an ACK pump the same loop while they
-wait. No locks, no races, and identical behavior on the laptop (SITL over TCP)
-and on the UNO Q (the Pixhawk's own USB through the hub, /dev/ttyACM*).
+Single-threaded: step() pump receives and dispatches telemetry; commands
+needing ACK pump the same loop. No locks. Identical behavior on laptop
+(SITL over TCP) and UNO Q (Pixhawk USB via hub).
 
-We are component 191 (MAV_COMP_ID_ONBOARD_COMPUTER) on the vehicle's system id.
-
-CONNECTION 'auto' (2026-08-16): the flight link is now the Pixhawk's USB
-plug on the board's hub, so the right device is discoverable rather than
-guessable: /dev/serial/by-id/ carries one stable ArduPilot entry per
-autopilot, immune to ACM number shuffling the same way the camera is now
-immune to video number shuffling. resolve_conn('auto') finds it or explains
-why not. (Proven 2026-08-16 00:10: 8/8 heartbeats three times while the
-camera streamed 600 frames beside it; the byte-shovel this replaces is
-deleted.)
+Component 191 (MAV_COMP_ID_ONBOARD_COMPUTER). Connection 'auto' resolves
+/dev/serial/by-id stable Pixhawk entries.
 """
 
 import glob
@@ -22,14 +13,13 @@ import time
 
 from pymavlink import mavutil
 
-# What an ArduPilot autopilot's USB CDC port looks like in /dev/serial/by-id.
-# This board's Pixhawk: usb-ArduPilot_Pixhawk1-bdshot_2D00...-if00.
+# ArduPilot/Pixhawk USB CDC paths in /dev/serial/by-id.
+# Example: usb-ArduPilot_Pixhawk1-bdshot_2D00...-if00
 _PIXHAWK_ID_PATTERNS = ('*ArduPilot*', '*Pixhawk*', '*PX4*', '*fmu*')
 
 
 def resolve_conn(conn):
-    """'auto' -> the Pixhawk's /dev/serial/by-id path; anything else passes
-    through untouched (SITL tcp:, explicit devices, udp for bench rigs)."""
+    """Resolve 'auto' to Pixhawk /dev/serial/by-id path; pass through others."""
     if conn != 'auto':
         return conn
     hits = sorted({p for pat in _PIXHAWK_ID_PATTERNS
@@ -46,37 +36,29 @@ def resolve_conn(conn):
         f"conn 'auto': {len(hits)} autopilot-like USB devices, refusing to "
         f"guess: {', '.join(hits)}. Pass --conn with the right one.")
 
-# ArduPilot rejects guided setpoints older than a few seconds; resend at 5Hz.
+# Guided setpoint resend rate: ArduPilot rejects stale commands (5 Hz).
 SETPOINT_RESEND_S = 0.2
 
-# Our own heartbeat rate as component 191. 1 Hz is the MAVLink convention and
-# is what makes `tools/bench.py nodes` able to see the UNO Q at all.
+# Component 191 heartbeat rate (1 Hz, MAVLink convention).
 HEARTBEAT_PERIOD_S = 1.0
 
-# Pulse widths outside this are refused. Brackets the gate's MEASURED travel
-# (closed 560us, open 1760us, servo_jog by eye 2026-08-14) with margin on both
-# sides, narrow enough to catch a typo before it reaches a servo. Shared with
-# dropper.py so the construction-time check and the send-time check agree, and
-# SERVO9_MIN/_MAX on the board must bracket the same range
-# (param_dumps/pixhawk_full_setup.param sets 500/1800).
+# Gate travel: 560us closed, 1760us open. Bounded with margin to catch typos.
+# Shared with dropper.py. SERVO9_MIN/_MAX on board: 500/1800.
 PWM_MIN_US = 500
 PWM_MAX_US = 1800
 
-# POSITION_TARGET_TYPEMASK: use position only / velocity only.
-MASK_POSITION_ONLY = 0x0DF8  # ignore vel+accel+yaw+yaw_rate
-MASK_VELOCITY_ONLY = 0x0DC7  # ignore pos+accel+yaw+yaw_rate
+# Typemask constants: position-only and velocity-only setpoints.
+MASK_POSITION_ONLY = 0x0DF8  # ignore vel, accel, yaw, yaw_rate
+MASK_VELOCITY_ONLY = 0x0DC7  # ignore pos, accel, yaw, yaw_rate
 
 
-# STATUSTEXT cache depth and the MAV_SEVERITY names used when logging them.
+# STATUSTEXT cache size and severity name mapping.
 STATUSTEXT_KEEP = 40
 SEVERITY_NAMES = {0: 'EMERGENCY', 1: 'ALERT', 2: 'CRITICAL', 3: 'ERROR',
                   4: 'WARNING', 5: 'NOTICE', 6: 'INFO', 7: 'DEBUG'}
 
-# SYS_STATUS sensor bits worth naming for a human. Values are MAVLink's
-# MAV_SYS_STATUS_SENSOR_* (verified against the aircraft's own firmware,
-# ArduCopter 4.7.0: libraries/GCS_MAVLink/GCS.cpp:429-623 and
-# ArduCopter/GCS_Copter.cpp:23-100). PREARM_CHECK (bit 28) is the one flag
-# that says "the prearm checks are passing right now".
+# SYS_STATUS sensor bits (verified against ArduCopter 4.7.0).
+# Bit 28: PREARM_CHECK indicates prearm checks passing.
 SENSOR_BITS = [
     (1 << 0, 'gyro'), (1 << 1, 'accel'), (1 << 2, 'compass'),
     (1 << 3, 'baro'), (1 << 5, 'GPS'), (1 << 8, 'rangefinder'),
@@ -85,14 +67,9 @@ SENSOR_BITS = [
 ]
 PREARM_OK_BIT = 1 << 28            # MAV_SYS_STATUS_PREARM_CHECK
 
-# Rest-voltage -> state-of-charge for one LiPo cell, the standard published
-# approximation. WHY this exists (user, 2026-08-16): ArduPilot's own
-# battery_remaining is a coulomb counter that RESETS TO ~100% at every boot,
-# so after a battery swap or reboot it lies until a full flight drains it
-# (the bench showed 11.88 V as "99%" when the pack was really ~60%).
-# Voltage survives reboots. Caveats, stated wherever the estimate is shown:
-# it is approximate (+/-10 points), and it reads LOW while motors run
-# because load sag drops the terminal voltage below the rest voltage.
+# Rest-voltage to SoC for one LiPo cell (standard published approximation).
+# Survives reboots; coulomb counter resets at boot. Approximate +/-10%;
+# reads low under motor load due to voltage sag.
 _LIPO_CELL_PCT = [
     (4.20, 100), (4.15, 95), (4.11, 90), (4.08, 85), (4.02, 75),
     (3.97, 65), (3.92, 55), (3.87, 45), (3.85, 40), (3.82, 35),
@@ -102,9 +79,9 @@ _LIPO_CELL_PCT = [
 
 
 def volt_to_pct(volts, cells=3):
-    """Estimate battery % from pack voltage (3S default). None if unknown.
+    """Estimate SoC % from pack voltage (3S default, None if unknown).
 
-    Linear interpolation over _LIPO_CELL_PCT, clamped to 0..100.
+    Linear interpolation over _LIPO_CELL_PCT, clamped 0-100.
     """
     if volts is None or volts <= 0:
         return None
@@ -119,16 +96,14 @@ def volt_to_pct(volts, cells=3):
 
 
 class Telemetry:
-    """Latest-value cache; timestamps are time.monotonic() at receive."""
+    """Telemetry latest-value cache (timestamps: time.monotonic() at receive)."""
 
     def __init__(self):
         self.lat = None            # deg
         self.lon = None            # deg
         self.rel_alt_m = None      # above home
         self.heading_deg = None
-        # Ground-frame velocity, NED, m/s. vd is positive DOWNWARD, so a
-        # descent reads positive. mission.py uses it to confirm the aircraft
-        # has actually stopped before the gate opens.
+        # NED velocity (vd positive downward). Used to confirm stop before gate.
         self.vn_mps = None
         self.ve_mps = None
         self.vd_mps = None
@@ -140,14 +115,12 @@ class Telemetry:
         self.armed = False
         self.heartbeat_t = 0.0
         self.batt_v = None         # volts (SYS_STATUS)
-        self.batt_pct = None       # -1 from ArduPilot = unknown -> None
+        self.batt_pct = None       # ArduPilot -1 means unknown
         self.sats = None           # GPS_RAW_INT satellites_visible
         self.hdop = None           # GPS_RAW_INT eph / 100
         self.fix_type = None       # 3 = 3D fix
-        # Last STATUSTEXTs from the autopilot, newest last, capped at
-        # STATUSTEXT_KEEP. This is where ArduPilot puts the REASON it will
-        # not arm ("PreArm: ..."), which the dashboard has to show for the
-        # arming tests to be fixable at the field (user, 2026-08-16).
+        # Last STATUSTEXTs from autopilot (newest last, capped STATUSTEXT_KEEP).
+        # Includes prearm refusals ("PreArm: ...") needed for arming diagnosis.
         self.statustexts = []      # [{'t': monotonic, 'sev': int, 'text': str}]
         # SYS_STATUS sensor bitmasks, None until the first SYS_STATUS.
         self.sensors_present = None
@@ -157,10 +130,8 @@ class Telemetry:
     def prearm_messages(self, since_t=None):
         """Distinct arming-refusal texts, oldest first.
 
-        ArduCopter 4.7 prefixes them "PreArm: " while idle and "Arm: "
-        during an actual arm attempt (AP_Arming.cpp:336-387), at severity
-        CRITICAL. Matching the prefix (not a keyword search) keeps ordinary
-        chatter such as "EKF3 IMU0 is using GPS" out of the list.
+        ArduCopter prefixes "PreArm: " when idle, "Arm: " on arm attempt
+        (severity CRITICAL). Prefix-match (not substring) excludes noise.
         """
         out = []
         for s in self.statustexts:
@@ -173,18 +144,14 @@ class Telemetry:
         return out
 
     def unhealthy_sensors(self):
-        """Names of sensors the autopilot reports as enabled but NOT healthy.
-
-        None if no SYS_STATUS has arrived yet (which is itself worth saying,
-        rather than claiming everything is fine).
-        """
+        """Sensor names enabled but unhealthy. None if no SYS_STATUS received yet."""
         if self.sensors_health is None or self.sensors_enabled is None:
             return None
         return [name for bit, name in SENSOR_BITS
                 if (self.sensors_enabled & bit) and not (self.sensors_health & bit)]
 
     def prearm_ok(self):
-        """True/False from the PREARM_CHECK health bit, None if unknown."""
+        """PREARM_CHECK bit status: True/False if known, None otherwise."""
         if self.sensors_health is None or self.sensors_present is None:
             return None
         if not (self.sensors_present & PREARM_OK_BIT):
@@ -193,17 +160,14 @@ class Telemetry:
 
     @property
     def batt_pct_est(self):
-        """Voltage-derived battery %, ~accurate across reboots (see
-        volt_to_pct); ArduPilot's batt_pct resets to 100 every boot."""
+        """Battery % from voltage (survives reboots; coulomb counter resets)."""
         return volt_to_pct(self.batt_v)
 
 
 class MavIO:
     def __init__(self, conn_str, source_system=1, source_component=191,
                  baud=115200, log=print):
-        # baud is ignored by tcp:/udp: connection strings and by USB CDC
-        # (the Pixhawk's USB ignores the number entirely); it only matters if
-        # a real UART ever carries this link again.
+        # baud ignored by TCP/UDP and USB CDC; only matters for real UART.
         self.log = log
         resolved = resolve_conn(conn_str)
         if resolved != conn_str:
@@ -219,26 +183,10 @@ class MavIO:
     # ---------- connection ----------
 
     def wait_ready(self, timeout=60):
-        """Heartbeat FROM THE AUTOPILOT + mode map. Raises on timeout.
+        """Wait for autopilot (component 1) heartbeat + mode map. Raises on timeout.
 
-        IT MUST BE COMPONENT 1'S HEARTBEAT, not merely the first heartbeat.
-        The ESP32 obstacle ring is component 195 on the same vehicle, beats
-        at about the same 1 Hz, and ArduPilot forwards it to us over
-        SERIAL5, so roughly half of all connections see it first. pymavlink
-        only locks target_system onto a heartbeat it judges to be a
-        VEHICLE, and MAV_TYPE_ONBOARD_CONTROLLER is explicitly excluded
-        (mavutil.probably_vehicle_heartbeat), so an ESP32-first connection
-        leaves target_system at 0 -- whose default mav_type is 1, FIXED
-        WING. mode_mapping() then hands back the PLANE map, and every mode
-        name in this project silently means something else:
-            GUIDED -> 15, which is AUTOTUNE on Copter
-            RTL    -> 11, which is DRIFT on Copter
-            custom_mode 4 reads back as "ACRO", so Mission's pilot-override
-            test sees a non-GUIDED mode and stands down instantly.
-        Reproduced 2026-08-15 by feeding both heartbeat orderings through
-        pymavlink; the plane map has 26 entries, the copter map 27. This
-        could not appear before 2026-08-14 because the ring was silent, and
-        it cannot appear in SITL, which has no second component.
+        MUST be component 1, not 195 (ESP32 ring). pymavlink locks target_system
+        only to VEHICLE types; ESP32-first leaves it at 0, breaking mode mapping.
         """
         deadline = time.monotonic() + timeout
         hb = None
@@ -279,26 +227,16 @@ class MavIO:
             mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT, 5)
         self.request_stream(
             mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR, 10)
-        # Battery and GPS quality, for the 1 Hz mission log line and the
-        # self-test. 1 Hz: these inform humans, not control loops.
+        # Battery and GPS: 1 Hz suffices for mission log and self-test (human-facing).
         self.request_stream(mavutil.mavlink.MAVLINK_MSG_ID_SYS_STATUS, 1)
         self.request_stream(mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT, 1)
 
     # ---------- pump ----------
 
     def step(self, max_wait=0.02):
-        """Receive+dispatch at most one message; call in a tight loop.
+        """Receive and dispatch at most one message; call in a tight loop.
 
-        Also emits our own 1 Hz heartbeat as component 191. WHY IT IS HERE:
-        the probe sketch used to heartbeat from firmware, so `bench.py nodes`
-        could see the UNO Q on the bus. sketch_mav_shovel replaced it and
-        only FORWARDS bytes, and MavIO previously sent commands but never a
-        heartbeat, so comp 191 vanished from the bus and the nodes check read
-        as "the UNO Q is not reaching the Pixhawk" while the link was in fact
-        working perfectly (2026-08-15 at the farm: the same session's
-        SET_MESSAGE_INTERVAL was ACKed, which is proof of the TX path).
-        Announcing ourselves is also simply correct MAVLink citizenship for a
-        companion computer.
+        Also emits 1 Hz heartbeat as component 191 so the bus sees this node.
         """
         now = time.monotonic()
         if now - self._last_hb_t >= HEARTBEAT_PERIOD_S:
@@ -309,7 +247,7 @@ class MavIO:
                     mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0,
                     mavutil.mavlink.MAV_STATE_ACTIVE)
             except Exception:                             # noqa: BLE001
-                pass    # a dead link is the pump's problem, never a crash here
+                pass    # dead link handled elsewhere, never crash here
         msg = self.conn.recv_match(blocking=True, timeout=max_wait)
         if msg is not None:
             self._on_msg(msg)
@@ -348,9 +286,7 @@ class MavIO:
             tel.hdop = msg.eph / 100.0 if msg.eph != 65535 else None
             tel.fix_type = msg.fix_type
         elif t == 'STATUSTEXT':
-            # EVERY autopilot message is logged (SCOPE RULES 1) and kept in
-            # the cache. Prearm refusals arrive here and nowhere else, so
-            # dropping them is how "it just will not arm" stays a mystery.
+            # STATUSTEXT logging required (SCOPE RULES 1): prearm refusals here only.
             text = msg.text
             if isinstance(text, (bytes, bytearray)):
                 text = text.decode('utf-8', 'replace')
@@ -362,7 +298,7 @@ class MavIO:
                 self.log(f"[ap] {SEVERITY_NAMES.get(msg.severity, msg.severity)}"
                          f": {text}")
         elif t == 'HEARTBEAT':
-            # Ignore heartbeats from other components (e.g. ESP32 compid 195).
+            # Ignore heartbeats from other components (e.g., ESP32 component 195).
             if (msg.get_srcSystem() == self.conn.target_system
                     and msg.get_srcComponent()
                     == mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1):
@@ -384,33 +320,20 @@ class MavIO:
     }
 
     def run_prearm_checks(self):
-        """Ask the autopilot to run its prearm checks and report NOW.
+        """Request autopilot prearm checks via MAV_CMD_RUN_PREARM_CHECKS.
 
-        Copter 4.7 handles MAV_CMD_RUN_PREARM_CHECKS (401) in
-        GCS_Common.cpp:4995-5004: it calls pre_arm_checks(true), which
-        forces every failing check to be sent as STATUSTEXT immediately
-        instead of waiting out the normal 30 s display throttle
-        (AP_Arming.cpp:109-111). Without this, a ground station can sit for
-        half a minute before it learns why the aircraft will not arm.
-
-        ACCEPTED does NOT mean the checks passed: the handler returns
-        ACCEPTED unconditionally when disarmed (and TEMPORARILY_REJECTED
-        while armed). The verdict is in the STATUSTEXTs and in the
-        SYS_STATUS prearm bit.
+        Forces failing checks to STATUSTEXT immediately (vs. 30 s throttle).
+        ACCEPTED does not mean passed; check STATUSTEXTs and SYS_STATUS prearm bit.
         """
         return self.command_ack(mavutil.mavlink.MAV_CMD_RUN_PREARM_CHECKS,
                                 timeout=2.0, retries=1)
 
     def command_ack(self, cmd, p1=0, p2=0, p3=0, p4=0, p5=0, p6=0, p7=0,
                     timeout=3.0, retries=3, retry_failed=False):
-        """command_long + wait for its COMMAND_ACK, pumping telemetry meanwhile.
+        """Send command_long and wait for COMMAND_ACK, pumping telemetry meanwhile.
 
-        Every send and every ack result is logged (SCOPE RULES 1): the farm
-        day was undiagnosable partly because nothing recorded which commands
-        went out and what the autopilot said back.
-
-        retry_failed: also retry on MAV_RESULT_FAILED (ArduPilot answers FAILED
-        for arm attempts while prearm checks are still settling, e.g. EKF).
+        Logged per SCOPE RULES 1. retry_failed: also retry on MAV_RESULT_FAILED
+        (ArduPilot issues FAILED while prearm checks settle, e.g., EKF).
         """
         name = self._CMD_NAMES.get(cmd, f'cmd{cmd}')
         for attempt in range(1, retries + 1):
@@ -443,26 +366,15 @@ class MavIO:
         raise TimeoutError(f"command {cmd}: no ACCEPTED ack")
 
     def set_mode(self, name, confirm_s=5.0):
-        """Change mode and WAIT for the heartbeat to say so. Returns bool.
+        """Change mode and wait for heartbeat confirmation. Returns bool.
 
-        The COMMAND_ACK proves the autopilot accepted the command; it does
-        not prove tel.mode has caught up, because tel.mode only moves on a
-        HEARTBEAT and those arrive at 1 Hz. Every command here ACKs in tens
-        of milliseconds, so a caller that inspects tel.mode straight after
-        set_mode reads the PREVIOUS mode for up to a second. Mission's
-        pilot-override test does exactly that on its first loop iteration,
-        and would stand down before the survey ever started.
-
-        Returns False if the mode was accepted but never confirmed, so the
-        caller can decide; it does not raise, because at mission end an
-        unconfirmed RTL is still an accepted RTL.
+        COMMAND_ACK arrives in ~10 ms but mode confirmation needs HEARTBEAT (1 Hz).
+        Caller sees old mode for up to 1 s. Returns False if accepted but unconfirmed.
         """
         mapping = self._mode_names or {}
         if name not in set(mapping.values()):
-            # _mode_names is the reverse map built in wait_ready from a
-            # verified autopilot heartbeat. Trusting it rather than calling
-            # mode_mapping() again keeps every mode lookup on the one map
-            # that was checked.
+            # Use cached _mode_names (from wait_ready) rather than mode_mapping()
+            # to keep all lookups consistent with the verified autopilot map.
             raise ValueError(f"mode {name!r} is not in this vehicle's mode "
                              f"map; wait_ready must run first")
         mode_id = next(k for k, v in mapping.items() if v == name)
@@ -478,39 +390,23 @@ class MavIO:
         return False
 
     def arm(self, retries=12, timeout=5.0):
-        """Arm, and RETURN WHETHER IT WORKED.
+        """Arm and return success/failure. Default retries: 12 x 5 s (prearm settling).
 
-        This used to swallow its own result and retry 60 times at 5 s, which
-        is five minutes of silence, and mission.run() called takeoff()
-        straight afterwards whether or not the aircraft had armed. On
-        2026-08-21 every arm attempt in the field was refused (HDOP, fence
-        breach, proximity) and the dashboard still reported a mission under
-        way, because nothing anywhere looked at this outcome.
-
-        The retry budget is still generous (default 12 x 5 s = a minute) since
-        prearm genuinely does settle after boot, but it now ENDS, and the
-        caller is expected to act on False. The reason itself is already in
-        tel.statustexts, put there by ArduPilot as "PreArm:"/"Arm:" text.
+        Reason in tel.statustexts. Caller must act on False; does not raise.
         """
         return self.command_ack(
             mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, p1=1,
             timeout=timeout, retries=retries, retry_failed=True)
 
     def takeoff(self, alt_m):
+        """Takeoff to relative altitude in meters."""
         self.command_ack(mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, p7=alt_m)
 
     def set_servo(self, channel, pwm_us):
-        """MAV_CMD_DO_SET_SERVO: drive a Pixhawk output directly.
+        """Send MAV_CMD_DO_SET_SERVO: drive Pixhawk output directly.
 
-        channel is the SERVO output number (1-based, matching SERVOn_*
-        params), pwm_us the pulse width in microseconds. The output's
-        SERVOn_FUNCTION must be 0 (Disabled) for ArduPilot to hand manual
-        control of it to this command.
-
-        VERIFY ON THE BENCH: whether ArduPilot NACKs DO_SET_SERVO when
-        SERVOn_FUNCTION is not 0 is not confirmed from a primary source. Do
-        not rely on the ACK alone to prove the parameter is right; watch the
-        gate move.
+        channel: 1-based SERVO number. pwm_us: pulse width microseconds.
+        SERVOn_FUNCTION must be 0 (Disabled). Verify with actual servo movement.
         """
         if not PWM_MIN_US <= pwm_us <= PWM_MAX_US:
             raise ValueError(f"pwm_us out of servo range: {pwm_us}")
@@ -528,24 +424,16 @@ class MavIO:
             0, 0, 0, 0, 0, 0, 0, 0)
 
     def velocity_ned(self, vn, ve, vd, force=False):
-        """Guided velocity target; must be resent continuously (rate-limited).
+        """Guided velocity target (rate-limited, 5 Hz minimum).
 
-        force=True bypasses the rate limiter. That exists for one specific
-        case and it is a safety case: a CHANGE of setpoint must never be the
-        message the limiter happens to swallow. Resending "keep descending"
-        early is wasted bandwidth; dropping "stop descending" means the
-        autopilot keeps acting on the previous command, and the caller
-        carries on believing it has stopped (review finding 2026-08-01: the
-        gate opened ~0.65-1 m below the intended release height because the
-        zero-velocity setpoint before the drop was silently rate-limited
-        away).
+        force=True bypasses rate limiter for setpoint CHANGES only (critical:
+        drop commands must not be swallowed; drop too late if limited).
         """
         now = time.monotonic()
         if not force and now - self._last_setpoint_t < SETPOINT_RESEND_S:
             return
         if force:
-            # Only forced sends are logged: they are the setpoint CHANGES
-            # (stop, abort-climb). The 5 Hz keep-alive resends would be noise.
+            # Log forced sends (setpoint changes: stop, abort-climb). Keep-alive resends are noise.
             self.log(f"[mavio] -> velocity NED {vn:g},{ve:g},{vd:g} (forced)")
         self._last_setpoint_t = now
         self.conn.mav.set_position_target_local_ned_send(
