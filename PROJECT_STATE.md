@@ -1742,3 +1742,17 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - Checklist item "detector ready to run" replaced with "the dashboard on the other tab", since no detector is run by hand any more.
 - BALANCE CAME OUT AT 259 / 260, a ONE WORD gap, without any trimming for its own sake. (I predicted 250/250 before measuring; the prediction was wrong and the measurement is what stands.)
 - **THIS RAISES THE STAKES ON THE FLIGHT.** With the still-image demo gone there is no longer ANY detection footage that does not depend on the aircraft working. If the flight produces no detections, the take has no AI content at all. Flagged to the user; the tray on the first survey row is what protects against it.
+
+### 2026-08-23 ~17:10 IST: BOARD GIT CORRUPTED AGAIN. Empty loose objects, second time
+- SAME FAILURE AS 2026-08-23 EARLIER: zero-length loose objects under `.git/objects`, network fine (ping to google.com clean, 0% loss). `1daf615...` and `1ba9005...` both report "object file ... is empty" and the fetch dies with "invalid index-pack output".
+- **BOTH OBJECTS ARE COMMITS AND BOTH ARE INTACT ON THIS LAPTOP AND ON THE REMOTE**, verified with `git cat-file -t`. 1daf615 is "Video script: shorter and tighter". So nothing is lost; the board's copies are truncated, not the history.
+- CAUSE IS UNCLEAN SHUTDOWN while git was writing. It has now happened twice on this board, so it is a pattern, not an accident: pulling power on the UNO Q mid-write truncates whatever loose object was open.
+- FIX GIVEN: `find .git/objects -type f -empty -delete` then fetch and `reset --hard origin/main`. **Deleting an EMPTY loose object is safe in a way that deleting a non-empty one is not**: git treats it as absent and refetches it, whereas the empty file makes git believe it already has the object and fail.
+- RISK STATED TO THE USER: `reset --hard` discards board-side commits. PRIVATE.md is gitignored and `~/monsoonready_data` is outside the repo, so both survive; so does the venv at `~/venv`.
+
+### 2026-08-23 ~17:10 IST: PRE-FLIGHT PUDDLE DETECTION CHECK. The DRY RUN button already is this test
+- USER wants to confirm the Arduino actually detects the puddle BEFORE flying. **This is exactly what the DRY RUN button does and no new code is needed.**
+- WHY IT WORKS: `--dry-run` refuses to ARM but changes nothing else, so the camera opens, the worker spawns, the model runs and detections are logged as normal (PROJECT_STATE 899 recorded that --dry-run alone would still cycle the gate; the button sends `no_drop` alongside it precisely so the gate stays shut on a loaded hopper).
+- CAVEAT TO EXPECT: ground position is computed from altitude, so at ~0 m the COORDINATE will be wrong. The BOX is the thing being proven here, not the fix. Nothing approaches anything because nothing is armed.
+- SECOND CAVEAT: a detection outside the saved fence is ignored by design (fence_margin_m 2 m), and run_mission logs which way it went. If the model clearly sees the tray but nothing is recorded, the fence check is the first thing to look at, not the model.
+- **THIS MATTERS MORE THAN IT DID AN HOUR AGO.** With the pre-flight still-image demo cut from the script, the flight is the only source of detection footage, so a model that does not fire means a take with no AI content at all.
