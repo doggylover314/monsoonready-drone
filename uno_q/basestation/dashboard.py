@@ -858,7 +858,7 @@ def main():
     # THESE THREE GOVERN WHAT THE BUTTONS DO. Both DRY RUN and START MISSION
     # launch run_mission with exactly these, so no flag has to be typed and a
     # dry run rehearses the real flight rather than a different one.
-    ap.add_argument('--survey-alt', type=float, default=5.0)
+    ap.add_argument('--survey-alt', type=float, default=3.0)
     # 0.25, not the model default 0.5: measured on val images, true detections
     # at the apparent size 5 m gives mostly score BELOW 0.5 (60% recall at
     # 0.25 against 42% at 0.50), and artificial light pushes scores lower

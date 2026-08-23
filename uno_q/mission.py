@@ -60,7 +60,7 @@ class _NoLog:
 class MissionConfig:
     waypoints: list = field(default_factory=list)  # [(lat, lon), ...]
     survey_alt_m: float = 15.0
-    drop_alt_m: float = 3.0        # rangefinder AGL that triggers the drop
+    drop_alt_m: float = 2.0        # rangefinder AGL that triggers the drop
     descent_mps: float = 0.5
     climb_mps: float = 1.0
     wp_radius_m: float = 1.5

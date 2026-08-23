@@ -125,8 +125,10 @@ def main():
     ap.add_argument('--model', default=DEFAULT_MODEL)
     ap.add_argument('--waypoints', required=True)
     ap.add_argument('--data-dir', default='~/monsoonready_data')
-    ap.add_argument('--survey-alt', type=float, default=5.0)
-    ap.add_argument('--drop-alt', type=float, default=3.0)
+    ap.add_argument('--survey-alt', type=float, default=3.0)
+    # 2.0, not 3.0: the survey is at 3 m for the tree line, so a 3 m drop
+    # altitude would leave no descent at all.
+    ap.add_argument('--drop-alt', type=float, default=2.0)
     # DESCEND-BESIDE OFFSET, in metres from the detected puddle centre. The
     # TF-Luna cannot range still water, so the descent happens this far to one
     # side, on dry ground, before the aircraft crosses over the water to
