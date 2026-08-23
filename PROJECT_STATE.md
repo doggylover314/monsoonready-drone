@@ -1697,3 +1697,18 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - VERIFIED, not assumed: 1 h1, 4 h2, 43 paragraphs, 9 list items, 25 bold spans, zero surviving markdown asterisks, `<strong>` open/close counts equal, and a **plain-text round trip of 1244 words against 1244 in the markdown, delta zero**. Also rendered in the browser and read back on screen.
 - **THE CONVERTER IS NOT IN THE REPO.** It is a one-off in the session scratchpad; only its output is committed. A second home for markdown conversion is not wanted.
 - REGENERATION: the .md stays the source of truth. Any later edit to the script means regenerating the .html, or the two drift.
+
+### 2026-08-23 ~16:35 IST: THIRD PERSON FILMS. Both builders are in frame together throughout
+- USER: a third person operates the camera and Reyansh and Raghav are BOTH on camera at once, the whole take.
+- **THE R / C LABELS HAD TO GO, because C meant "Raghav on camera" and the camera is now somebody else.** Every speaker label is now the full name, `**Reyansh:**` and `**Raghav:**`, and camera directions address the third person as "Camera". Verified zero surviving `**R:**` or `**C:**` labels and zero bare "C films / C keeps / C holds" directions.
+- **A FACTUAL ERROR IN THE OPENING LINE WAS FIXED BY THIS CHANGE:** Reyansh introduced Raghav as "that's Raghav behind the camera". He is in shot now, so it reads "I'm Reyansh, this is Raghav".
+- EVERY STAGE DIRECTION REWRITTEN. They no longer describe two people swapping the phone; each block now says where the camera is, who points, and who talks. The 1:15 swap is roles only, not positions. The closing has them side by side with the aircraft between them.
+- CHECKLIST GAINED ONE ITEM (camera operator has read the shot directions and knows the running order) and the copy-off step now names whose phone the file is on.
+- BALANCE HELD AT 49/51 across the rewrite: Reyansh 250 spoken words, Raghav 264, variant A path, contingency lines excluded.
+
+### 2026-08-23 ~16:35 IST: DO NOT EXPLAIN THE UNO Q ON CAMERA (user, standing)
+- USER: "dont explain the arduino uno q to the judges, they knwo what it is". **These are Arduino's own judges; describing their board back to them wastes the take and reads as padding.**
+- CUT from the 1:15 block: "the companion computer" and "It runs Linux". What stays is what the board DOES here, which is not something the judges can already know: it runs the puddle-detection model on board, and nothing leaves the aircraft.
+- The 3:15 line "on the Arduino's own CPU it runs an image in about half a second" was KEPT deliberately. That is a measured performance claim about our model, not an explanation of the hardware.
+- The ~10 words freed were spent on "Every one of those we soldered and mounted ourselves", which keeps the 49/51 split and reinforces built-not-bought, which judges do score.
+- APPLIES BEYOND THE SCRIPT: the same rule should govern any future submission text. Do not re-describe the UNO Q's architecture to Arduino.
