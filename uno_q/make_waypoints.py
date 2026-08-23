@@ -28,6 +28,22 @@ from mavlink_io import MavIO
 EARTH_M_PER_DEG_LAT = 111320.0
 
 
+def spacing_for_overlap(alt_m, overlap_m=1.0, width=1280, height=720,
+                        hfov_deg=None):
+    """(row_spacing_m, waypoint_spacing_m) that leave overlap_m between frames.
+
+    The camera's 1280 px axis lies ACROSS track and its 720 px axis ALONG it
+    (camera_geom.camera_to_ned: image up is aircraft forward), so the two
+    spacings differ. Never returns less than 1 m, so a low altitude cannot
+    generate a route of thousands of points.
+    """
+    from camera_geom import CameraGeometry
+    geom = (CameraGeometry(width, height) if hfov_deg is None
+            else CameraGeometry(width, height, hfov_deg))
+    across, along = geom.footprint_m(alt_m)
+    return max(1.0, across - overlap_m), max(1.0, along - overlap_m)
+
+
 def densify(points, max_leg_m):
     """Split any leg longer than max_leg_m into equal pieces.
 

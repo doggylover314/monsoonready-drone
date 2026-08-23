@@ -361,8 +361,11 @@ def make_app(data_dir, control=None):
             inset = float(b.get('inset', 4))
             # Waypoint spacing ALONG a row. With a photo hold at each
             # waypoint this is the photo interval, so the row ends alone are
-            # not enough.
-            max_leg = float(b.get('max_leg', 4))
+            # not enough. Unset means derive it from the survey altitude for
+            # overlap_m of frame overlap.
+            overlap = float(b.get('overlap', 1.0))
+            max_leg = b.get('max_leg')
+            max_leg = None if max_leg in (None, '') else float(max_leg)
             heading = b.get('heading')
             heading = None if heading in (None, '') else float(heading)
             start = b.get('start') or None
@@ -372,11 +375,24 @@ def make_app(data_dir, control=None):
             return jsonify({'ok': False, 'error': 'bad numbers'}), 400
         if not (1 <= rows <= 25) or not (1 <= spacing <= 50) \
                 or not (2 <= length <= 500) or not (0 <= inset <= 50) \
-                or not (0 <= max_leg <= 200):
+                or not (0 <= overlap <= 20) \
+                or (max_leg is not None and not (0 <= max_leg <= 200)):
             return jsonify({'ok': False,
                             'error': 'rows 1-25, spacing 1-50 m, '
                                      'row length 2-500 m, keep-out 0-50 m, '
+                                     'overlap 0-20 m, '
                                      'waypoint spacing 0-200 m'}), 400
+
+        # Derived from the altitude the mission will actually fly, not from a
+        # constant, so the frames overlap at whatever altitude is set.
+        from make_waypoints import spacing_for_overlap
+        alt = ctl.get('survey_alt', 15.0)
+        row_rec, leg_rec = spacing_for_overlap(alt, overlap)
+        if max_leg is None:
+            max_leg = leg_rec
+        log(f"GENERATE: at {alt:g} m with {overlap:g} m overlap the frames "
+            f"want rows {row_rec:.1f} m apart and waypoints {leg_rec:.1f} m "
+            f"apart; using rows {spacing:g} m, waypoints {max_leg:.1f} m")
 
         poly = fence.load(fence_path)
         if len(poly) >= 3:

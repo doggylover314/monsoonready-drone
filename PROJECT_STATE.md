@@ -1774,3 +1774,26 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - **`MissionConfig.photo_hold_s` (NEW, default 1.0) and the SURVEY arrival path.** On reaching a waypoint the mission now dwells before advancing, so the frame is taken stationary. `_hold_since` is cleared in `_goto_current_wp`, which covers a normal advance, a leg skipped on timeout, and re-entry from CLIMB after a drop. Tested on a stubbed Mission: first tick starts the hold and does not advance, an immediate second tick still does not advance, and a tick after 1.1 s advances and clears the hold. `photo_hold_s = 0` restores continuous flight exactly.
 - **`--photo-hold`, `--survey-alt` and `--conf` NOW REACH run_mission FROM THE DASHBOARD.** api_start previously passed none of them, so START MISSION was hard-wired to 15 m and conf 0.5 and could not be retuned without editing code. They are dashboard CLI args now, so `start_dashboard.sh` can carry them. The generate endpoint also takes `max_leg` (default 4 m, validated 0-200) and densifies both the fence-coverage and serpentine branches.
 - **THE BATTERY MAKES THIS A TRADE, NOT A FREE WIN.** Dense waypoints plus a 1 s hold at each one is far slower than flying the rows continuously, and the failsafe fired at 116 s on log 59. A 169-waypoint route cannot be flown. THE SURVEY AREA MUST SHRINK to a few short rows over the tray, or the flight ends before it reaches the water.
+
+### 2026-08-23 ~18:35 IST: THE LOG SETTLES IT. The model works; the target is too small at altitude
+- LOG LINE, board, from the ground test: `+788.2s [detector] puddle conf 0.63 offset +0.1m N -0.2m E @1.9m rng ~0.3 m2`. **The model detected the tray at 0.63 confidence from 1.9 m AGL.** No `[detector] puddle` line exists for the filmed flight at all.
+- **TWO OF THE THREE CANDIDATE CAUSES ARE NOW RULED OUT BY EVIDENCE, NOT BY REASONING.** (b) confidence is not the blocker: it scored 0.63, well clear of the 0.5 threshold, when it could see the target. (c) the fence is not the blocker: **there is not one `IGNORED` line in the log**, and mission.py logs that case explicitly. What is left is (a), scale.
+- THE ARITHMETIC OF THE ONE SUCCESSFUL DETECTION: 0.3 m2 is a ~55 cm target, and at 1.9 m the footprint is 2.03 m wide, so it was **346 px across** when the model found it. At 15 m the same tray is **44 px**. That is the whole story.
+  | alt | the same 55 cm tray | 2 m puddle | 4 m puddle |
+  | 15 m | 44 px | 160 px | 320 px |
+  | 10 m | 66 px | 240 px | 479 px |
+  | 8 m | 82 px | 300 px | 599 px |
+  | 5 m | 131 px | 479 px | 959 px |
+- **THE STRONGEST LEVER IS THE TARGET, NOT THE ALTITUDE, AND IT IS FREE.** A 2 m sheet of water at 8 m gives 300 px, comparable to the 346 px that already worked. Getting the 55 cm tray to that size needs roughly 1.5 m altitude, which is below drop_alt_m and not flyable. **A bigger water target is the fix; lower altitude alone is not enough.**
+- WHAT IS STILL UNKNOWN: the model's actual minimum pixel size. Only two data points exist, 346 px detected and 44 px not, and nothing between them has been tried. A ground test at a measured height would bracket it for free and has not been done.
+
+### 2026-08-23 ~18:35 IST: SPACING NOW DERIVED FROM ALTITUDE, not a constant
+- USER: denser, but not super dense, about one metre of overlap between frames.
+- **`make_waypoints.spacing_for_overlap(alt_m, overlap_m)` (NEW)** returns (row spacing, waypoint spacing) for a stated overlap. **THE TWO ARE DIFFERENT AND THE AXES ARE EASY TO SWAP:** verified from `camera_geom.camera_to_ned` ("image up is aircraft forward") that the 1280 px axis lies ACROSS track and the 720 px axis ALONG it, so at 8 m the rows want 7.5 m and the waypoints 3.8 m, not one number for both. Floors at 1 m so a low altitude cannot generate thousands of points.
+  | alt | rows | waypoints |
+  | 15 m | 15.0 m | 8.0 m |
+  | 10 m | 9.7 m | 5.0 m |
+  | 8 m | 7.5 m | 3.8 m |
+  | 5 m | 4.3 m | 2.0 m |
+- The generate endpoint takes `overlap` (default 1.0 m, validated 0-20) and derives `max_leg` from the survey altitude the dashboard was started with. An explicit `max_leg` still overrides. The chosen and recommended spacings are both logged, so a route that came out denser or sparser than intended can be explained afterwards.
+- ROUTE SIZE ON A 55 x 65 m TEST POLYGON: at 15 m, 8 row-ends become 39 waypoints; at 8 m, 14 become 118. **118 waypoints with a 1 s hold each cannot be flown on this pack.** The fence has to shrink; that is a field decision, not a code one.
