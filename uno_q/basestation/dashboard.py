@@ -359,11 +359,11 @@ def make_app(data_dir, control=None):
             spacing = float(b.get('spacing', 12))
             length = float(b.get('length', 20))
             inset = float(b.get('inset', 4))
-            # Waypoint spacing ALONG a row. With a photo hold at each
-            # waypoint this is the photo interval, so the row ends alone are
-            # not enough. Unset means derive it from the survey altitude for
-            # overlap_m of frame overlap.
-            overlap = float(b.get('overlap', 1.0))
+            # Waypoint spacing ALONG a row: where the aircraft STOPS for a
+            # still frame. Default overlap 0 puts a stop every time the
+            # camera has moved onto completely new ground. The gaps are not
+            # gaps: the detect worker keeps imaging in transit at ~0.5 s.
+            overlap = float(b.get('overlap', 0.0))
             max_leg = b.get('max_leg')
             max_leg = None if max_leg in (None, '') else float(max_leg)
             heading = b.get('heading')
@@ -854,7 +854,8 @@ def main():
     ap.add_argument('--data-dir', default='~/monsoonready_data')
     # Passed straight to run_mission, so START MISSION can be retuned between
     # flights without editing code or leaving the dashboard.
-    ap.add_argument('--survey-alt', type=float, default=15.0)
+    # 5 m, not 15: at 15 m a 55 cm target is 44 px and the model misses it.
+    ap.add_argument('--survey-alt', type=float, default=5.0)
     ap.add_argument('--conf', type=float, default=0.5)
     ap.add_argument('--photo-hold', type=float, default=1.0)
     ap.add_argument('--host', default='0.0.0.0')

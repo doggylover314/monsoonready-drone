@@ -1797,3 +1797,24 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
   | 5 m | 4.3 m | 2.0 m |
 - The generate endpoint takes `overlap` (default 1.0 m, validated 0-20) and derives `max_leg` from the survey altitude the dashboard was started with. An explicit `max_leg` still overrides. The chosen and recommended spacings are both logged, so a route that came out denser or sparser than intended can be explained afterwards.
 - ROUTE SIZE ON A 55 x 65 m TEST POLYGON: at 15 m, 8 row-ends become 39 waypoints; at 8 m, 14 become 118. **118 waypoints with a 1 s hold each cannot be flown on this pack.** The fence has to shrink; that is a field decision, not a code one.
+
+### 2026-08-23 ~19:05 IST: DETECTION FLOOR MEASURED ON THE VAL SET. No hardware, no battery
+- The pixel floor was the one thing separating "lower the altitude" from a guess, so it was MEASURED rather than argued: 40 single-puddle val images, each rendered into a 1280x720 frame at a chosen apparent width, run through **byte-identical preprocessing to detector.py** (letterbox 640, RGB, /255) against `models/best.onnx`.
+  | apparent px | detected at conf 0.5 | mean best conf |
+  | 40 px | 10% | 0.153 |
+  | 60 px | 28% | 0.248 |
+  | 80 px | 30% | 0.300 |
+  | 120 px | 42% | 0.381 |
+  | 160 px | 48% | 0.416 |
+  | 240 px | 48% | 0.424 |
+- **THE CURVE EXPLAINS THE FAILED FLIGHT EXACTLY.** At 15 m the tray was 44 px, which is a ~10% chance PER FRAME. Over the two or three frames a sparse route gave it, that is a 19-27% chance of ever seeing it. The flight was not unlucky; it was correctly predicted by the geometry.
+- **IT ALSO SHOWS WHY MANY FRAMES BEAT A BETTER SINGLE FRAME.** At 80 px (8 m) one frame is 30% but four are 76%; at 132 px (5 m) one frame is ~42% and four are ~89%. Overlapping frames plus the photo hold is worth more than any threshold change.
+- HONEST LIMITS OF THE METHOD, so nobody quotes the absolute numbers as field accuracy: these are val images rescaled and tiled, not real flight frames, so they carry no motion blur, no real sun glare and the training distribution's own bias. **The SHAPE is the finding; the absolute rates are not a field prediction.** The 320 px column fell back to 38%, which is the render distorting at large sizes rather than a real decline, and it is why 320 is not quoted above.
+- The measurement script stayed in the session scratchpad. It is a one-off, not a tool the repo needs a second home for.
+
+### 2026-08-23 ~19:05 IST: 5 m SURVEY, STOPS ON NEW GROUND, CONTINUOUS IMAGING BETWEEN
+- USER: START MISSION at 5 m; image continuously every 0.5 s while moving; stop for a frame every time the camera reaches completely new ground.
+- **THE CONTINUOUS HALF NEEDED NO CODE AND ALREADY WORKS.** `detect_worker.py` is spawned with `--interval 0.0`, i.e. flat out, which the board measures at ~489 ms per frame, and `FileDetector` has NO poll throttle at all (unlike `OnnxDetector`, whose `interval_s` defaults to 1.0 and is only used by `--inline-detector`). So the survey already images at ~0.5 s continuously. Verified by reading both classes rather than assuming.
+- CHANGED: dashboard `--survey-alt` default **15.0 -> 5.0**, and the generate endpoint's `overlap` default **1.0 -> 0.0**, which is what "completely new ground" means: a stop every along-track footprint. The transit frames cover the gaps.
+- **AT 5 m: footprint 5.3 x 3.0 m, so rows 5.3 m apart and a stop every 3.0 m. The 55 cm tray becomes 132 px (~42% per frame) and a 2 m sheet of water becomes 479 px.**
+- **FLIGHT TIME, THE CONSTRAINT THAT DECIDES THE FENCE SIZE**, at 2 m/s with 1 s holds: a 15x10 m box is 13 stops and ~28 s; 20x15 m is 23 stops and ~56 s; 30x20 m is 47 stops and ~111 s, which is the whole pack. **DRAW THE FENCE AT 15x10 m OR 20x15 m, NOT LARGER.**
