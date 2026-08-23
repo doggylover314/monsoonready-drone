@@ -1830,3 +1830,17 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - **THE HOLD COSTS EXACTLY WHAT IT SHOULD: 9.0 s over 9 waypoints at 1 s each, and 0 disables it completely.** So the flight-time arithmetic quoted to the user (13 stops, ~28 s for a 15x10 m box) is measured behaviour, not an estimate.
 - WHAT THIS DOES NOT PROVE: `_at_wp` is stubbed True, so nothing here exercises real arrival tolerance, GUIDED acceptance, or the detector path. It proves the hold advances and terminates, which was the risk introduced today.
 - **OPERATIONAL NOTE FOR THIS LAPTOP: `pkill -f sim_vehicle.py` MATCHED THE ASSISTANT'S OWN SHELL** and killed the command that issued it (exit 144), silently dropping the state append and commit that followed it in the same block. Kill SITL by PID, or put the kill in its own block with nothing after it.
+
+### 2026-08-23 ~19:00 IST: A 6W LIGHT WILL NOT WORK. MEASURED, and the AI cannot be demoed in the dark
+- USER asked whether strapping a 6W light to the aircraft would let the detector work. **It is now dark: 18:58 IST, past Bangalore's late-August sunset.**
+- **WEIGHT AND POWER ARE NOT THE OBJECTION.** 6W is ~0.5 A at 12 V, about 4 mAh over a 30 s flight, and the F550 lifts a kilo. The objection is that 6W does not produce enough light.
+- THE PHOTOMETRY: 6W at 80-110 lm/W is 480-660 lm. At 5 m the frame is 5.3 x 3.0 m = 15.9 m2, so even if EVERY lumen landed inside the frame that is **30-42 lux**. Overcast daylight is 1000-10000 lux. Reaching even half-daylight over that frame needs roughly **40,000 lm, about 400 W of LED**, which this airframe cannot carry or power.
+- **MEASURED ON THE MODEL, 25 val images at 132 px (the size a 55 cm target gets at 5 m), brightness scaled with added sensor noise:**
+  | illumination | >=0.30 | >=0.50 | mean conf |
+  | full daylight | 60% | 48% | 0.424 |
+  | half light | 52% | 48% | 0.388 |
+  | quarter light | 32% | 16% | 0.194 |
+  | ~6W lamp at 5 m | **0%** | **0%** | 0.008 |
+- **DETECTION COLLAPSES TO ZERO, and the real case is worse than the test**: the 0.12 gain row is one eighth of daylight, while a 6W lamp is closer to one hundred and fiftieth. The model has also never seen a night image, and water under a point source returns a specular hotspot rather than the matte dark surface it was trained on.
+- SECOND-ORDER PROBLEM EVEN IF THE LIGHT WERE ENOUGH: the B525 is a consumer webcam that auto-exposes, so in the dark it lengthens exposure and every frame from a moving aircraft smears. The photo hold helps but does not fix a 1/8 s exposure.
+- CONSEQUENCE, STATED PLAINLY TO THE USER: **the autonomous detect-and-drop cannot be filmed tonight.** The honest asset that already exists is the successful GROUND detection at 1.9 m, conf 0.63, from this afternoon. Ground lighting (car headlights on the water) puts far more lux on the target than anything airborne and is worth a free dry-run attempt, but it is a long shot against a daylight-trained model.
