@@ -69,7 +69,7 @@ class MissionConfig:
     # target. Hold at each waypoint, let the airframe settle, then advance.
     # Waypoint spacing sets the interval (make_waypoints.densify); this sets
     # the dwell. 0 disables it and restores continuous flight.
-    photo_hold_s: float = 1.0
+    photo_hold_s: float = 2.0
     alt_tol_m: float = 1.0
     rng_timeout_s: float = 1.0
     rng_expect_m: float = 6.0      # EKF alt by which rangefinder must have acquired

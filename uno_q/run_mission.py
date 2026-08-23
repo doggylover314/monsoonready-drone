@@ -125,7 +125,7 @@ def main():
     ap.add_argument('--model', default=DEFAULT_MODEL)
     ap.add_argument('--waypoints', required=True)
     ap.add_argument('--data-dir', default='~/monsoonready_data')
-    ap.add_argument('--survey-alt', type=float, default=15.0)
+    ap.add_argument('--survey-alt', type=float, default=5.0)
     ap.add_argument('--drop-alt', type=float, default=3.0)
     # DESCEND-BESIDE OFFSET, in metres from the detected puddle centre. The
     # TF-Luna cannot range still water, so the descent happens this far to one
@@ -137,8 +137,8 @@ def main():
                     help='metres north of the puddle to descend over')
     ap.add_argument('--offset-e', type=float, default=0.0,
                     help='metres east of the puddle to descend over')
-    ap.add_argument('--conf', type=float, default=0.5)
-    ap.add_argument('--photo-hold', type=float, default=1.0,
+    ap.add_argument('--conf', type=float, default=0.25)
+    ap.add_argument('--photo-hold', type=float, default=2.0,
                     help='seconds to hold at each waypoint so the frame is '
                          'taken stationary. 0 flies the rows continuously')
     # 'auto' = resolve the camera BY NAME (camera.py). Bare indexes are an

@@ -1844,3 +1844,17 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - **DETECTION COLLAPSES TO ZERO, and the real case is worse than the test**: the 0.12 gain row is one eighth of daylight, while a 6W lamp is closer to one hundred and fiftieth. The model has also never seen a night image, and water under a point source returns a specular hotspot rather than the matte dark surface it was trained on.
 - SECOND-ORDER PROBLEM EVEN IF THE LIGHT WERE ENOUGH: the B525 is a consumer webcam that auto-exposes, so in the dark it lengthens exposure and every frame from a moving aircraft smears. The photo hold helps but does not fix a 1/8 s exposure.
 - CONSEQUENCE, STATED PLAINLY TO THE USER: **the autonomous detect-and-drop cannot be filmed tonight.** The honest asset that already exists is the successful GROUND detection at 1.9 m, conf 0.63, from this afternoon. Ground lighting (car headlights on the water) puts far more lux on the target than anything airborne and is worth a free dry-run attempt, but it is a long shot against a daylight-trained model.
+
+### 2026-08-23 ~20:05 IST: BUTTON DEFAULTS SET FOR THE HEADLIGHT ATTEMPT. No flags to type
+- USER: the two buttons, DRY RUN and START MISSION, must launch the correct configuration with NO command line at all.
+- **THE DEFAULTS THEMSELVES CHANGED, not a launch flag**, so pressing a button with a bare `start_dashboard.sh` is now correct:
+  | setting | was | now | why |
+  | dashboard `--conf` | 0.5 | **0.25** | measured: at the apparent size 5 m gives, recall is 60% at 0.25 against 42% at 0.50, because true detections mostly score below 0.5. Artificial light pushes scores lower again. |
+  | dashboard `--photo-hold` | 1.0 | **2.0** | at night the camera picks a long exposure; the hold is the only thing keeping the frame sharp |
+  | `run_mission --survey-alt` | 15.0 | **5.0** | the file default still said 15 even though the dashboard passed 5, so a direct run disagreed with a button run |
+  | `run_mission --conf` / `--photo-hold` | 0.5 / 1.0 | **0.25 / 2.0** | same reason: the two entry points must not diverge |
+  | `MissionConfig.photo_hold_s` | 1.0 | **2.0** | library default kept in step |
+- **BOTH BUTTONS NOW REHEARSE THE SAME FLIGHT.** `api_start` builds one command and appends `--dry-run`/`--no-drop` to it, so DRY RUN differs from START MISSION only in arming and the gate. A dry run that detects is direct evidence the armed flight would detect.
+- **SURVEY ALTITUDE DELIBERATELY LEFT AT 5 m.** Lower would give more lux and more pixels, but `drop_alt_m` is 3.0 with `alt_tol_m` 1.0 and `floor_margin_m` 1.0, so 4 m or below squeezes the descend-cross-drop geometry that has never flown. Not worth changing untested tonight.
+- **FLIGHT TIME, COMPUTED NOT GUESSED:** a 15 x 10 m box at 5 m is 2 rows of 6 stops = 12 waypoints. 24 s of hold plus ~15 s of travel = **~39 s of survey**, before takeoff, climb, the drop sequence and RTL. Against a failsafe that fired at 116 s that leaves usable margin, but a drop sequence adds 20-30 s, so a 10 x 6 m box would be safer than 15 x 10.
+- FALSE POSITIVES ARE THE ACCEPTED COST of conf 0.25 and are NOT measured: the pixel-floor test used only images containing water, so there is no false-positive rate for any threshold. A specular headlight hotspot on water is exactly the kind of thing that could score as a puddle. On one take, sensitivity was judged worth it; that is a trade, not a free win.

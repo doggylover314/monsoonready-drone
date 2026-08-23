@@ -855,9 +855,18 @@ def main():
     # Passed straight to run_mission, so START MISSION can be retuned between
     # flights without editing code or leaving the dashboard.
     # 5 m, not 15: at 15 m a 55 cm target is 44 px and the model misses it.
+    # THESE THREE GOVERN WHAT THE BUTTONS DO. Both DRY RUN and START MISSION
+    # launch run_mission with exactly these, so no flag has to be typed and a
+    # dry run rehearses the real flight rather than a different one.
     ap.add_argument('--survey-alt', type=float, default=5.0)
-    ap.add_argument('--conf', type=float, default=0.5)
-    ap.add_argument('--photo-hold', type=float, default=1.0)
+    # 0.25, not the model default 0.5: measured on val images, true detections
+    # at the apparent size 5 m gives mostly score BELOW 0.5 (60% recall at
+    # 0.25 against 42% at 0.50), and artificial light pushes scores lower
+    # still. Costs false positives, which is the right trade on one take.
+    ap.add_argument('--conf', type=float, default=0.25)
+    # 2 s, not 1: at night the camera picks a long exposure and the hold is
+    # the only thing keeping the frame sharp.
+    ap.add_argument('--photo-hold', type=float, default=2.0)
     ap.add_argument('--host', default='0.0.0.0')
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--enable-control', action='store_true',
