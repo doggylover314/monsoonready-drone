@@ -2023,3 +2023,43 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - Note for whoever regenerates it: the block diagram was the drawing that had
   the USB topology RIGHT (through the hub). That correctness is now recorded in
   the entry above rather than in any file, so read it before drawing.
+
+### 2026-08-23 ~21:25 IST: PRE-FILM AUDIT. ROW SPACING IS THE ONE REAL BUG LEFT
+
+- **THE SURVEY BARELY PHOTOGRAPHS THE BOX AT 3 m, AND THE CAUSE IS THE UI, NOT
+  THE CODE.** `index.html:378` ships `<input id="genSp" value="12">` and
+  `index.html:2270` posts that 12 straight through as `spacing`. Row spacing is
+  therefore 12 m. At 3 m altitude the camera's across-track footprint is
+  3.20 m, so **8.8 m between every pair of rows is never imaged**, about 73% of
+  the area. A puddle sitting in that gap cannot be detected at any confidence
+  threshold. This is a better explanation of a miss than anything about the
+  model.
+- Measured, not asserted, via `spacing_for_overlap` and `CameraGeometry(1280,
+  720)`: at 3 m the frame is 3.20 across x 1.80 along; 0 m overlap wants rows
+  3.20 m, 1 m overlap wants rows 2.20 m. At 5 m: frame 5.34 x 3.00, and 1 m
+  overlap wants rows 4.34 m.
+- **`overlap` IS NEVER SENT BY THE FRONT END.** `dashboard.py:311` defaults it
+  to 0.0 and `index.html` has no overlap control at all. So the "one metre of
+  overlap" asked for on 2026-08-23 is live in the API and in
+  `make_waypoints.spacing_for_overlap`, but UNREACHABLE from the buttons. The
+  server-side derivation runs and is only used for `max_leg` (along-track,
+  1.80 m at 3 m), never for rows.
+- The GENERATE log line already prints the discrepancy in full: "want rows
+  2.2 m apart ... using rows 12 m". It has presumably been printing it all
+  along and nobody read it.
+- ZERO-CODE FIX for tonight, chosen over touching the front end hours before
+  filming: type **2.2** into the dashboard's spacing box before pressing
+  Generate. That yields 1 m of across-track overlap at 3 m. Along-track is
+  covered by continuous imaging between waypoints plus the 1 s photo hold.
+- Everything else checked and correct: `run_mission.py` defaults survey-alt 3.0,
+  drop-alt 1.0, offset-n 1.5, offset-e 0.0, conf 0.25, photo-hold 1.0;
+  `dashboard.py` defaults match and are passed through at
+  `dashboard.py:428-430`; MissionConfig drop_alt 1.0, photo_hold 1.0,
+  floor_margin 0.5, lateral offsets 1.5/0.0, cross_radius 0.5.
+- `MissionConfig.survey_alt_m` is STILL 15.0 (`mission.py:53`). Harmless only
+  because both callers always pass `--survey-alt` explicitly. Same shape as the
+  drop_alt bug already caught. Left alone deliberately: changing a default that
+  is always overridden is churn before a flight.
+- ARM WINDOW CONFIRMED FROM SOURCE, not memory: `index.html:1102`,
+  `setTimeout(() => setArmed(false), 8000)`. START MISSION must be pressed
+  within **8 seconds** of ARM or it silently greys out with no error text.
