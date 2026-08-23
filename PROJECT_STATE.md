@@ -1818,3 +1818,15 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - CHANGED: dashboard `--survey-alt` default **15.0 -> 5.0**, and the generate endpoint's `overlap` default **1.0 -> 0.0**, which is what "completely new ground" means: a stop every along-track footprint. The transit frames cover the gaps.
 - **AT 5 m: footprint 5.3 x 3.0 m, so rows 5.3 m apart and a stop every 3.0 m. The 55 cm tray becomes 132 px (~42% per frame) and a 2 m sheet of water becomes 479 px.**
 - **FLIGHT TIME, THE CONSTRAINT THAT DECIDES THE FENCE SIZE**, at 2 m/s with 1 s holds: a 15x10 m box is 13 stops and ~28 s; 20x15 m is 23 stops and ~56 s; 30x20 m is 47 stops and ~111 s, which is the whole pack. **DRAW THE FENCE AT 15x10 m OR 20x15 m, NOT LARGER.**
+
+### 2026-08-23 ~19:40 IST: PHOTO HOLD PROVEN NOT TO WEDGE THE SURVEY. SITL would not start
+- The photo hold touches `_st_survey` and `_goto_current_wp`, i.e. the loop that advances the whole survey. **A wedge there parks the aircraft at waypoint 0 and costs a pack to discover**, so it was tested before flying rather than after.
+- **SITL COULD NOT BE USED AND THE REASON IS RECORDED SO THE NEXT ATTEMPT DOES NOT REPEAT IT.** `sim_vehicle.py -f hexa --no-rebuild` starts `arducopter`, which binds and LISTENS on 5760, but emits NO HEARTBEAT AT ALL: a direct pymavlink probe over 25 s saw zero sources, and sitl_test.py died in `wait_ready()` after 60 s. The process stayed alive, so this is not a crash. Not diagnosed; it was not worth the user's charging window.
+- TESTED DIRECTLY INSTEAD, driving the REAL `_st_survey` with a fake IO, an always-arrived `_at_wp` and a deterministic virtual clock (monkeypatched `time.monotonic`, so the walk is exact rather than wall-clock dependent). Route was the real thing: `spacing_for_overlap(5.0, 0.0)` gives stops every 3.0 m, densified to 9 waypoints.
+  | photo_hold_s | final state | waypoints | survey time |
+  | 0.0 | DONE | 9/9 | 0.5 s |
+  | 1.0 | DONE | 9/9 | 9.5 s |
+  | 2.0 | DONE | 9/9 | 18.4 s |
+- **THE HOLD COSTS EXACTLY WHAT IT SHOULD: 9.0 s over 9 waypoints at 1 s each, and 0 disables it completely.** So the flight-time arithmetic quoted to the user (13 stops, ~28 s for a 15x10 m box) is measured behaviour, not an estimate.
+- WHAT THIS DOES NOT PROVE: `_at_wp` is stubbed True, so nothing here exercises real arrival tolerance, GUIDED acceptance, or the detector path. It proves the hold advances and terminates, which was the risk introduced today.
+- **OPERATIONAL NOTE FOR THIS LAPTOP: `pkill -f sim_vehicle.py` MATCHED THE ASSISTANT'S OWN SHELL** and killed the command that issued it (exit 144), silently dropping the state append and commit that followed it in the same block. Kill SITL by PID, or put the kill in its own block with nothing after it.
