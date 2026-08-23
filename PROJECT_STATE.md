@@ -1986,3 +1986,20 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
   the camera. Nobody has confirmed which is physically true. Whatever comes out
   of Claude design inherits this error unless the user checks the actual USB
   plugs.
+
+### 2026-08-23 ~20:55 IST: USB TOPOLOGY SETTLED (user, primary source)
+
+- **The Pixhawk and the camera BOTH hang off the USB hub. The Pixhawk is NOT on
+  the UNO Q directly.** WHY, and this is the load-bearing part: the UNO Q has
+  exactly ONE USB-A port. Two USB devices therefore cannot both be direct, the
+  hub is structural rather than a convenience, and any drawing showing a second
+  direct USB link is impossible on this hardware. (Buck A feeds the board over
+  USB-C, which is a separate connector and not part of this count.)
+- The deleted `docs/circuit_schematic.svg` had this WRONG (Pixhawk direct, only
+  the camera on the hub). `docs/block_diagram.svg` had it RIGHT all along: its
+  label reads "USB, MAVLink2, through the hub". Confirms keeping the block
+  diagram was correct.
+- Consequence for the record: the hub is a single point of failure for both the
+  flight-controller link and the camera. Not a new risk, just newly stated.
+- The Claude design prompt was corrected before use. Anyone regenerating that
+  diagram must draw UNO Q -> USB hub -> {Pixhawk, camera}.
