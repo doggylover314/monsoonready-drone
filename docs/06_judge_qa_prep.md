@@ -64,7 +64,7 @@ that class of failure surfaces. Dataset v2 targets both.
 **Is 0.708 recall good enough?**
 Recall matters more than precision here. A missed puddle is an untreated site; a
 false positive costs a few grams. The figure is measured against public datasets
-mostly not shot from 15 m looking down, so it is a proxy for the real task.
+mostly not shot from 5 m looking down, so it is a proxy for the real task.
 
 **How did you avoid train/test contamination?**
 No two datasets in the merge come from the same image pool. Roboflow versions of
@@ -87,10 +87,11 @@ descent costs the aircraft. Not hypothetical: the TF-Luna uses 850 nm infrared
 and still water behaves close to a mirror at that wavelength, which is also why
 it descends beside the puddle and crosses over holding that height.
 
-**The rangefinder cannot see the ground from 15 m. Does it not abort every
-time?**
-That is the subtlety the rule had to get right, because the first part of every
-descent is legitimately blind. It separates the cases: abort if the return was
+**The rangefinder goes blind at the top of a high descent. Does it not abort
+every time?**
+That is the subtlety the rule had to get right. The TF-Luna is good to about
+8 m, so a descent that starts above that is legitimately blind at first, and one
+that starts at 5 m is not blind at all. It separates the cases: abort if the return was
 acquired then lost, or never acquired by the height where the sensor must see
 ground, or if the EKF says the aircraft is below drop height and the rangefinder
 never confirmed. After two crashes caused by a corrupted altitude estimate, no

@@ -24,7 +24,7 @@ problem: find the water, get over it, drop a measured amount.
 Pixhawk flies the survey rows while the UNO Q takes downward photos and runs
 them through the model. Survey altitude is a trade and gets set per site: at
 15 m a half-metre puddle is 44 pixels wide and the model finds it about one
-frame in ten, at 3 m it is 220 pixels. Water in frame means the coordinates get
+frame in ten, at 5 m it is 132 pixels. Water in frame means the coordinates get
 locked right then, at altitude. The aircraft repositions beside the water, comes down
 on the TF-Luna, crosses over the middle, opens the gate, crosses back. Climb,
 next row. Once it lands, the UNO Q stops being a mission computer and becomes a

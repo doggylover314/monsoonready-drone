@@ -41,8 +41,8 @@ filter before anyone checked whether the timer channels have DMA. They do not.
 We moved to an in-flight FFT notch.
 
 **A rangefinder rule that would have aborted every descent.** The proposed logic
-treated "no reading" as a fault, but the TF-Luna cannot see the ground from 15 m
-at all, so the first part of every descent is blind and always will be. Caught
+treated "no reading" as a fault, but the TF-Luna is good to about 8 m, so the
+first part of any descent starting above that is blind and always will be. Caught
 in review, and the rule now separates "never acquired" from "acquired then
 lost".
 
