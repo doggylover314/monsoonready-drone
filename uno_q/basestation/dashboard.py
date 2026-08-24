@@ -8,6 +8,7 @@ geographic bounds (corners as lat/lon).
 
 import argparse
 import json
+import math
 import os
 import re
 import signal
@@ -67,6 +68,42 @@ def tail(path, lines=14):
             return ''.join(f.readlines()[-lines:])
     except OSError:
         return ''
+
+
+# Mission settings the launch buttons may override, with the range each is
+# clamped to. These go onto run_mission.py's command line, so a value that
+# survives here reaches the aircraft: the bounds are the last check.
+#   survey_alt  1 m floor is below the rangefinder's RNGFND1_MIN 0.2 plus
+#               GNDCLR; 40 m is India's DGCA ceiling for this class.
+#   photo_hold  0 disables the hold entirely (mission.py:453 tests > 0).
+#               30 s is far past useful and only guards a typo.
+#   conf        the detector's own threshold, a probability.
+MISSION_LIMITS = {
+    'survey_alt': (1.0, 40.0),
+    'photo_hold': (0.0, 30.0),
+    'conf': (0.05, 0.95),
+}
+
+
+def mission_opt(body, key, fallback):
+    """One numeric launch override from the request body, or `fallback`.
+
+    Absent or null means "use the dashboard's own default", which is what an
+    older page that does not send the field will do. Anything present must be
+    a real number inside MISSION_LIMITS; a bad one raises rather than being
+    silently clamped, because quietly flying 5 m when the operator asked for
+    50 is worse than refusing to launch.
+    """
+    if key not in body or body[key] is None:
+        return fallback
+    lo, hi = MISSION_LIMITS[key]
+    try:
+        val = float(body[key])
+    except (TypeError, ValueError):
+        raise ValueError(f'{key} must be a number, got {body[key]!r}')
+    if not math.isfinite(val) or not lo <= val <= hi:
+        raise ValueError(f'{key} must be between {lo:g} and {hi:g}, got {val:g}')
+    return val
 
 
 def missions_dir(data_dir):
@@ -249,6 +286,11 @@ def make_app(data_dir, control=None):
                 os.path.expanduser(ctl['waypoints'])),
             'conn': ctl['conn'], 'camera': ctl['camera'],
             'no_drop': ctl['no_drop'],
+            # Seed values for the mission-settings boxes. Sent every poll so
+            # a reloaded page shows what the next launch will actually use,
+            # not whatever was last typed into a since-closed tab.
+            'survey_alt': ctl['survey_alt'], 'conf': ctl['conf'],
+            'photo_hold': ctl['photo_hold'],
             'log': tail(os.path.join(LOG_DIR, 'run_mission.log')),
         })
 
@@ -538,13 +580,21 @@ def make_app(data_dir, control=None):
                             'error': f'no waypoint file at {wp}: run '
                                      f'make_waypoints.py first'}), 400
         body = request.get_json(silent=True) or {}
+        # START and DRY RUN both post here, so every override below applies
+        # to both by construction. Keep it that way: a dry run that flies
+        # different settings from the mission proves nothing about it.
+        try:
+            opts = {k: mission_opt(body, k, ctl[k]) for k in MISSION_LIMITS}
+        except ValueError as exc:
+            log.warn(f'START refused: {exc}')
+            return jsonify({'ok': False, 'error': str(exc)}), 400
         cmd = [ctl['python'], os.path.join(REPO, 'uno_q', 'run_mission.py'),
                '--conn', ctl['conn'], '--waypoints', wp,
                '--camera', str(ctl['camera']),
                '--data-dir', ctl['data_dir'],
-               '--survey-alt', str(ctl['survey_alt']),
-               '--conf', str(ctl['conf']),
-               '--photo-hold', str(ctl['photo_hold'])]
+               '--survey-alt', str(opts['survey_alt']),
+               '--conf', str(opts['conf']),
+               '--photo-hold', str(opts['photo_hold'])]
         if ctl['no_drop'] or body.get('no_drop'):
             cmd.append('--no-drop')
         if body.get('dry_run'):

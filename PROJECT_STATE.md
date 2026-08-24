@@ -3226,3 +3226,61 @@ stopping distance: from 3 m/s it needs 3.0 m against 1.8 m today. That is
 larger than wp_radius_m 1.5, which is fine for the hold logic (it only starts
 the clock) but means the aircraft overshoots further past a waypoint if a leg
 is ever commanded short. Watch the first flight.
+
+### 2026-08-24 ~18:10 IST: mission settings moved INTO the dashboard. START and DRY RUN both carry them (user-ordered)
+
+USER, and he is right to be annoyed: "Why do you keep forgetting that for the
+recording I need the DASHBOARD button to use all these params. Also, make sure
+the same is applied to the dry run button." Everything I had been quoting was a
+CLI flag on start_dashboard.sh, which means restarting the dashboard to change
+a number. Useless during a shoot.
+
+WHAT WAS ALREADY TRUE, and is worth recording so it is not re-investigated:
+START and DRY RUN post to the SAME endpoint (/api/control/start) and go through
+the SAME command builder. dry_run only appends --dry-run and --no-drop. So any
+setting added to that builder reaches both buttons by construction. The gap was
+never the dry run path; it was that survey_alt / conf / photo_hold were frozen
+at dashboard startup from argparse and no UI control could move them.
+
+SHIPPED:
+- dashboard.py: MISSION_LIMITS + mission_opt() at module level. Three
+  overrides accepted from the POST body, each range-checked (survey_alt
+  1-40 m, photo_hold 0-30 s, conf 0.05-0.95). Absent or null means "use the
+  dashboard default", so an older cached page still launches correctly. A bad
+  value REFUSES the launch with a 400 naming the field rather than clamping:
+  flying 5 m when the operator typed 50 is worse than not flying.
+- dashboard.py: /api/control now returns survey_alt, conf and photo_hold so a
+  reloaded page shows what the next launch would really use.
+- dashboard.py: api_start builds the command from the validated overrides. The
+  existing "START: pid N: <full argv>" log line already records them, so what
+  flew is recoverable from ~/logs/dashboard.log.
+- index.html: a ctlOpts row above the buttons with alt / photo hold / conf
+  number boxes, each with a tooltip stating the trade. Chip reads "used by
+  START and DRY RUN alike".
+- index.html: optsSeed() fills the boxes from the poll, but an optDirty set
+  stops the 1 Hz refresh overwriting a value under the operator's cursor.
+  missionOpts() omits an empty box rather than sending 0, so clearing a field
+  falls back to the default instead of flying at zero altitude.
+
+VERIFIED, on this laptop, not on the board:
+- Flask test client with Popen faked: bare START gives 5.0/1.0/0.25; START with
+  overrides gives 5.0/3.0/0.2; DRY RUN bare and DRY RUN with overrides give the
+  identical values plus --dry-run --no-drop. alt 500 and conf "abc" both
+  refused with 400 and a named field. NaN refused.
+- Dashboard run locally on port 8099 and driven in a browser: the three boxes
+  render and self-seed to 5 / 1 / 0.25. Typed 3 into photo hold, waited three
+  poll cycles, value survived (optDirty works). With fetch intercepted so no
+  run_mission.py was spawned, DRY RUN posted
+  {survey_alt:5, photo_hold:3, conf:0.25, dry_run:true, no_drop:true} and START
+  posted {survey_alt:5, photo_hold:3, conf:0.25}. Identical settings, proven
+  from the wire.
+- Only console error is /api/site_meta 404, which is dashboard.py:222 abort(404)
+  for "no site_image.json in this data dir". Pre-existing, an artifact of the
+  empty scratch data dir, absent on the board.
+
+WP_ACC CANNOT GO ON A LAUNCH BUTTON and this is deliberate, not an omission. It
+is a Pixhawk parameter, not a run_mission argument; the dashboard has no
+param-write endpoint at all (PIXHAWK_TOOLS is a port-ownership list, not a
+runner) and building one hours before a recording is the wrong trade. WP_ACC is
+also persistent in FC storage and survives reboots, so it wants setting ONCE
+with tools/parameters.py, not per launch. Left as a BOARD command for the user.

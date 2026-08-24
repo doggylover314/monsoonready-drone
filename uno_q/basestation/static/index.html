@@ -430,6 +430,12 @@
         <span class="pill" id="ctlDrop">gate ?</span>
       </div>
       <div class="ctlRow"><span id="ctlPrearm"></span></div>
+      <div class="ctlRow" id="ctlOpts">
+        <label title="Survey altitude AGL. Lower puts more pixels on the puddle: a 0.55 m target spans about 132 px of the model input at 5 m against 44 px at 15 m.">alt <input id="optAlt" type="number" min="1" max="40" step="0.5"> m</label>
+        <label title="How long the aircraft pauses at each waypoint. It is still braking for about the first second, so 1 s photographs a moving, tilted aircraft; 3 s leaves roughly two thirds of the pause genuinely still.">photo hold <input id="optHold" type="number" min="0" max="30" step="0.5"> s</label>
+        <label title="Detector confidence threshold. Lower finds more puddles and more false positives.">conf <input id="optConf" type="number" min="0.05" max="0.95" step="0.05"></label>
+        <span class="chip">used by START and DRY RUN alike</span>
+      </div>
       <div class="ctlRow">
         <button class="big" id="btnArm">ARM</button>
         <button class="big go" id="btnGo" disabled>START MISSION</button>
@@ -1098,6 +1104,39 @@ function goEnabled() {
   return ctl.armed && ctl.canFly && !ctl.running;
 }
 
+// Mission settings. The three boxes seed themselves from the server so a
+// fresh page shows what the next launch would actually use, but stop being
+// overwritten the moment the operator types: otherwise the 1 Hz poll erases
+// a half-typed value under the cursor.
+const OPT_FIELDS = { survey_alt: 'optAlt', photo_hold: 'optHold',
+                     conf: 'optConf' };
+const optDirty = new Set();
+
+function optsInit() {
+  for (const id of Object.values(OPT_FIELDS)) {
+    $(id).addEventListener('input', () => optDirty.add(id));
+  }
+}
+
+function optsSeed(c) {
+  for (const [key, id] of Object.entries(OPT_FIELDS)) {
+    if (optDirty.has(id) || c[key] === undefined) continue;
+    $(id).value = c[key];
+  }
+}
+
+// Sent with START and DRY RUN both. An empty box is omitted rather than sent
+// as 0, so clearing a field falls back to the dashboard's own default instead
+// of silently flying at zero altitude.
+function missionOpts() {
+  const out = {};
+  for (const [key, id] of Object.entries(OPT_FIELDS)) {
+    const raw = $(id).value.trim();
+    if (raw !== '') out[key] = Number(raw);
+  }
+  return out;
+}
+
 function setArmed(on) {
   const was = ctl.armed;
   ctl.armed = on && ctl.canFly && !ctl.running;
@@ -1458,6 +1497,7 @@ async function ctlRefresh() {
   pill($('ctlWp'), c.waypoints_exist,
        c.waypoints_exist ? c.waypoints.split('/').pop() : 'no waypoints');
   pill($('ctlDrop'), !c.no_drop, c.no_drop ? 'gate DISABLED' : 'gate live');
+  optsSeed(c);
 
   ctl.canFly = !!c.waypoints_exist;
   $('btnStop').disabled = !ctl.running;
@@ -2253,10 +2293,11 @@ function wireEvents() {
   $('themeBtn').addEventListener('click', () =>
     applyTheme(document.documentElement.dataset.theme === 'dark'
                ? 'light' : 'dark'));
+  optsInit();
   $('btnArm').addEventListener('click', () => setArmed(!ctl.armed));
   $('btnGo').addEventListener('click', async () => {
     setArmed(false);
-    await ctlPost('/api/control/start');
+    await ctlPost('/api/control/start', missionOpts());
     ctlRefresh();
   });
   $('btnDry').addEventListener('click', async () => {
@@ -2268,7 +2309,8 @@ function wireEvents() {
     $('ctlErr').textContent = '';
     btn.disabled = true;
     btn.textContent = 'starting…';
-    const j = await ctlPost('/api/control/start', {dry_run: true, no_drop: true});
+    const j = await ctlPost('/api/control/start',
+                            {...missionOpts(), dry_run: true, no_drop: true});
     btn.textContent = 'DRY RUN (never arms)';
     btn.disabled = false;
     if (j.ok) $('ctlNote').textContent = 'dry run started: never arms, gate '
