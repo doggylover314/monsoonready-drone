@@ -3010,3 +3010,38 @@ smoke test at 5 m gives 20 waypoints on 4 rows with a 3.38 m longest leg, and
 the centre line 5 waypoints on 14 m. **Caught two of my own NameErrors this
 session (missing `time` in level_cal, missing `statistics` in spotcheck) that
 py_compile cannot see; the name checker is now part of the loop.**
+
+### 2026-08-24 ~16:35 IST: 203 waypoints is a FENCE-SIZE problem, not a generator bug
+
+User screenshot: "203 waypoints, 22 rows along 193 deg, 2 m clear of the
+fence, 784 m of path", spacing auto, keep out 2. Asked whether 200 waypoints
+over a small area is a problem. It is, and the generator is correct.
+
+WHY the count is what it is: at 5 m survey altitude the ACROSS-track
+footprint is only 3.00 m (the mount is rotated 90 deg, so the 720 px axis
+runs across track). One metre of overlap leaves 2.00 m of row spacing, and
+along track 5.34 m of footprint leaves stops every 4.34 m. 22 rows x ~9
+stops = 203. Halving the waypoints requires halving the coverage or raising
+the altitude; there is no free setting.
+
+FLIGHT TIME, computed from verified numbers (WP_SPD 2 m/s in
+param_dumps/pixhawk_full_setup.param, photo_hold_s 1.0 and wp_radius_m 1.5
+in mission.py): 784 m / 2 = 392 s of travel, + 203 s of photo holds, + a
+decel/accel at every one of 203 stops that are only 4.34 m apart so the
+aircraft never reaches WP_SPD anyway. ~15 min. ONE 8000 mAh 3S pack exists
+and no spare, so this route does not fit in the battery with any margin.
+
+OPTIONS, in order of effect (all reversible, none is a code change):
+- Shrink the fence to the patch that actually holds the puddle. Largest
+  lever by far: area scales the count.
+- "Centre line" button: 5 waypoints, 14 m, under a minute. This is the
+  filming route, and it is what the survey demo actually needs.
+- Raise altitude. 8 m with the same 1 m overlap gives ~61 wp / 413 m / ~6
+  min, at the cost of target pixels (0.55 m target ~= 82 px at 8 m vs 132 px
+  at 5 m).
+- Drop the overlap to 0: ~110 wp / 523 m / ~9 min, and any yaw or GPS error
+  then opens gaps between rows.
+
+Recorded because the same fence will be flown again and the count will look
+alarming again. The number to check before launching is FLIGHT TIME, not
+waypoint count.
