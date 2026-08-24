@@ -238,14 +238,16 @@ def main():
                 if not grab_fail_logged:
                     log.error(f'camera stopped giving frames: {err}')
                     grab_fail_logged = True
-            payload = {'seq': seq, 't_frame': t0, 'camera_ok': False,
+            payload = {'seq': seq, 't_frame': t0, 'conf': args.conf,
+                       'camera_ok': False,
                        'w': None, 'h': None, 'rows': [], 'error': err}
             write_atomic(out, payload)
             time.sleep(1.0)              # report cadence, not a retry
             continue
         grab_fail_logged = False
         t_frame, w, h, rows, frame = res
-        payload = {'seq': seq, 't_frame': t_frame, 'camera_ok': True,
+        payload = {'seq': seq, 't_frame': t_frame, 'conf': args.conf,
+                   'camera_ok': True,
                    'w': w, 'h': h,
                    # Blur metric for every frame, detection or not (see
                    # OnnxDetector.infer_rows). Nothing acts on it yet; it is

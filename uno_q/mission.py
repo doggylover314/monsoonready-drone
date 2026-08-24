@@ -50,7 +50,7 @@ class _NoLog:
 @dataclass
 class MissionConfig:
     waypoints: list = field(default_factory=list)  # [(lat, lon), ...]
-    survey_alt_m: float = 15.0
+    survey_alt_m: float = 5.0
     drop_alt_m: float = 1.0        # rangefinder AGL that triggers the drop
     descent_mps: float = 0.5
     climb_mps: float = 1.0
@@ -62,6 +62,10 @@ class MissionConfig:
     alt_tol_m: float = 1.0
     rng_timeout_s: float = 1.0
     rng_expect_m: float = 6.0      # EKF alt by which rangefinder must have acquired
+    # At a 5 m survey the descent STARTS below rng_expect_m, so the altitude
+    # test alone would abort on the first stale tick. Give acquisition time.
+    rng_grace_s: float = 3.0
+    climb_timeout_s: float = 30.0  # give up waiting for altitude, resume anyway
     floor_margin_m: float = 0.5
     drop_dwell_s: float = 2.0      # hold position after gate closes
     # Dose (dwell seconds) = area_m2 * dose_s_per_m2, clamped to min/max.
@@ -368,6 +372,7 @@ class Mission:
                 if why != self._last_fix_gripe:
                     self.log(f"[mission] detection IGNORED, fix is poor: {why}")
                     self._last_fix_gripe = why
+                self.det.unskip(det.lat, det.lon)   # re-offer on a better fix
                 det = None
             else:
                 self._last_fix_gripe = None
@@ -385,6 +390,7 @@ class Mission:
                          f"Flying there would either be silently refused or "
                          f"breach the fence and trigger RTL.")
                 self.rec.detection(det.lat, det.lon, det.confidence)
+                self.det.unskip(det.lat, det.lon)
                 det = None
         if det is not None:
             # Latch target now at survey altitude; ignore later detections.
@@ -444,9 +450,11 @@ class Mission:
         if self._rng_acquired and not fresh:
             self._abort('rangefinder dropout during descent')
             return
-        # Case (b): low enough to see ground, doesn't.
+        # Case (b): low enough to see ground, doesn't. Grace period first:
+        # at a 5 m survey this state begins already below rng_expect_m.
         if (not self._rng_acquired and tel.rel_alt_m is not None
-                and tel.rel_alt_m < cfg.rng_expect_m):
+                and tel.rel_alt_m < cfg.rng_expect_m
+                and self._elapsed() >= cfg.rng_grace_s):
             self._abort('no rangefinder acquisition by expected altitude')
             return
         if self._below_floor():
@@ -454,6 +462,13 @@ class Mission:
             self._abort('EKF floor hit without rangefinder drop condition')
             return
         if fresh and tel.rng_m <= cfg.drop_alt_m:
+            ok, why = self._gps_ok()
+            if not ok:
+                # Warn, not abort: height comes from the rangefinder here and
+                # the target was latched on a good fix. The seed may land off
+                # centre and the log must say why.
+                self.log(f"[mission] fix degraded at release ({why}); "
+                         f"the drop position may be off")
             # Forced send (bypasses rate limiter; setpoint change critical).
             # Gate opens in DROP state once aircraft stopped.
             self.io.velocity_ned(0, 0, 0, force=True)
@@ -576,7 +591,12 @@ class Mission:
 
     def _climb_then_resume(self):
         cfg, tel = self.cfg, self.io.tel
-        if (tel.rel_alt_m is not None
+        timed_out = self._elapsed() >= cfg.climb_timeout_s
+        if timed_out:
+            self.log(f"[mission] {self.state} still short of "
+                     f"{cfg.survey_alt_m:g} m after {cfg.climb_timeout_s:.0f}s "
+                     f"(rel_alt {tel.rel_alt_m}); resuming anyway")
+        if timed_out or (tel.rel_alt_m is not None
                 and tel.rel_alt_m >= cfg.survey_alt_m - cfg.alt_tol_m):
             # Aborted descent usually bad luck, not site failure; detector won't
             # re-offer (coordinates latched). Re-approach same point until

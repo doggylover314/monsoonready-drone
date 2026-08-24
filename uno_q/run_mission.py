@@ -7,6 +7,7 @@ exceptions trigger emergency RTL. Waypoint file: lat,lon per line.
 
 import argparse
 import atexit
+import json
 import os
 import signal
 import subprocess
@@ -14,7 +15,7 @@ import sys
 import time
 
 from boardlog import BoardLog
-from camera_geom import DEFAULT_HFOV_DEG, CameraGeometry
+from camera_geom import DEFAULT_HFOV_DEG, MOUNT_YAW_DEG, CameraGeometry
 from detect_worker import DEFAULT_OUT as DET_FILE_DEFAULT
 from detector import FileDetector, OnnxDetector
 from dropper import LogDropper, PixhawkServoDropper
@@ -62,7 +63,7 @@ def main():
     ap.add_argument('--model', default=DEFAULT_MODEL)
     ap.add_argument('--waypoints', required=True)
     ap.add_argument('--data-dir', default='~/monsoonready_data')
-    ap.add_argument('--survey-alt', type=float, default=3.0)
+    ap.add_argument('--survey-alt', type=float, default=5.0)
     # 2.0, not 3.0: prevents zero descent if survey is at tree line.
     ap.add_argument('--drop-alt', type=float, default=1.0)
     # Metres from detected puddle centre. TF-Luna cannot range still water,
@@ -86,7 +87,8 @@ def main():
     ap.add_argument('--hfov-deg', type=float, default=DEFAULT_HFOV_DEG,
                     help=f'MEASURED horizontal FOV, default {DEFAULT_HFOV_DEG} '
                          f'(camera_geom.DEFAULT_HFOV_DEG). 0 = nadir only.')
-    ap.add_argument('--mount-yaw-deg', type=float, default=0.0)
+    # Camera mounted rotated: 1280 px axis fore-aft (camera_geom.MOUNT_YAW_DEG)
+    ap.add_argument('--mount-yaw-deg', type=float, default=MOUNT_YAW_DEG)
     ap.add_argument('--servo-channel', type=int, default=9,
                     help='AUX OUT 1 = ch9 (wired 2026-08-02); '
                          'SERVO9_FUNCTION=0 must be pushed or DO_SET_SERVO '
@@ -248,6 +250,22 @@ def main():
             pass
 
 
+def _worker_pids():
+    out = []
+    me = os.getpid()
+    for entry in os.listdir('/proc'):
+        if not entry.isdigit() or int(entry) == me:
+            continue
+        try:
+            with open(f'/proc/{entry}/cmdline', 'rb') as f:
+                cmd = f.read().replace(b'\0', b' ').decode('utf-8', 'replace')
+        except OSError:
+            continue
+        if 'detect_worker.py' in cmd and 'python' in cmd.lower():
+            out.append(int(entry))
+    return out
+
+
 def _spawn_or_reuse_worker(args, model, log):
     """Start detect_worker.py unless already publishing (fresher than STALE_S).
     Prevents double-spawn on V4L2 device. Spawned workers stopped at exit.
@@ -260,8 +278,31 @@ def _spawn_or_reuse_worker(args, model, log):
     except OSError:
         fresh = False
     if fresh:
-        log(f"[run] detect worker already publishing {det_file}, reusing it")
-        return None
+        # A leftover hand-started worker filters at ITS conf before writing,
+        # so reusing one with a higher threshold silently blinds the mission.
+        try:
+            with open(det_file) as f:
+                wconf = json.load(f).get('conf')
+        except (OSError, ValueError):
+            wconf = None
+        if wconf is not None and abs(wconf - args.conf) < 1e-6:
+            log(f"[run] detect worker already publishing {det_file} at "
+                f"conf {wconf:g}, reusing it")
+            return None
+        log(f"[run] a worker is publishing {det_file} at conf "
+            f"{wconf if wconf is not None else 'unknown'}, mission wants "
+            f"{args.conf:g}: stopping it and spawning a fresh one")
+        for pid in _worker_pids():
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+        deadline = time.time() + 5
+        while _worker_pids() and time.time() < deadline:
+            time.sleep(0.2)
+        if _worker_pids():
+            log.error('[run] old detect worker refused to die; the camera '
+                      'may be double-opened')
     worker_py = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              'detect_worker.py')
     proc = subprocess.Popen(

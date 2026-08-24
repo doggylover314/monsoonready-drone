@@ -259,6 +259,10 @@ def make_app(data_dir, control=None):
     live = {'io': None, 'fix': None, 'at': 0.0, 'hold': 0.0,
             'lock': threading.Lock()}
 
+    def port_owner():
+        """Name of the tool currently holding the Pixhawk port, or None."""
+        return next((n for n in PIXHAWK_TOOLS if find_pids(n)), None)
+
     def live_close(why):
         io = live['io']
         live['io'] = None
@@ -284,7 +288,7 @@ def make_app(data_dir, control=None):
         """Where the aircraft is when no mission is running (polled)."""
         if not ctl:
             abort(403)
-        busy = next((n for n in PIXHAWK_TOOLS if find_pids(n)), None)
+        busy = port_owner()
         if busy:
             live_close(f'{busy} owns the port')
             return jsonify({'ok': True, 'source': 'mission', 'busy': busy})
@@ -381,12 +385,12 @@ def make_app(data_dir, control=None):
         b = request.get_json(silent=True) or {}
         try:
             rows = int(b.get('rows', 3))
-            spacing = float(b.get('spacing', 12))
+            # spacing None/'' = derive from altitude for `overlap` m between rows
+            spacing = b.get('spacing')
+            spacing = None if spacing in (None, '') else float(spacing)
             length = float(b.get('length', 20))
             inset = float(b.get('inset', 4))
-            # Spacing along row (m): stop for still frame. Default 0 stops
-            # when camera reaches new ground; worker images continuously (~0.5 s)
-            overlap = float(b.get('overlap', 0.0))
+            overlap = float(b.get('overlap', 1.0))
             max_leg = b.get('max_leg')
             max_leg = None if max_leg in (None, '') else float(max_leg)
             heading = b.get('heading')
@@ -396,7 +400,8 @@ def make_app(data_dir, control=None):
                 start = (float(start[0]), float(start[1]))
         except (TypeError, ValueError, IndexError):
             return jsonify({'ok': False, 'error': 'bad numbers'}), 400
-        if not (1 <= rows <= 25) or not (1 <= spacing <= 50) \
+        if not (1 <= rows <= 25) \
+                or (spacing is not None and not (1 <= spacing <= 50)) \
                 or not (2 <= length <= 500) or not (0 <= inset <= 50) \
                 or not (0 <= overlap <= 20) \
                 or (max_leg is not None and not (0 <= max_leg <= 200)):
@@ -406,10 +411,15 @@ def make_app(data_dir, control=None):
                                      'overlap 0-20 m, '
                                      'waypoint spacing 0-200 m'}), 400
 
-        # Frame spacing derived from mission altitude to maintain overlap
+        # Row and waypoint spacing derived from the camera footprint at
+        # mission altitude, so `overlap` m is shared between adjacent frames
+        # both across rows and along them. The camera is mounted rotated
+        # (1280 px axis fore-aft); spacing_for_overlap knows.
         from make_waypoints import spacing_for_overlap
-        alt = ctl.get('survey_alt', 15.0)
+        alt = ctl.get('survey_alt', 5.0)
         row_rec, leg_rec = spacing_for_overlap(alt, overlap)
+        if spacing is None:
+            spacing = round(row_rec, 1)
         if max_leg is None:
             max_leg = leg_rec
         log(f"GENERATE: at {alt:g} m with {overlap:g} m overlap the frames "
@@ -452,12 +462,13 @@ def make_app(data_dir, control=None):
                             'rows': info['rows'], 'path_m': info['path_m'],
                             'dropped': info['dropped'], 'inset': inset})
 
-        busy = find_pids('run_mission.py') or find_pids('test_everything.py')
+        busy = port_owner()
         if busy:
-            log.warn(f'GENERATE refused: port busy (pids {busy})')
+            log.warn(f'GENERATE refused: port busy ({busy})')
             return jsonify({'ok': False,
-                            'error': 'the Pixhawk link is busy (mission or '
-                                     'self-test running)'}), 409
+                            'error': f'the Pixhawk link is busy '
+                                     f'({busy} is running)'}), 409
+        live_release(30, 'route generation needs the port')
         try:
             from make_waypoints import build_serpentine
             from mavlink_io import MavIO
@@ -729,12 +740,13 @@ def make_app(data_dir, control=None):
         """
         if not ctl:
             abort(403)
-        busy = find_pids('run_mission.py') or find_pids('test_everything.py')
+        busy = port_owner()
         if busy:
-            log.warn(f'FENCE push refused: link busy (pids {busy})')
+            log.warn(f'FENCE push refused: link busy ({busy})')
             return jsonify({'ok': False,
-                            'error': 'the Pixhawk link is busy (mission or '
-                                     'self-test running)'}), 409
+                            'error': f'the Pixhawk link is busy '
+                                     f'({busy} is running)'}), 409
+        live_release(90, 'fence push and verify need the port')
         poly = fence.load(fence_path)
         bad = fence.validate(poly)
         if bad:
@@ -866,7 +878,7 @@ def main():
     ap.add_argument('--data-dir', default='~/monsoonready_data')
     # Survey altitude (m): passed to run_mission for tuning between flights
     # 5 m: at 15 m, 55 cm targets shrink to 44 px below model threshold
-    ap.add_argument('--survey-alt', type=float, default=3.0)
+    ap.add_argument('--survey-alt', type=float, default=5.0)
     # Confidence threshold: measured at 5 m, 60% recall at 0.25 vs 42% at 0.5;
     # artificial light lowers scores further; false positives acceptable for one take
     ap.add_argument('--conf', type=float, default=0.25)
@@ -916,7 +928,10 @@ def main():
         }
         log(f'FLIGHT CONTROL ENABLED on port {args.port}: anyone who can '
             f'reach this host can start and stop the mission')
-    make_app(args.data_dir, control).run(host=args.host, port=args.port)
+    # threaded: live_position can hold a request for up to 8 s while the
+    # link opens; single-threaded that would queue the START click behind it.
+    make_app(args.data_dir, control).run(host=args.host, port=args.port,
+                                         threaded=True)
 
 
 if __name__ == '__main__':

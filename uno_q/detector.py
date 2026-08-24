@@ -57,6 +57,10 @@ class DetectionSource:
         """
         return 0.0
 
+    def unskip(self, lat, lon):
+        """Forget a deduped site so it can be offered again. No-op here;
+        sources that dedup (_RowResolver) override."""
+
 
 class _RowResolver(DetectionSource):
     """Converts model output rows (LETTERBOX space) to Detection via geom and telemetry.
@@ -102,7 +106,7 @@ class _RowResolver(DetectionSource):
             if any(dist_m(lat, lon, flat, flon) <= self.skip_radius_m
                    for flat, flon in self._fired):
                 continue                  # already treated this site
-            self._fired.append((lat, lon))
+            self._fired.append((lat, lon))   # mission unskip()s if it rejects
             self.log(f"[detector] puddle conf {conf:.2f} {how}"
                      + (f" ~{area:.1f} m2" if area is not None else
                         " (area unknown)")
@@ -110,6 +114,13 @@ class _RowResolver(DetectionSource):
                         if len(rows) > 1 else ""))
             return Detection(lat, lon, conf, area)
         return None
+
+    def unskip(self, lat, lon):
+        """Forget a site so it can be offered again (mission rejected it)."""
+        keep = [(a, b) for a, b in self._fired
+                if dist_m(lat, lon, a, b) > self.skip_radius_m]
+        if len(keep) != len(self._fired):
+            self._fired[:] = keep
 
     @staticmethod
     def _height_agl(tel, at_t=None):
@@ -400,10 +411,13 @@ class FileDetector(_RowResolver):
             self._hist.append(_TelSnap(tel))
 
         payload, stale = self._read()
-        # Track blindness onset (mission decides duration threshold).
-        if stale and self._blind_since is None:
+        # Track blindness onset (mission decides duration threshold). A live
+        # worker reporting camera_ok false is as blind as a stale file: the
+        # frames are not coming.
+        cam_dead = payload is not None and payload.get('camera_ok') is False
+        if (stale or cam_dead) and self._blind_since is None:
             self._blind_since = time.monotonic()
-        elif not stale:
+        elif not (stale or cam_dead):
             self._blind_since = None
         if stale:
             if not self._stale_warned:

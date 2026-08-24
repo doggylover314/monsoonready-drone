@@ -45,6 +45,26 @@ import math
 # metres-wide wet patch and not the tray.
 DEFAULT_HFOV_DEG = 56.2
 
+# The camera is mounted rotated 90 deg: the 1280 px axis runs fore-aft, so a
+# forward-facing frame covers more ground ahead-behind than side-to-side
+# (user, 2026-08-24). VERIFY THE SIGN before a live drop: object in front of
+# the nose appearing in the LEFT half of the photo means +90 is right;
+# appearing in the RIGHT half means this must be -90.
+MOUNT_YAW_DEG = 90.0
+
+
+def footprint_track_m(geom, height_m, mount_yaw_deg=MOUNT_YAW_DEG):
+    """(across_track_m, along_track_m) of ground covered at height_m.
+
+    footprint_m() is axis-labelled (1280 axis, 720 axis) and says nothing
+    about the airframe; this maps it through the mount rotation so survey
+    row spacing and waypoint spacing use the right sides.
+    """
+    w, h = geom.footprint_m(height_m)
+    if abs(math.sin(math.radians(mount_yaw_deg))) > 0.5:
+        return h, w         # rotated mount: 720 axis across, 1280 along
+    return w, h
+
 
 class CameraGeometry:
     """Nadir pinhole projection for one camera at one resolution.

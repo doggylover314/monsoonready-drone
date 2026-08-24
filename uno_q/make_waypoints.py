@@ -19,16 +19,19 @@ EARTH_M_PER_DEG_LAT = 111320.0
 
 
 def spacing_for_overlap(alt_m, overlap_m=1.0, width=1280, height=720,
-                        hfov_deg=None):
+                        hfov_deg=None, mount_yaw_deg=None):
     """(row_spacing_m, waypoint_spacing_m) for overlap_m between frames.
 
-    1280 px axis is ACROSS track, 720 px ALONG (camera_to_ned: image up = forward).
-    Minimum 1 m returned to prevent huge routes at low altitude.
+    Track sides come from footprint_track_m, which knows the camera is
+    mounted rotated (1280 px axis fore-aft). Minimum 1 m returned to
+    prevent huge routes at low altitude.
     """
-    from camera_geom import CameraGeometry
+    from camera_geom import MOUNT_YAW_DEG, CameraGeometry, footprint_track_m
     geom = (CameraGeometry(width, height) if hfov_deg is None
             else CameraGeometry(width, height, hfov_deg))
-    across, along = geom.footprint_m(alt_m)
+    if mount_yaw_deg is None:
+        mount_yaw_deg = MOUNT_YAW_DEG
+    across, along = footprint_track_m(geom, alt_m, mount_yaw_deg)
     return max(1.0, across - overlap_m), max(1.0, along - overlap_m)
 
 

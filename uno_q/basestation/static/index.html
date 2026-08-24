@@ -377,7 +377,7 @@
             <label>rows <input id="genRows" type="number" min="1" max="25" value="3"></label>
             <label>row length <input id="genLen" type="number" min="2" max="500" value="20"> m</label>
           </span>
-          <label>spacing <input id="genSp" type="number" min="1" max="50" value="12"> m</label>
+          <label>spacing <input id="genSp" type="number" min="1" max="50" placeholder="auto"> m</label>
           <label>direction <input id="genHdg" type="number" min="0" max="359" placeholder="auto"> &deg;</label>
           <label id="genInsetL">keep out <input id="genInset" type="number" min="0" max="50" step="0.5" value="4"> m</label>
           <button id="genStart">Set start point</button>
@@ -1096,8 +1096,8 @@ function goEnabled() {
 }
 
 function setArmed(on) {
+  const was = ctl.armed;
   ctl.armed = on && ctl.canFly && !ctl.running;
-  clearTimeout(ctl.armTimer);
   const go = $('btnGo'), arm = $('btnArm');
   go.disabled = !goEnabled();
   go.classList.toggle('armed', goEnabled());
@@ -1109,7 +1109,15 @@ function setArmed(on) {
   } else if (ctl.armed) {
     $('ctlErr').textContent = '';   // arming worked; drop any stale complaint
   }
-  if (ctl.armed) ctl.armTimer = setTimeout(() => setArmed(false), 8000);
+  /* The timer starts ONLY on the false->true transition. Re-deriving on
+     every 3 s poll used to clearTimeout+restart it, so the "8 second" window
+     never expired while the page was open. */
+  if (!ctl.armed) {
+    clearTimeout(ctl.armTimer); ctl.armTimer = null;
+  } else if (!was || !ctl.armTimer) {
+    clearTimeout(ctl.armTimer);
+    ctl.armTimer = setTimeout(() => setArmed(false), 8000);
+  }
 }
 
 async function ctlPost(path, body, errEl) {
@@ -2355,7 +2363,8 @@ function wireEvents() {
               : 'filling the fence with rows…');
     const j = await ctlPost('/api/waypoints/generate', {
       rows: +$('genRows').value, length: +$('genLen').value,
-      spacing: +$('genSp').value, inset: +$('genInset').value,
+      spacing: $('genSp').value === '' ? null : +$('genSp').value,
+      inset: $('genInset').value === '' ? 4 : +$('genInset').value,
       heading: $('genHdg').value === '' ? null : +$('genHdg').value,
       start: state.genStart, mode: mode || '',
     }, $('edNote'));

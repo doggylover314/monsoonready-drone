@@ -2374,3 +2374,62 @@ THREE RESIDUALS FROM THE FIXES THEMSELVES, none of them a reason to change anyth
 - GUARD RUN AFTER APPLYING: `git diff` contains no `monsoonready[-_]` token at
   all, only 3 files and 3 lines changed, and VIDEO_SCRIPT.html still balances
   42 `<p>` against 42 `</p>`.
+
+### 2026-08-24 ~12:20 IST: FULL PREFLIGHT AUDIT + 5 m SURVEY + ROTATED CAMERA
+
+USER FACT, new and load-bearing: **the camera is mounted ROTATED 90 deg. The
+1280 px axis runs fore-aft** (a forward-facing frame covers more ground
+ahead-behind than side-to-side). Single home: `camera_geom.MOUNT_YAW_DEG = 90`.
+
+GEOMETRY REBUILT ON THAT FACT (all asserted by unit test):
+- New `camera_geom.footprint_track_m()`: at 5 m the frame is 3.00 m ACROSS
+  track x 5.34 m ALONG track (the old code had these swapped).
+- `spacing_for_overlap(5, 1)` now returns rows 2.0 m, waypoints 4.34 m.
+- `run_mission --mount-yaw-deg` defaults to MOUNT_YAW_DEG, so pixel->NED
+  rotates correctly. Proven: at heading 0, a puddle at image left = +2.67 m N
+  (nose); the OLD default computed the same pixel as 2.67 m to the WEST.
+- **SIGN UNVERIFIED: +90 assumes image TOP = aircraft RIGHT.** 30 s test:
+  object in front of the nose; photo; object in LEFT half of image = +90
+  correct, RIGHT half = must flip to -90. Wrong sign mirrors off-centre
+  detection offsets (up to ~2.7 m at 5 m); near-nadir detections barely move.
+- Survey defaults 3.0 -> 5.0 in run_mission, dashboard, MissionConfig.
+- Dashboard Generate: overlap defaults 1.0; spacing box now AUTO (empty =
+  derived row spacing, 2.0 m at 5 m); manual value still honoured; the
+  picture cycle (stop 1 s at each waypoint, continuous frames between, 1 m
+  overlap both axes) is now the default behaviour of the two buttons.
+
+AUDIT (4 Sonnet finders, 13 findings, each verified by me in source; fixed):
+- MY BUG, flight-blocking: run_mission referenced MOUNT_YAW_DEG unimported ->
+  NameError on EVERY launch. py_compile cannot catch it; --help run proves it.
+  Also caught my second one: json used unimported in the reuse path.
+- DESCEND aborted instantly at 5 m: survey alt < rng_expect_m 6.0, so one
+  stale rangefinder tick on entry = abort. New `rng_grace_s = 3.0` after state
+  entry. Walked with fake clock: no abort at t=0, aborts at 3.1 s, case-(a)
+  dropout still fires.
+- Detector permanently blacklisted a site BEFORE mission validation: poor-fix
+  and fence rejects called nothing, `_fired` kept the site, one planted target
+  = zero drops. New `unskip()` (no-op on base class for FakeDetector), called
+  from both mission reject paths. Unit tested.
+- Dead camera never tripped the blind abort: worker keeps the file fresh with
+  camera_ok false, `_blind_since` never set. Now stale OR camera_ok-false
+  counts as blind. Unit tested (0.15 s accrues, recovery resets to 0).
+- Stale hand-started worker at conf 0.5 would silently blind a conf 0.25
+  mission: worker now publishes 'conf' in every payload; run_mission reuse
+  path SIGTERMs mismatched workers and respawns.
+- ARM window NEVER expired: every 3 s poll re-ran setArmed(ctl.armed) which
+  cleared and restarted the 8 s timer. Timer now starts only on false->true.
+  Browser-tested: same timer object survives polls, expiry disarms.
+- Fence push and Generate-from-GPS opened a second MavIO while the live map
+  link held the port: both now `live_release()` first (90 s / 30 s), and all
+  port endpoints use one `port_owner()` check over the full PIXHAWK_TOOLS.
+- Flask served one request at a time; a live_position open (up to 8 s) queued
+  the START click behind it: `threaded=True`.
+- CLIMB/ABORT_CLIMB could hang forever on missing rel_alt: `climb_timeout_s =
+  30` then resume, logged.
+- Fix degraded at release now logged (warn, not abort: height is rangefinder).
+- Empty keep-out box no longer coerces to 0 m: empty -> default 4.
+- NOT FIXED, known: setMode() clears wpDirty so an unsaved waypoint drag can
+  strand Save disabled until a point is nudged again (minor, workaround: nudge).
+- Detection floor at 5 m unchanged: 55 cm target = 132 px = ~40-60% per frame
+  at conf 0.25; overlap and the stop-and-shoot cycle are the lever, plus a
+  BIG target. Board must ./git-pull and restart the dashboard.
