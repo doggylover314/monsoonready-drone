@@ -36,12 +36,12 @@ F550 hexacopter, Pixhawk 2.4.8 on ArduCopter 4.7.0, NEO-M8N GPS on a mast. The
 Arduino UNO Q is the companion computer, hanging off the Pixhawk's USB, and it
 puts camera stills through ONNX and commands the aircraft in guided mode. A
 TF-Luna points down, every descent is gated on it, and losing the return aborts
-upward. An ESP32 on TELEM1 reads a ring of VL53L0X sensors and sends the Pixhawk
-standard `OBSTACLE_DISTANCE`. Four of the six ring positions work plus the
-upward one; one never got a sensor because the frame has no room, and one has
-never answered, and marking both absent in firmware is what stopped the arming
-failures. SiK 433 MHz sits on TELEM2 and an MG90 metal-gear servo runs the
-hopper gate.
+upward. An ESP32 on TELEM1 reads a ring of VL53L0X sensors and sends the
+Pixhawk standard `OBSTACLE_DISTANCE`. Four of the six ring positions work plus
+the upward one; one never got a sensor because the frame has no room, and one
+has never answered, and marking both absent in firmware is what stopped the
+arming failures. SiK 433 MHz sits on TELEM2 and an MG90 metal-gear servo runs
+the hopper gate.
 
 ## Where it stands
 
@@ -50,8 +50,8 @@ board at about 489 ms a frame, precision 0.795 and recall 0.708. The dashboard,
 the geofence, the route generation that fits rows inside it, and the whole
 mission loop in simulation.
 
-Not working yet: a complete autonomous flight on video. Two field days failed. A
-camera that stopped enumerating on the board took the first one, and prearm
+Not working yet: a complete autonomous flight on video. Two field days failed.
+A camera that stopped enumerating on the board took the first one, and prearm
 refusals took the second.
 
 ## Running it

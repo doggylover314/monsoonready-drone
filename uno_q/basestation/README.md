@@ -2,10 +2,10 @@
 
 A small Flask app on the UNO Q. It started as a post-landing report server and
 grew into the thing that actually flies the aircraft, so the old "read-only by
-design" line no longer holds and this file says so plainly. It now draws the map
-and the flight history, and it also arms, starts and stops the mission, runs the
-self-test, takes photos, edits and pushes the geofence, generates survey routes
-and joins the board to a wifi network.
+design" line no longer holds and this file says so plainly. It now draws the
+map and the flight history, and it also arms, starts and stops the mission,
+runs the self-test, takes photos, edits and pushes the geofence, generates
+survey routes and joins the board to a wifi network.
 
 Flight history still comes from one place, the per-mission JSONL written by
 `uno_q/missionlog.py`, so a mission logged is a mission reportable and the same
@@ -27,19 +27,19 @@ dashboard.py <------ reads --------- -------+
 
 Everything above is read-only over the log files. The control endpoints are a
 separate group, `/api/control` and its `start`, `stop` and `test` posts, plus
-`/api/waypoints`, `/api/fence`, `/api/fence/push`, `/api/photo` and `/api/wifi`.
-Those talk to the Pixhawk or launch processes, and they are refused whenever a
-mission or a self-test already owns the serial port. `mission.py` auto-launches
-the server on DONE or STANDDOWN when `MissionConfig.basestation_cmd` is set, and
-the SITL tests leave it unset.
+`/api/waypoints`, `/api/fence`, `/api/fence/push`, `/api/photo` and
+`/api/wifi`. Those talk to the Pixhawk or launch processes, and they are
+refused whenever a mission or a self-test already owns the serial port.
+`mission.py` auto-launches the server on DONE or STANDDOWN when
+`MissionConfig.basestation_cmd` is set, and the SITL tests leave it unset.
 
 ## Files
 
 `dashboard.py` is the server, defaulting to `--data-dir ~/monsoonready_data
---host 0.0.0.0 --port 8080`. `static/index.html` is the whole front end, vanilla
-JS and canvas with no external assets, so it works offline.
-`gen_fake_mission.py` writes two plausible fake flights through `MissionLog` for
-development without hardware.
+--host 0.0.0.0 --port 8080`. `static/index.html` is the whole front end,
+vanilla JS and canvas with no external assets, so it works offline.
+`gen_fake_mission.py` writes two plausible fake flights through `MissionLog`
+for development without hardware.
 
 ## Running it
 
@@ -71,17 +71,17 @@ python3 uno_q/basestation/dashboard.py
 ## The map
 
 The default view accumulates every flight and a selector narrows to one. Layers
-are checkboxes: a heatmap of detection density on a sequential blue ramp, a blue
-dot per detector fire with confidence in the tooltip, a green circle and check
-where a drop released, a red X with a reason where a descent aborted, a 1 Hz
-breadcrumb polyline per flight, and an optional georeferenced site image. A live
-aircraft marker appears on its own layer during a running mission and never for
-a past flight.
+are checkboxes: a heatmap of detection density on a sequential blue ramp, a
+blue dot per detector fire with confidence in the tooltip, a green circle and
+check where a drop released, a red X with a reason where a descent aborted, a 1
+Hz breadcrumb polyline per flight, and an optional georeferenced site image. A
+live aircraft marker appears on its own layer during a running mission and
+never for a past flight.
 
 Detections within 5 m of each other seen in two or more distinct flights get a
-dashed ring. That is the standing-water-confirmed-by-persistence framing, and it
-is computed only on the accumulated view, because a single flight cannot show
-persistence.
+dashed ring. That is the standing-water-confirmed-by-persistence framing, and
+it is computed only on the accumulated view, because a single flight cannot
+show persistence.
 
 There are also stat tiles, hover tooltips, an event table as a text alternative
 to the map, a scale bar, a north arrow, a theme following the OS, and a 15 s
@@ -111,12 +111,12 @@ The server never aggregates across requests. Every response is recomputed from
 the files, which means `scp`-ing a mission file into the data dir, or deleting
 one, shows up immediately.
 
-The front end is one file with zero external requests, so it renders identically
-over the tailnet, through the tunnel, or opened from disk next to a copied data
-dir.
+The front end is one file with zero external requests, so it renders
+identically over the tailnet, through the tunnel, or opened from disk next to a
+copied data dir.
 
-Flask runs threaded. It used to serve one request at a time, and a live-position
-open could take up to 8 s, which queued a START click behind it.
+Flask runs threaded. It used to serve one request at a time, and a
+live-position open could take up to 8 s, which queued a START click behind it.
 
 ## Troubleshooting
 

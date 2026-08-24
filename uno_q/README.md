@@ -1,17 +1,17 @@
 # The mission computer
 
 Onboard code for the Arduino UNO Q, running under its own `~/venv` python with
-pymavlink. It drives the detect, descend, treat loop over the Pixhawk's USB link
-as MAVLink component 191: find standing water in downward stills and latch the
-target at survey altitude, come down on the downward rangefinder and abort
+pymavlink. It drives the detect, descend, treat loop over the Pixhawk's USB
+link as MAVLink component 191: find standing water in downward stills and latch
+the target at survey altitude, come down on the downward rangefinder and abort
 upward on any loss of height reference, then drop granules through the servo
 gate, climb out and resume the survey.
 
 Link layer and state machine are separate, and the detector and dropper sit
 behind interfaces, so the SITL stand-ins swap for the ONNX model and the real
 servo without touching `mission.py`. After landing the same board becomes the
-base station, serving the mission's JSONL event log as a dashboard. That has its
-own README in `basestation/`.
+base station, serving the mission's JSONL event log as a dashboard. That has
+its own README in `basestation/`.
 
 ## Files
 
@@ -58,9 +58,9 @@ or to DONE when the waypoints run out. APPROACH repositions over the latched
 target at survey altitude. DESCEND comes down at `descent_mps` watching the
 rangefinder, reaching DROP on a valid reading at or below `drop_alt_m` and
 ABORT_CLIMB on any abort condition. DROP holds zero velocity, fires the dropper
-and dwells. CLIMB and ABORT_CLIMB return to survey altitude and clear the latch.
-STANDDOWN stops commanding entirely and is terminal, because the pilot has the
-aircraft. DONE sets `end_mode`, which defaults to RTL.
+and dwells. CLIMB and ABORT_CLIMB return to survey altitude and clear the
+latch. STANDDOWN stops commanding entirely and is terminal, because the pilot
+has the aircraft. DONE sets `end_mode`, which defaults to RTL.
 
 ## Why it is shaped this way
 
@@ -71,10 +71,10 @@ are where the model is least reliable. Re-detecting during descent would hand
 steering authority to the worst frames, so latching keeps the decision with the
 wide view from altitude.
 
-Descents abort upward, but not on every blind moment. A TF-Luna is good to about
-8 m, so a descent that starts above that is legitimately blind at first and a
-naive "no reading means abort" rule would abort every time. The implemented rule
-tracks whether ground was ever acquired this descent:
+Descents abort upward, but not on every blind moment. A TF-Luna is good to
+about 8 m, so a descent that starts above that is legitimately blind at first
+and a naive "no reading means abort" rule would abort every time. The
+implemented rule tracks whether ground was ever acquired this descent:
 
 | Condition | Action | Reason |
 |-----------|--------|--------|
@@ -84,13 +84,13 @@ tracks whether ground was ever acquired this descent:
 | `rel_alt < drop_alt_m - floor_margin_m`, never confirmed | Abort up | EKF and rangefinder disagree |
 | Valid reading at or below `drop_alt_m` | Drop | Confirmed at drop height |
 
-At the current 5 m survey the descent starts already below `rng_expect_m`, which
-is why `rng_grace_s` exists: without it one stale tick on entry aborts the
-descent instantly. An abort clears the target and resumes the survey, and it
-never retries the same puddle. 850 nm infrared against still water behaves close
-to a mirror, so dropout over the target is expected rather than exceptional, and
-two of this project's three crashes came from trusting a single corrupted
-altitude source.
+At the current 5 m survey the descent starts already below `rng_expect_m`,
+which is why `rng_grace_s` exists: without it one stale tick on entry aborts
+the descent instantly. An abort clears the target and resumes the survey, and
+it never retries the same puddle. 850 nm infrared against still water behaves
+close to a mirror, so dropout over the target is expected rather than
+exceptional, and two of this project's three crashes came from trusting a
+single corrupted altitude source.
 
 The aircraft descends beside the puddle rather than over it, holds the captured
 altitude while it translates across, releases, and translates back before
@@ -110,18 +110,18 @@ and identical behaviour on the laptop over TCP and on the board over USB.
 
 Every command is acknowledged. `command_ack()` retries on
 `TEMPORARILY_REJECTED`, treats `IN_PROGRESS` as an ack still coming, and raises
-on a hard rejection. `arm()` additionally retries on `FAILED`, because ArduPilot
-answers FAILED while prearm checks are still settling after boot.
+on a hard rejection. `arm()` additionally retries on `FAILED`, because
+ArduPilot answers FAILED while prearm checks are still settling after boot.
 
 Streams are requested rather than assumed, through
 `MAV_CMD_SET_MESSAGE_INTERVAL`, at 5 Hz for `GLOBAL_POSITION_INT` and 10 Hz for
 `DISTANCE_SENSOR`. Only the downward rangefinder is consumed: `DISTANCE_SENSOR`
 is filtered on `MAV_SENSOR_ROTATION_PITCH_270` so the ESP32's upward sensor on
-component 195 cannot be mistaken for the TF-Luna. Only the autopilot's heartbeat
-sets mode and armed state, filtered on `MAV_COMP_ID_AUTOPILOT1`, for the same
-reason. Velocity setpoints are rate-limited to 5 Hz, because ArduPilot discards
-guided setpoints older than a few seconds so they must be resent continuously,
-just not every tick.
+component 195 cannot be mistaken for the TF-Luna. Only the autopilot's
+heartbeat sets mode and armed state, filtered on `MAV_COMP_ID_AUTOPILOT1`, for
+the same reason. Velocity setpoints are rate-limited to 5 Hz, because ArduPilot
+discards guided setpoints older than a few seconds so they must be resent
+continuously, just not every tick.
 
 ## Testing against SITL
 
@@ -131,9 +131,9 @@ Build once, from a sibling clone matching the board's 4.7.0:
 git clone --depth 1 --branch Copter-4.7.0 --recurse-submodules --shallow-submodules https://github.com/ArduPilot/ardupilot.git ../ardupilot
 ```
 
-Start the simulator in its own terminal. It is a server, so it runs until killed
-and never exits on its own. Do not pipe it through `tail`, which swallows its
-output.
+Start the simulator in its own terminal. It is a server, so it runs until
+killed and never exits on its own. Do not pipe it through `tail`, which
+swallows its output.
 
 ```bash
 ../ardupilot/Tools/autotest/sim_vehicle.py -v ArduCopter -f hexa --no-mavproxy --speedup 5 --add-param-file=uno_q/sitl_rangefinder.parm
