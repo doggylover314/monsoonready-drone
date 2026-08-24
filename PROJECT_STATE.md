@@ -3481,3 +3481,44 @@ L-shape, or a quad with one long diagonal-ish side) can get rows across the
 short way. Setting the direction by hand to the field's true long axis cuts row
 count and turn count. It does NOT change row spacing or waypoint spacing, so it
 does not change coverage, only how the same area is swept.
+
+### 2026-08-24 ~18:50 IST: CONFIRMED A CONSTANT OFFSET. Fix: draw the fence around the DOT, not around the image
+
+User confirmed the walk test result: it is a constant offset, and he reached the
+same conclusion himself, that the geofence may be drawn wrong. Hypothesis B from
+17:30 stands.
+
+RULED OUT AS THE CAUSE, checked rather than assumed: the map's own projection.
+index.html renders equirectangular and stretches each Mercator tile between its
+geographic corners, with a code comment claiming sub-pixel error at z16+.
+Verified the claim by hand: the second-order Mercator-vs-linear deviation inside
+one tile is ~1.6e-3 m at z16 and ~2.6e-5 m at z19 at 13 N. So this is NOT a
+projection bug in our code; the tiles are placed where Esri says they belong.
+
+WHY THIS BLOCKS THE WHOLE FLIGHT, not just the display: the fence was drawn by
+clicking imagery, so its stored corners are offset in the real world. The route
+is generated INSIDE that fence, so the survey would be flown that same distance
+away from the intended patch and the puddle may never be under the camera. And
+the fence lives in FC storage, so PreArm keeps refusing with "Vehicle breaching
+Polygon fence" because the aircraft really is outside the real fence.
+
+THE FIX, no code change, and it is robust to WHICH thing is wrong. It does not
+matter whether Esri is misregistered or the aircraft's GPS carries a bias: the
+drone dot and a fence click both pass through the SAME projection, so a fence
+drawn relative to the DOT is correct in the aircraft's own frame, and the
+aircraft is what enforces the fence and flies the route. The satellite image is
+the only thing lying, and it is decoration.
+
+PROCEDURE for the user:
+  1. Stand the drone where the survey should be centred.
+  2. On the map, find the drone dot. Hovering it shows its exact lat/lon and
+     satellite count (index.html:2034-2040, the on-the-ground branch).
+  3. Draw fence AROUND THE DOT, using the map's scale bar for size. Ignore what
+     the satellite image shows underneath. It will look wrong. It is not.
+  4. Push fence. The old offset fence must be replaced in FC storage or PreArm
+     keeps refusing.
+  5. Generate the route, then Save.
+
+CORRECTION to the 17:30 entry: I wrote that the dashboard shows no GPS quality
+at all. Satellite count IS in the aircraft tooltip on the ground branch. HDOP is
+still neither sent by api_live_position nor displayed anywhere.
