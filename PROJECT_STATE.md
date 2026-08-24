@@ -3119,3 +3119,62 @@ rise and the waypoint photo is still taken stopped and level.
 
 NOT WRITTEN YET. Asked the user first (SCOPE RULE 2), because it changes the
 timing of every survey waypoint hours before a recording.
+
+### 2026-08-24 ~17:20 IST: the settle gate quantified. BLUR WAS NEVER THE PROBLEM; TILT IS. And my 17:00 entry was half wrong
+
+User asked for the numbers before agreeing to the code change. Simulated the
+3.88 m mean leg with an ArduPilot-style stopping-distance controller
+(v_cmd = min(WP_SPD, sqrt(2*WP_ACC*dist)), accel-limited, 2 ms steps), 203
+waypoints, photo_hold_s 1.0.
+
+    config                          flight   window still   tilt   nadir shift
+    WP_SPD 3, ACC 2.5, clock         8.1 m       2%        14.3d    1.27 m
+    WP_SPD 3, ACC 5.0, clock         7.1 m      26%        27.0d    2.55 m
+    WP_SPD 3, ACC 2.5, settle 0.3   11.4 m     100%         0d      0.00 m
+    WP_SPD 3, ACC 5.0, settle 0.3    9.6 m     100%         0d      0.00 m
+
+CORRECTION TO THE 17:00 ENTRY: I wrote that raising WP_ACC makes the waypoint
+frame worse. On stillness that is backwards. Higher accel brakes over a shorter
+distance and therefore reaches a stop SOONER inside the 1.0 s window (26% of
+the window stationary at ACC 5 against 2% at ACC 2.5). What higher accel does
+make worse is the LEAN while braking, 27 deg against 14.3, and that is the term
+that matters. The conclusion (fix the hold before touching WP_ACC) survives;
+the stated reason was wrong and is corrected here rather than edited above,
+because this log is append-only.
+
+FINDING 1, BLUR IS A NON-ISSUE AND ALWAYS WAS. Ground sampling at 5 m is 8.34
+mm per model pixel (5.34 m along-track footprint over the 640 letterbox). Even
+at the window's peak 2.74 m/s and an overcast 1/60 s exposure, smear is 5.5
+model px against a 0.55 m target that spans 66 px. Under 10%. At a bright
+1/250 it is 1.3 px. THE WP_SPD 10 -> 3 DECISION OF 2026-08-17 WAS JUSTIFIED ON
+BLUR AND THE BLUR NUMBER DOES NOT SUPPORT IT at 5 m altitude. It was computed
+for 15 m, where GSD is 3x coarser and it also does not support it. UNVERIFIED
+INPUT: the B525's actual exposure time was never measured; 1/250 and 1/60 are
+plausible brackets, not readings. If the camera drops to 1/15 s in poor light,
+peak smear is 22 px and the conclusion changes. Measure it if it ever matters.
+
+FINDING 2, TILT IS THE REAL DAMAGE, AND IT ALREADY EXCEEDS THE DESIGN MARGIN.
+camera_geom explicitly does not model roll/pitch and its docstring assumes the
+aircraft sits "within a couple of degrees of level". During braking it sits at
+14.3 deg today, which at 5 m displaces the nadir point by 1.27 m. The survey is
+planned with exactly 1.00 m of overlap. So the pointing error is LARGER THAN
+THE ENTIRE OVERLAP BUDGET: rows that the planner believes overlap by a metre
+can in fact have a gap, and any detection geolocated from such a frame carries
+a 1.27 m position error straight into the drop. At WP_ACC 5 it is 2.55 m.
+
+FINDING 3, THE PHOTO HOLD HAS NEVER PHOTOGRAPHED A STOPPED AIRCRAFT. 2% of the
+current window is under 0.3 m/s. The 1.0 s timer expires ~0.1 s before the
+aircraft finishes braking, every waypoint, by arithmetic coincidence of
+wp_radius_m 1.5 and WP_ACC 2.5.
+
+WHAT THE GATE BUYS: 2% -> 100% stationary and 1.27 m -> 0 m of pointing error,
+for +3.3 min at WP_ACC 2.5 or +2.5 min at WP_ACC 5. Cheapest good option is
+BOTH: 9.6 min against 8.1 min today, i.e. +1.5 min for a genuinely level,
+stationary frame at all 203 waypoints.
+
+MODEL LIMITS, stated so the numbers are not over-trusted: no jerk limit, no
+attitude lag, no position overshoot, and the real position controller eases out
+of deceleration rather than holding WP_ACC to zero speed. Real settle will be
+somewhat slower than simulated, so treat the flight times as lower bounds. Also
+WP_ACC 5 puts 27 deg against ATC_ANGLE_MAX 30 and this airframe has never flown
+it.
