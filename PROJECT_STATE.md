@@ -3443,3 +3443,41 @@ IF B IS RIGHT, the fix is NOT a code change: the fence must be built from
 GPS-measured corners (walk the aircraft to each corner, record its reported
 position) rather than by clicking the image. Drawing on imagery is only as
 accurate as the imagery.
+
+### 2026-08-24 ~18:40 IST: 74-waypoint timing, and what the "direction" box actually does
+
+TIME depends on PATH LENGTH, which the user did not state and which the route
+note prints ("... m of path"). Waypoint count alone does not fix it. At the
+board's current WP_SPD 2 / WP_ACC 2.5, 74 waypoints:
+
+    path    leg  | hold 1  hold 0  hold 3
+    300 m  4.1 m |  3.3m    2.1m    5.8m
+    400 m  5.5 m |  4.2m    2.9m    6.6m
+    500 m  6.8 m |  5.0m    3.8m    7.5m
+    637 m  8.7 m |  6.2m    5.0m    8.7m
+    700 m  9.6 m |  6.7m    5.5m    9.2m
+    plus ~1.5 min for takeoff, transit and RTL.
+
+If the fence is the same one that gave 163 wp / 637 m, then 74 wp means the
+"photo every" box was raised to roughly 8.7 m, and the answer is 6.2 min flying
+plus 1.5 = ~7.7 min. WORTH SAYING: at 8.7 m spacing the along-track stops are
+now WIDER than the 5.34 m footprint, so the stops themselves no longer overlap.
+Coverage then rests entirely on the continuous 1 Hz frames between them (2.0 m
+apart at WP_SPD 2, 3.34 m of overlap), which is fine, but it means the
+waypoints have stopped contributing coverage and are only costing time. At that
+point 0 is the honest setting, not 8.7.
+
+DIRECTION BOX (genHdg, index.html:382) sets the compass bearing the survey ROWS
+run along, in degrees clockwise from north. It is passed as `heading` to
+build_coverage. Blank = auto, and auto is NOT "north" or "whatever fits": it is
+the bearing of the LONGEST EDGE of the drawn fence (make_waypoints.py:210-216,
+it walks every edge and keeps the longest). Rationale, now recorded because the
+code states the rule but not the why: rows parallel to the longest edge give
+the fewest, longest rows and therefore the fewest turns. Turns cost time and
+each one is a stop-start.
+
+WHEN TO OVERRIDE IT: a fence whose longest edge is not its long axis (an
+L-shape, or a quad with one long diagonal-ish side) can get rows across the
+short way. Setting the direction by hand to the field's true long axis cuts row
+count and turn count. It does NOT change row spacing or waypoint spacing, so it
+does not change coverage, only how the same area is swept.
