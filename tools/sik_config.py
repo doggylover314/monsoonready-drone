@@ -45,7 +45,12 @@ except ImportError:
              "pip install pyserial")
 
 # SiK's own SERIAL_SPEED values, commonest first. A flash can land on any.
-BAUDS = [57600, 115200, 38400, 9600, 19200, 250000]
+# Same set as sik.py, in the same order. They had diverged in BOTH
+# directions (this file never tried 230400, sik.py never tried 250000),
+# so a radio left at either speed was found by one tool and reported as
+# dead hardware by the other. Neither value is confirmed from a primary
+# SiK source, so the union is kept rather than dropping one.
+BAUDS = [57600, 115200, 38400, 19200, 9600, 230400, 250000]
 GUARD_S = 1.1          # firmware wants >1s of silence either side of '+++'
 
 

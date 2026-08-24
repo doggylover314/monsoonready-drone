@@ -25,8 +25,8 @@ main() {
   git -C "$REPO" log --oneline -2 2>&1 || echo "no repo at $REPO"
 
   echo "== dashboard process =="
-  if pgrep -af "python.*dashboard\.py"; then
-    for p in $(pgrep -f "python.*dashboard\.py"); do
+  if pgrep -af "python.*$REPO/uno_q/basestation/dashboard.py"; then
+    for p in $(pgrep -f "python.*$REPO/uno_q/basestation/dashboard.py"); do
       echo "pid $p started $(ps -o lstart= -p "$p" 2>/dev/null), up $(ps -o etime= -p "$p" 2>/dev/null | tr -d ' ')"
     done
   else

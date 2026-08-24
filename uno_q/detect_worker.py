@@ -68,6 +68,8 @@ DEFAULT_OUT = '/tmp/monsoonready_det.json'
 DEFAULT_PHOTO_DIR = '~/monsoonready_data/photos'
 DEFAULT_MANUAL_DIR = '~/monsoonready_data/manual_photos'
 MANUAL_REQ = '/tmp/monsoonready_manual_photo'
+# Manual-photo targets are confined to this tree (MANUAL_REQ is world-writable).
+DATA_ROOT = '~/monsoonready_data'
 MANUAL_DONE = '/tmp/monsoonready_manual_photo_done'
 CAP_CHECK_EVERY = 100          # photos between folder-size enforcements
 
@@ -99,7 +101,7 @@ def save_annotated(save_dir, seq, frame, rows, w, h):
 
 def write_atomic(path, payload):
     tmp = path + '.tmp'
-    with open(tmp, 'w') as f:
+    with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(payload, f)
     os.replace(tmp, path)
 
@@ -142,30 +144,55 @@ def enforce_cap(photo_dir, cap_bytes, log):
 
 
 def manual_photo_requested():
-    """Target dir if the dashboard asked for a manual photo, else None."""
+    """Target dir if the dashboard asked for a manual photo, else None.
+
+    MANUAL_REQ lives in /tmp and is world-writable, so its contents are not
+    trusted as a path: anything outside the data directory falls back to the
+    default rather than being created and written to.
+    """
     try:
-        with open(MANUAL_REQ) as f:
+        with open(MANUAL_REQ, encoding='utf-8') as f:
             target = f.read().strip()
     except OSError:
         return None
-    return target or os.path.expanduser(DEFAULT_MANUAL_DIR)
+    fallback = os.path.expanduser(DEFAULT_MANUAL_DIR)
+    if not target:
+        return fallback
+    root = os.path.realpath(os.path.expanduser(DATA_ROOT))
+    want = os.path.realpath(os.path.expanduser(target))
+    if want == root or want.startswith(root + os.sep):
+        return want
+    return fallback
 
 
 def take_manual_photo(cv2, frame, target_dir, seq, log):
+    """Answer one manual-photo request. Never raises.
+
+    This runs on the worker's main loop with nothing catching it above, so
+    an escaping exception killed the worker outright: the detector then went
+    stale and the survey aborted blind, while the dashboard's photo button
+    waited forever for a reply file that was never written. Every exit now
+    clears the request and writes a reply.
+    """
     try:
         os.makedirs(target_dir, exist_ok=True)
         path = os.path.join(target_dir, 'manual_' + stamp_name(seq))
-        cv2.imwrite(path, frame)
+        if not cv2.imwrite(path, frame):
+            raise OSError(f'imwrite refused to write {path}')
         reply = {'ok': True, 'path': path}
         log(f'[worker] manual photo saved: {path}')
-    except OSError as exc:
-        reply = {'ok': False, 'error': str(exc)}
-        log.error(f'manual photo FAILED: {exc}')
-    try:
-        os.remove(MANUAL_REQ)
-    except OSError:
-        pass
-    write_atomic(MANUAL_DONE, reply)
+    except Exception as exc:                            # noqa: BLE001
+        reply = {'ok': False, 'error': f'{type(exc).__name__}: {exc}'}
+        log.error(f'manual photo FAILED: {type(exc).__name__}: {exc}')
+    finally:
+        try:
+            os.remove(MANUAL_REQ)
+        except OSError:
+            pass
+        try:
+            write_atomic(MANUAL_DONE, reply)
+        except Exception as exc:                        # noqa: BLE001
+            log.error(f'manual photo reply could not be written: {exc}')
 
 
 def main():
@@ -176,7 +203,9 @@ def main():
                          "mode flights use; /dev/video numbers are an "
                          "enumeration race, see camera.py). An integer or "
                          "/dev/videoN pins a node for bench work.")
-    ap.add_argument('--conf', type=float, default=0.5)
+    # Matches run_mission.py and dashboard.py; a mismatch here silently
+    # filters out rows the mission would have accepted.
+    ap.add_argument('--conf', type=float, default=0.25)
     ap.add_argument('--out', default=DEFAULT_OUT)
     ap.add_argument('--photo-dir', default=DEFAULT_PHOTO_DIR,
                     help='every captured frame is saved here full-res as '
@@ -258,9 +287,12 @@ def main():
                    'sharpness': getattr(det, 'last_sharpness', None),
                    'rows': [[float(v) for v in r[:5]] for r in rows]}
 
+        # Counted whether or not the write worked: on a full disk every
+        # write fails, and the counter is the only thing that triggers
+        # enforce_cap, which is the only thing that frees space.
+        photos_since_check += 1
         try:
             cv2.imwrite(os.path.join(photo_dir, stamp_name(seq)), frame)
-            photos_since_check += 1
         except (OSError, cv2.error) as exc:
             log.error(f'photo save failed: {exc}')
         if photos_since_check >= CAP_CHECK_EVERY:

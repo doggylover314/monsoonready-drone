@@ -19,35 +19,60 @@
 #
 # The dashboard writes its own ~/logs/dashboard.log (boardlog), so nothing is
 # redirected here; /dev/null only eats what boardlog already captured.
-set -u
+set -eu
 
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 PY="$HOME/venv/bin/python"
 DASH="$REPO/uno_q/basestation/dashboard.py"
 
-[ -x "$PY" ] || { echo "FATAL: no venv python at $PY (run board_setup.sh)"; exit 1; }
-[ -f "$DASH" ] || { echo "FATAL: $DASH missing (bad checkout?)"; exit 1; }
+LOG="${DASH_LOG:-$HOME/logs/dashboard.log}"
+mkdir -p "$(dirname "$LOG")"
+# Every message is persisted, not just printed: a failed restart over ssh at
+# the field otherwise leaves no record (SCOPE RULES 1).
+note() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] start_dashboard: $*" | tee -a "$LOG"; }
 
-if pgrep -f "python.*dashboard\.py" >/dev/null 2>&1; then
-    echo "stopping the running dashboard ..."
-    pkill -f "python.*dashboard\.py"
-    sleep 1
+[ -x "$PY" ] || { note "FATAL: no venv python at $PY (run board_setup.sh)"; exit 1; }
+[ -f "$DASH" ] || { note "FATAL: $DASH missing (bad checkout?)"; exit 1; }
+
+# Anchored to the resolved path, not a bare "dashboard.py" substring, so an
+# unrelated python process cannot be signalled.
+PAT="python.*$DASH"
+
+if pgrep -f "$PAT" >/dev/null 2>&1; then
+    note "stopping the running dashboard: $(pgrep -f "$PAT" | tr '\n' ' ')"
+    pkill -f "$PAT" || true
+    # Wait for the port to actually free. A flat 1 s let the old process keep
+    # 8080, the new one died on bind, and this script still said UP.
+    for _ in $(seq 1 20); do
+        pgrep -f "$PAT" >/dev/null 2>&1 || break
+        sleep 0.5
+    done
+    if pgrep -f "$PAT" >/dev/null 2>&1; then
+        note "SIGKILL: it did not exit in 10 s"
+        pkill -9 -f "$PAT" || true
+        sleep 1
+    fi
 fi
 
 setsid nohup "$PY" "$DASH" \
     --enable-control --waypoints "$HOME/wp_field.txt" "$@" \
     >/dev/null 2>&1 &
+NEW_PID=$!
 
+# Check THE PID WE LAUNCHED, not "some matching process exists". The old
+# check passed while our own process was already dead on a busy port.
 sleep 2
-if pgrep -f "python.*dashboard\.py" >/dev/null 2>&1; then
-    echo "dashboard UP (flight control enabled). Open ONE of:"
+if kill -0 "$NEW_PID" 2>/dev/null; then
+    note "dashboard UP (pid $NEW_PID, flight control enabled)"
+    echo "Open ONE of:"
     for ip in $(hostname -I 2>/dev/null); do
         echo "    http://$ip:8080"
     done
-    echo "log: ~/logs/dashboard.log"
+    echo "log: $LOG"
     echo "Next: press 'Test everything' on the page."
 else
-    echo "dashboard FAILED to start. Last log lines:"
-    tail -n 8 "$HOME/logs/dashboard.log" 2>/dev/null || echo "  (no log)"
+    note "dashboard FAILED to start (pid $NEW_PID is already gone)"
+    echo "Last log lines:"
+    tail -n 8 "$LOG" 2>/dev/null || echo "  (no log)"
     exit 1
 fi

@@ -43,6 +43,7 @@ class Site:
         self.lat = lat
         self.lon = lon
         self._n = 1
+        self._members = [(lat, lon)]     # every sighting, for an honest mean
         self.flights = set()
         self.detections = 0
         self.drops = 0          # gate cycles that actually actuated
@@ -55,10 +56,14 @@ class Site:
         self.first_t = float('inf')
 
     def absorb(self, lat, lon, mission_id, t):
-        # Running mean centers cluster as sightings arrive, not pinned to first.
+        # Running mean over EVERY member, kept explicitly. The old code
+        # updated the mean incrementally and then matched new points against
+        # that drifted mean, so a chain of sightings could walk the reported
+        # site outside the radius of every individual detection.
         self._n += 1
-        self.lat += (lat - self.lat) / self._n
-        self.lon += (lon - self.lon) / self._n
+        self._members.append((lat, lon))
+        self.lat = sum(a for a, _ in self._members) / self._n
+        self.lon = sum(b for _, b in self._members) / self._n
         self.flights.add(mission_id)
         self.stamp(t)
 

@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 from missionlog import MissionLog  # noqa: E402
 
 HOME = (12.9716000, 77.5946000)   # arbitrary demo site
-SURVEY_ALT, DROP_ALT = 15.0, 3.0
+SURVEY_ALT, DROP_ALT = 5.0, 1.0
 
 
 def off(n_m, e_m, base=HOME):
@@ -89,8 +89,11 @@ def treat(log, clock, pos, puddle, conf):
     walk(log, clock, pos, puddle, SURVEY_ALT, 'APPROACH')
     log.state('APPROACH', 'DESCEND', '')
     vertical(log, clock, puddle, SURVEY_ALT, DROP_ALT, 0.5, 'DESCEND')
-    log.drop(lat, lon, 2.96, dwell_s=1.2, area_m2=3.0)
-    log.state('DESCEND', 'DROP', 'rng=2.96m')
+    # Derived, not literal: changing DROP_ALT used to leave the fake data
+    # internally inconsistent with its own altitude profile.
+    rng = round(DROP_ALT - 0.04, 2)
+    log.drop(lat, lon, rng, dwell_s=1.2, area_m2=3.0)
+    log.state('DESCEND', 'DROP', f'rng={rng}m')
     clock.tick(2)
     log.state('DROP', 'CLIMB', 'treated')
     vertical(log, clock, puddle, DROP_ALT, SURVEY_ALT, 1.0, 'CLIMB')
@@ -182,7 +185,7 @@ def main():
     day = 86400
     now = time.time()
 
-    if args.flights:
+    if args.flights is not None:
         rng = random.Random(args.seed)
         pool = []
         paths = []

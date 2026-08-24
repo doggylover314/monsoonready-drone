@@ -59,7 +59,7 @@ def load(path=DEFAULT_PATH):
     if not os.path.isfile(p):
         return []
     try:
-        with open(p) as f:
+        with open(p, encoding='utf-8') as f:
             data = json.load(f)
     except (OSError, ValueError):
         return []
@@ -80,7 +80,7 @@ def save(polygon, path=DEFAULT_PATH):
     p = os.path.expanduser(path)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     tmp = p + '.tmp'
-    with open(tmp, 'w') as f:
+    with open(tmp, 'w', encoding='utf-8') as f:
         json.dump({'polygon': [[round(a, 7), round(b, 7)] for a, b in polygon],
                    'saved_t': time.time()}, f, indent=1)
     os.replace(tmp, p)
@@ -100,7 +100,9 @@ def validate(polygon):
         if not (abs(lat) <= 90 and abs(lon) <= 180):
             return f'corner out of range: {lat}, {lon}'
     if (polygon[0][0] == polygon[-1][0] and polygon[0][1] == polygon[-1][1]
-            and len(polygon) > 3):
+            and len(polygon) >= 3):
+        # >= 3, not > 3: [A, B, A] is two distinct corners and zero area, and
+        # the old gate let it through as a legitimate three-corner fence.
         return ('the last corner repeats the first; ArduPilot closes the '
                 'polygon itself, so drop the duplicate')
     return None
@@ -237,7 +239,15 @@ def _read_back_once(io, timeout=20.0, log=print, count_wait=1.5, count_tries=3):
     conn.mav.mission_request_list_send(ts, tc, MISSION_TYPE_FENCE)
     total, got = None, {}
     asked, next_ask = 1, time.monotonic() + count_wait
-    deadline = time.monotonic() + timeout
+    next_item_ask = None
+    item_tries = {}          # seq -> re-requests sent, so a dead corner
+    deadline = time.monotonic() + timeout   # cannot spin for the whole window
+
+    def missing():
+        """Lowest seq not yet received, or None when the set is complete."""
+        if total is None:
+            return None
+        return next((i for i in range(total) if i not in got), None)
     while time.monotonic() < deadline:
         msg = conn.recv_match(type=['MISSION_COUNT', 'MISSION_ITEM_INT'],
                               blocking=True, timeout=0.5)
@@ -251,6 +261,23 @@ def _read_back_once(io, timeout=20.0, log=print, count_wait=1.5, count_tries=3):
                 log(f'[fence] no MISSION_COUNT yet, asking again '
                     f'({asked}/{count_tries})')
                 conn.mav.mission_request_list_send(ts, tc, MISSION_TYPE_FENCE)
+            elif (total is not None and next_item_ask is not None
+                    and time.monotonic() >= next_item_ask):
+                # A dropped MISSION_ITEM_INT used to stall here until the
+                # whole timeout expired, because nothing re-asked for it.
+                want = missing()
+                if want is None:
+                    break
+                item_tries[want] = item_tries.get(want, 0) + 1
+                if item_tries[want] > count_tries:
+                    log(f'[fence] corner {want} never arrived after '
+                        f'{count_tries} re-requests, giving up on it')
+                    break
+                next_item_ask = time.monotonic() + count_wait
+                log(f'[fence] corner {want} did not arrive, asking again '
+                    f'({item_tries[want]}/{count_tries})')
+                conn.mav.mission_request_int_send(ts, tc, want,
+                                                  MISSION_TYPE_FENCE)
             continue
         if getattr(msg, 'mission_type', MISSION_TYPE_FENCE) != MISSION_TYPE_FENCE:
             continue
@@ -259,16 +286,27 @@ def _read_back_once(io, timeout=20.0, log=print, count_wait=1.5, count_tries=3):
             log(f'[fence] Pixhawk reports {total} stored corner(s)')
             if total == 0:
                 break
+            next_item_ask = time.monotonic() + count_wait
             conn.mav.mission_request_int_send(ts, tc, 0, MISSION_TYPE_FENCE)
             continue
         got[msg.seq] = [msg.x / 1e7, msg.y / 1e7]
-        if total is not None and len(got) >= total:
+        # Ask for the lowest seq still missing, NOT len(got): an item that
+        # arrives out of order made the old code re-request an index it
+        # already had and spin on it until the deadline.
+        nxt = missing()
+        if nxt is None:
             break
-        nxt = len(got)
+        next_item_ask = time.monotonic() + count_wait
         conn.mav.mission_request_int_send(ts, tc, nxt, MISSION_TYPE_FENCE)
     # Politeness the protocol requires: tell the vehicle the download ended.
     conn.mav.mission_ack_send(ts, tc, mavutil.mavlink.MAV_MISSION_ACCEPTED,
                               MISSION_TYPE_FENCE)
+    if total is not None and len(got) != total:
+        # Say so rather than handing back a short list that reads as the
+        # whole fence. The caller compares lengths and will now see a
+        # mismatch it can report honestly.
+        log(f'[fence] INCOMPLETE read-back: {len(got)} of {total} corner(s) '
+            f'arrived; the fence on the aircraft is NOT confirmed')
     return [got[i] for i in sorted(got)]
 
 

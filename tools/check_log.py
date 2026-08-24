@@ -102,6 +102,11 @@ def main():
             # Measure flight time from gap sums: endurance measured, not guessed.
             # CurrTot accumulates across arm/disarm cycles.
             ts = getattr(msg, 'TimeUS', 0) / 1e6
+            # Read THIS record's throttle before testing it. The assignment
+            # used to sit after these tests, so every decision was made on
+            # the previous sample, and a log with a single record above the
+            # gate never set first_fly_t at all.
+            thr = getattr(msg, 'ThO', thr)
             if thr >= args.min_throttle and first_fly_t is None:
                 first_fly_t = ts
             if thr >= args.min_throttle and last_ctun_t is not None:
@@ -109,7 +114,6 @@ def main():
                 if 0 < gap < 1.0:      # Ignore gaps > 1s (disarm/rearm)
                     flight_s += gap
             last_ctun_t = ts
-            thr = getattr(msg, 'ThO', thr)
             thr_max = max(thr_max, thr)
             if thr >= args.min_throttle:
                 th = getattr(msg, 'ThH', None)

@@ -41,7 +41,6 @@ checked against it.
 """
 
 import argparse
-import math
 import sys
 
 from camera_geom import CameraGeometry, calibrate_fov
@@ -53,15 +52,19 @@ def grab_frame(camera, path):
     except ImportError:
         print("opencv not available; skipping --grab")
         return False
-    cap = cv2.VideoCapture(camera, cv2.CAP_V4L2)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    cap.grab()
-    ok, frame = cap.read()
-    cap.release()
+    # open_camera resolves BY NAME and applies the same buffer-size and
+    # focus-lock settings the mission uses. A bare /dev/videoN races the
+    # board's Venus codec nodes, and this is the tool that measures the one
+    # number deciding whether the aircraft flies to the puddle.
+    from camera import open_camera
+    cap, node = open_camera(camera)
+    try:
+        cap.grab()
+        ok, frame = cap.read()
+    finally:
+        cap.release()
     if not ok or frame is None:
-        print(f"no frame from /dev/video{camera}")
+        print(f"no frame from {node}")
         return False
     cv2.imwrite(path, frame)
     h, w = frame.shape[:2]
@@ -88,7 +91,7 @@ def main():
                     help='capture one frame from /dev/videoN first')
     ap.add_argument('--frame-w', type=int, default=1280)
     ap.add_argument('--frame-h', type=int, default=720)
-    ap.add_argument('--survey-alt', type=float, default=15.0)
+    ap.add_argument('--survey-alt', type=float, default=5.0)
     args = ap.parse_args()
 
     if args.grab is not None:

@@ -16,7 +16,8 @@ import sys
 import time
 
 from boardlog import BoardLog
-from camera_geom import DEFAULT_HFOV_DEG, MOUNT_YAW_DEG, CameraGeometry
+from camera_geom import (DEFAULT_HFOV_DEG, MOUNT_YAW_DEG, CameraGeometry,
+                         footprint_track_m)
 from detect_worker import DEFAULT_OUT as DET_FILE_DEFAULT
 from detector import FileDetector, OnnxDetector
 from dropper import LogDropper, PixhawkServoDropper
@@ -34,7 +35,7 @@ DEFAULT_MODEL = os.path.join(
 def read_waypoints(path, log):
     wps = []
     try:
-        f = open(os.path.expanduser(path))
+        f = open(os.path.expanduser(path), encoding='utf-8')
     except OSError as exc:
         log.error(f"waypoint file unreadable: {exc}")
         sys.exit(f"waypoint file unreadable: {exc}")
@@ -133,9 +134,12 @@ def main():
     geom = None
     if args.hfov_deg:
         geom = CameraGeometry(args.frame_w, args.frame_h, args.hfov_deg)
-        fw, fh = geom.footprint_m(args.survey_alt)
-        log(f"[run] camera {args.hfov_deg:.1f}deg hfov -> footprint at "
-            f"{args.survey_alt:.0f}m is {fw:.1f} x {fh:.1f} m")
+        across, along = footprint_track_m(geom, args.survey_alt,
+                                          args.mount_yaw_deg)
+        log(f"[run] camera {args.hfov_deg:.1f}deg hfov, mount yaw "
+            f"{args.mount_yaw_deg:g}deg -> at {args.survey_alt:.0f}m the "
+            f"ground seen is {across:.1f} m across track x {along:.1f} m "
+            f"along track")
     else:
         log("[run] no --hfov-deg: detections assumed directly below "
             "the aircraft (nadir)")
@@ -293,7 +297,7 @@ def _spawn_or_reuse_worker(args, model, log):
         # writing, so reusing one with a higher threshold would silently
         # blind the mission.
         try:
-            with open(det_file) as f:
+            with open(det_file, encoding='utf-8') as f:
                 wconf = json.load(f).get('conf')
         except (OSError, ValueError):
             wconf = None
@@ -313,8 +317,12 @@ def _spawn_or_reuse_worker(args, model, log):
         while _worker_pids() and time.time() < deadline:
             time.sleep(0.2)
         if _worker_pids():
-            log.error('[run] old detect worker refused to die; the camera '
-                      'may be double-opened')
+            log.error('[run] old detect worker refused to die. Spawning a '
+                       'second one would double-open the camera and both '
+                       'would fail, so this run stops here. Kill it by hand '
+                       'and start again.')
+            raise SystemExit('[run] a detect worker could not be stopped; '
+                             'refusing to double-open the camera')
     worker_py = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              'detect_worker.py')
     proc = subprocess.Popen(

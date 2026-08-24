@@ -36,7 +36,8 @@ except ImportError:
 
 # Ordered by likelihood: 57600 is the SiK default, 115200 shows up on
 # reconfigured host links.
-BAUDS = [57600, 115200, 38400, 19200, 9600, 230400]
+# Kept identical to sik_config.py: see the note there.
+BAUDS = [57600, 115200, 38400, 19200, 9600, 230400, 250000]
 
 # AIR_SPEED values the firmware accepts, in kbps. Both ends must agree exactly.
 AIR_SPEEDS = [2, 4, 8, 16, 19, 24, 32, 48, 64, 96, 128, 192, 250]
@@ -124,7 +125,7 @@ def open_at(port, baud, quiet=False):
 
 
 def probe(port):
-    print(f"\nsweeping bauds on {port} (about {GUARD_S * 2:.1f}s each)")
+    print(f"\nsweeping bauds on {port} (about {GUARD_S * 2 + 0.5:.1f}s each)")
     ser = None
     for baud in BAUDS:
         ser = open_at(port, baud)

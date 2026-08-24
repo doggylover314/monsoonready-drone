@@ -13,6 +13,12 @@ import time
 
 from mavlink_io import PWM_MIN_US, PWM_MAX_US
 
+# Gate dwell bounds, module level so the methods can see them. The floor
+# is the shortest pulse the MG90 reliably acts on; the ceiling stops a
+# typo emptying the hopper.
+MIN_DWELL_S = 0.05
+MAX_DWELL_S = 10.0
+
 
 class Dropper:
     def trigger(self, dwell_s=None):
@@ -85,6 +91,12 @@ class PixhawkServoDropper(Dropper):
         if closed_us == open_us:
             raise ValueError(
                 f"closed_us and open_us are both {closed_us}: gate cannot move")
+        # Checked here, not only on the per-call override: an unusable
+        # constructor dwell used to surface as a raise from inside trigger(),
+        # after the gate was already open and counted as succeeded.
+        if not MIN_DWELL_S <= dwell_s <= MAX_DWELL_S:
+            raise ValueError(
+                f"dwell_s={dwell_s} outside {MIN_DWELL_S}-{MAX_DWELL_S}s")
         self.io = io
         self.channel = channel
         self.closed_us = closed_us
@@ -122,7 +134,8 @@ class PixhawkServoDropper(Dropper):
         """
         self.fired += 1
         self.times.append(time.monotonic())
-        dwell = self.dwell_s if dwell_s is None else max(0.05, float(dwell_s))
+        dwell = (self.dwell_s if dwell_s is None
+                 else min(MAX_DWELL_S, max(MIN_DWELL_S, float(dwell_s))))
         self.log(f"[dropper] TRIGGER #{self.fired}: gate -> {self.open_us}us "
                  f"for {dwell:.2f}s")
 
@@ -190,7 +203,8 @@ class ServoDropper(Dropper):
     def trigger(self, dwell_s=None):
         self.fired += 1
         self.times.append(time.monotonic())
-        dwell = self.dwell_s if dwell_s is None else max(0.05, float(dwell_s))
+        dwell = (self.dwell_s if dwell_s is None
+                 else min(MAX_DWELL_S, max(MIN_DWELL_S, float(dwell_s))))
         self.log(f"[dropper] TRIGGER #{self.fired}: gate -> {self.open_deg}deg "
                  f"for {dwell:.2f}s")
         opened = self._safe('servo_set', self.open_deg, why='open')

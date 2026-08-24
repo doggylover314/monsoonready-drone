@@ -361,7 +361,10 @@ def sensor_mode(m, args):
         if ch == UP_CH:
             # Its no-data encoding is unverified, so every value is taken at
             # face value and the caveat is printed rather than guessed around.
-            d = stats(up, elapsed, sentinels=False)
+            # sentinels=True: the up channel DOES carry SECTOR_NO_DATA when
+            # it fails, and passing False reset the gap counter every sample,
+            # so this always printed "longest gap 0" and "100.0%".
+            d = stats(up, elapsed, sentinels=True)
             if not up:
                 print(f"\n{label}\n  VERDICT    SILENT  (no DISTANCE_SENSOR "
                       f"orientation {UP_ORIENT} in {elapsed:.0f}s)")
@@ -476,7 +479,7 @@ def survey(m, args):
         if n == 0:
             verd, note = 'DEAD', 'never reported a reading'
             dead.append(ch)
-        elif pct < 95:
+        elif pct < 100.0 - DROPOUT_GATE_PCT:
             verd, note = 'FLAKY', f'dropped out {total - n} of {total}'
             flaky.append(ch)
         else:

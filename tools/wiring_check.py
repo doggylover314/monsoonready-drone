@@ -25,9 +25,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
 from dropper import PixhawkServoDropper as _Gate
 
 # Link handling in mavlink_link.py; this file is wiring verdict only.
-from mavlink_link import (drain_statustext, require_port,  # noqa: F401
-                          resolve_link, send_and_ack, serial_candidates,
-                          wait_autopilot)
+from mavlink_link import (connect, drain_statustext,  # noqa: F401
+                          require_port, resolve_link, send_and_ack,
+                          serial_candidates, wait_autopilot)
 
 DOWN = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_270   # 25
 UP = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_90      # 24
@@ -93,13 +93,10 @@ def main():
         print(f"NOTE: this project wires the dropper to ch9 (AUX1); you asked "
               f"for ch{args.wiggle}. A channel whose SERVOn_FUNCTION is not 0 "
               f"will ack ACCEPTED and move nothing.")
-    args.conn, args.baud = resolve_link(args.conn, args.baud)
-
-    print(f"connecting {args.conn} ...")
-    m = mavutil.mavlink_connection(args.conn, baud=args.baud,
-                                   source_system=250)
-    if not wait_autopilot(m):
-        raise SystemExit("FAIL: no autopilot heartbeat on USB")
+    # connect() is the shared path every other MAVLink tool uses: it
+    # resolves the link, opens it, locks onto the autopilot and exits with a
+    # readable reason instead of a traceback. This was the only outlier.
+    m, args.conn, args.baud = connect(args.conn, args.baud)
     print(f"autopilot is system {m.target_system} component "
           f"{m.target_component}\nlistening (up to {args.seconds:.0f}s, "
           f"exits early once everything has reported) ...")

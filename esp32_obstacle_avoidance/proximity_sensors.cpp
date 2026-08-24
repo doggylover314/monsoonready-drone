@@ -107,8 +107,16 @@ bool ProximitySensors::begin() {
 // -----------------------------------------------------------------------------
 void ProximitySensors::readAll(uint16_t out_mm[NUM_SENSORS]) {
 #if USE_FAKE_SENSORS
-  for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) out_mm[ch] = FAKE_CLEAR_MM;
-  if (FAKE_VARY_CHANNEL < NUM_SENSORS) out_mm[FAKE_VARY_CHANNEL] = FAKE_VARY_MM;
+  // Unfitted channels report ERROR here exactly as they do on real
+  // hardware. Reporting them clear told the autopilot that a sector with no
+  // sensor in it was proven empty, which is the one thing config.h warns
+  // against.
+  for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) {
+    out_mm[ch] = isFitted(ch) ? FAKE_CLEAR_MM : SENSOR_MM_ERROR;
+  }
+  if (FAKE_VARY_CHANNEL < NUM_SENSORS && isFitted(FAKE_VARY_CHANNEL)) {
+    out_mm[FAKE_VARY_CHANNEL] = FAKE_VARY_MM;
+  }
 #else
   for (uint8_t ch = 0; ch < NUM_SENSORS; ch++) {
     if (!_ok[ch]) {
@@ -190,8 +198,16 @@ void ProximitySensors::maintain() {
     fitted_all++;
     if (channelHealthy(ch)) healthy_all++;
   }
-  if (fitted_all > 0 && healthy_all == 0
-      && now - _last_bus_clear_ms >= BUS_CLEAR_PERIOD_MS) {
+  const bool all_down = (fitted_all > 0 && healthy_all == 0);
+  if (all_down && now - _last_bus_clear_ms < BUS_CLEAR_PERIOD_MS) {
+    // Bus clear already tried recently and everything is still down. Falling
+    // through to the per-channel round-robin here is what produced the
+    // ~1.07 s stalls measured in config.h: each blocking init is longer than
+    // ArduPilot's 500 ms proximity timeout, so the autopilot declared the
+    // sensor dead and refused to arm. Wait for the next bus-clear instead.
+    return;
+  }
+  if (all_down) {
     _last_bus_clear_ms = now;
     DEBUG_SERIAL.println(F("[sensors] every fitted channel is down: "
                            "clearing the I2C bus and re-initing all"));

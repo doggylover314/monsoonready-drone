@@ -1,4 +1,4 @@
-"""Pixel -> ground offset for a nadir-mounted camera (TODO 11).
+"""Pixel -> ground offset for a nadir-mounted camera.
 
 Turns "the puddle is at pixel (px, py) in a WxH frame" into "the puddle is N
 metres north and E metres east of the drone", which is what lets the mission
@@ -27,11 +27,11 @@ error they would remove at these angles and altitudes:
     altitude. Tilt is the dominant error term if that ever changes: at 15 m,
     2 degrees of tilt shifts the nadir point by ~0.5 m.
 
-HFOV is a measured number, not a datasheet number. Run calibrate_fov() with a
-tape measure once the camera is in its final housing; lenses vary between
-units and the stated diagonal FOV of a webcam is frequently optimistic.
-Until it is measured, DEFAULT_HFOV_DEG is a placeholder and every offset
-computed from it inherits its error proportionally.
+HFOV is a measured number, not a datasheet number. DEFAULT_HFOV_DEG was
+measured with a tape measure on 2026-08-15 and is not a placeholder. Re-run
+calibrate_fov() if the camera is ever re-housed: lenses vary between units,
+the stated diagonal FOV of a webcam is frequently optimistic, and every
+offset computed from this number inherits its error proportionally.
 """
 
 import math
@@ -39,10 +39,12 @@ import math
 # Measured, no longer a placeholder. 2026-08-15 at the farm, wall method with
 # a tape measure (uno_q/calibrate_camera.py): 0.950 m of wall visible at
 # 0.890 m => 2*atan(0.475/0.890) = 56.18 deg, at the mission's own 1280x720.
-# Consequences that follow from this number, recorded so they are not
-# recomputed: footprint at 15 m is 16.0 x 9.0 m; a 0.6 m target at 15 m is
-# only ~24 px in the model's 640 input, which is why the farm target is a
-# metres-wide wet patch and not the tray.
+# Consequences at the 5 m survey altitude, recorded so they are not
+# recomputed. footprint_m is AXIS-labelled and gives 5.34 x 3.00 m; with the
+# mount at 90 deg that is 3.00 m ACROSS track by 5.34 m ALONG track, so use
+# footprint_track_m, never footprint_m, for anything about the airframe. A
+# 0.55 m target is ~132 px of the model's 640 input at 5 m against ~44 px at
+# 15 m, which is why survey altitude came down.
 DEFAULT_HFOV_DEG = 56.2
 
 # The camera is mounted rotated 90 deg: the 1280 px axis runs fore-aft, so a
@@ -59,11 +61,19 @@ def footprint_track_m(geom, height_m, mount_yaw_deg=MOUNT_YAW_DEG):
     footprint_m() is axis-labelled (1280 axis, 720 axis) and says nothing
     about the airframe; this maps it through the mount rotation so survey
     row spacing and waypoint spacing use the right sides.
+
+    Only axis-aligned mounts have a rectangular footprint in track axes. A
+    45 degree mount sees a diamond and no (across, along) pair describes it,
+    so rather than silently rounding to the nearest right angle this raises.
     """
+    q = mount_yaw_deg / 90.0
+    if abs(q - round(q)) > 1e-6:
+        raise ValueError(
+            f"mount_yaw_deg={mount_yaw_deg} is not a multiple of 90; the "
+            f"ground footprint is not rectangular in track axes and no "
+            f"(across, along) pair describes it")
     w, h = geom.footprint_m(height_m)
-    if abs(math.sin(math.radians(mount_yaw_deg))) > 0.5:
-        return h, w         # rotated mount: 720 axis across, 1280 along
-    return w, h
+    return (h, w) if round(q) % 2 else (w, h)
 
 
 class CameraGeometry:
@@ -136,7 +146,7 @@ def ground_area_m2(geom, px1, py1, px2, py2, height_m):
     return abs(bx - ax) * abs(by - ay)
 
 
-def camera_to_ned(right_m, down_m, heading_deg, mount_yaw_deg=0.0):
+def camera_to_ned(right_m, down_m, heading_deg, mount_yaw_deg=MOUNT_YAW_DEG):
     """Rotate a camera-frame offset into (north_m, east_m).
 
     heading_deg: aircraft heading, degrees clockwise from north (MAVLink hdg).

@@ -16,6 +16,7 @@ Output layout: <out>/results.jsonl, <out>/annotated/*.jpg, <out>/grid.jpg
 import argparse
 import json
 import os
+import statistics
 import time
 
 import cv2
@@ -105,7 +106,7 @@ def main():
     n_det = sum(len(r['detections']) for r in results)
     ms = sorted(t * 1000 for t in times)
     print(f"\n{len(results)} images, {n_det} detections total")
-    print(f"median inference {ms[len(ms) // 2]:.0f}ms")
+    print(f"median inference {statistics.median(ms):.0f}ms")
     print(f"wrote {args.out}/results.jsonl, annotated/, grid.jpg")
 
 

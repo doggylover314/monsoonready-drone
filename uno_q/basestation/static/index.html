@@ -803,7 +803,10 @@ async function loadWaypoints() {
     state.wpAvailable = !!(j.available && j.exists);
     if (edit.mode !== 'route') {    // never clobber an edit in progress
       state.wps = state.wpAvailable ? j.waypoints : [];
-      state.wpDirty = false;
+      // Only when NOTHING is being edited. The dirty flag is shared with the
+      // fence editor, and reload() runs both loaders, so clearing it here
+      // used to disable Save on an unsaved fence edit.
+      if (!edit.mode) state.wpDirty = false;
     }
     if (j.errors && j.errors.length)
       $('wpNote').textContent = 'waypoint file: ' + j.errors[0];
@@ -816,7 +819,7 @@ async function loadFence() {
     state.fenceMeta = j;
     if (edit.mode !== 'fence') {
       state.fence = (j.polygon || []).map(p => [p[0], p[1]]);
-      state.wpDirty = false;
+      if (!edit.mode) state.wpDirty = false;   // see loadWaypoints
     }
   } catch { state.fenceMeta = null; }
 }
@@ -1120,21 +1123,35 @@ function setArmed(on) {
   }
 }
 
+const CTL_TIMEOUT_MS = 20000;   // fence push and verify are the slowest
+
 async function ctlPost(path, body, errEl) {
   errEl = errEl || $('ctlErr');
   errEl.textContent = '';
+  /* Every caller disables its button, awaits this, and re-enables. Without
+     a deadline a board that goes unreachable without a TCP reset leaves the
+     fetch pending forever and the button dead until the page is reloaded,
+     which on a filmed flight means the aircraft cannot be stopped from
+     here. AbortController gives the await an end. */
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), CTL_TIMEOUT_MS);
   try {
     const r = await fetch(path, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(body || {}),
+      body: JSON.stringify(body || {}), signal: ac.signal,
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.ok === false)
       errEl.textContent = j.error || ('HTTP ' + r.status);
     return j;
   } catch (e) {
-    errEl.textContent = String(e);
+    errEl.textContent = (e && e.name === 'AbortError')
+      ? `no answer from the board in ${CTL_TIMEOUT_MS / 1000}s: check the `
+        + `hotspot, then try again`
+      : String(e);
     return {};
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -1167,8 +1184,14 @@ function renderSelftest(c) {
     if (ctl.testStart) {                   // the run we watched just ended
       ctl.testStart = null;
       fill.style.width = '100%';
-      setTimeout(() => { bar.style.display = 'none'; fill.style.width = '0'; }, 400);
+      // Stored and cancelled on the next run: an un-cleared timer used to
+      // fire into a freshly started test and hide the bar mid-progress.
+      clearTimeout(ctl.stHideTimer);
+      ctl.stHideTimer = setTimeout(() => {
+        bar.style.display = 'none'; fill.style.width = '0';
+      }, 400);
     } else {
+      clearTimeout(ctl.stHideTimer);
       bar.style.display = 'none'; fill.style.width = '0';
     }
     $('stNote').textContent = st
@@ -1355,9 +1378,14 @@ function updateEditButtons() {
 }
 
 async function setMode(mode) {
+  const leaving = edit.mode;
   edit.mode = mode;
   edit.pick = null;
-  state.wpDirty = false;
+  // Clearing this unconditionally stranded an unsaved edit: clicking "Draw
+  // fence" instead of "Save" left the in-memory route different from the
+  // file with Save greyed out and no way to reach it again. Only a clean
+  // exit from editing clears it.
+  if (!mode && !leaving) state.wpDirty = false;
   if (!mode) canvasEl().style.cursor = '';
   if (mode === 'route') {
     $('wpNote').textContent = state.wpAvailable
@@ -1398,6 +1426,11 @@ async function livePoll() {
     else if (j.source !== 'link') state.live = null;   // mission owns the port
     state.liveErr = j.ok ? null : j.error;
   } catch { state.liveErr = 'no answer from the board'; }
+  // Computed in both branches above and previously read nowhere, so a
+  // repeatedly failing position poll told the operator nothing.
+  const note = $('satNote');
+  if (note && state.liveErr) note.textContent = 'aircraft position: '
+    + state.liveErr;
 }
 
 async function ctlRefresh() {
@@ -1967,7 +2000,7 @@ function render() {
     }
   }
 
-  chrome(ctx, w, h);
+  drawChrome(ctx, w, h);
 }
 
 function ring(ctx, p, r) {
@@ -2015,7 +2048,7 @@ function heatmap(ctx, w, h) {
   ctx.drawImage(off, 0, 0, w, h);
 }
 
-function chrome(ctx, w, h) {
+function drawChrome(ctx, w, h) {
   let m = Math.pow(10, Math.floor(Math.log10(100 / proj.s)));
   for (const k of [1, 2, 5, 10, 20, 50]) {
     if (m * k * proj.s >= 60) { m *= k; break; }
@@ -2197,13 +2230,16 @@ function wireEvents() {
     state.selected = ev.target.value;
     await loadEvents(); render(); stats(); table(); status(); detList(); profile();
   });
-  for (const id of ['ly-sat','ly-wp','ly-heat','ly-det','ly-drop','ly-abort',
+  // ly-sat is deliberately NOT in this list: it has its own handler below
+  // that resets tile state first. Having both meant two redraws per toggle,
+  // the first with the tile state half reset.
+  for (const id of ['ly-wp','ly-heat','ly-det','ly-drop','ly-abort',
                     'ly-track','ly-drone','ly-site'])
     $(id).addEventListener('change', render);
   // re-ticking "sat" after a failure is the retry: forget the dead images
   // and start again from the direct source
   $('ly-sat').addEventListener('change', ev => {
-    if (!ev.target.checked) { tileStatus(); return; }
+    if (!ev.target.checked) { tileStatus(); render(); return; }
     tiles.mode = 'direct'; tiles.cache.clear(); tiles.ok = tiles.failed = 0;
     tileStatus(); render();
   });

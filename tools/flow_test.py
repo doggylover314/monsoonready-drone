@@ -54,13 +54,13 @@ def ask(prompt):
 
 def cycle(m, ch, open_us, closed_us, dwell, ack_timeout):
     """Open the gate for `dwell` seconds, then close. True if both acked."""
-    t0 = time.time()
+    t0 = time.monotonic()
     a = send_and_ack(m, mavutil.mavlink.MAV_CMD_DO_SET_SERVO, ch, open_us,
                      timeout=ack_timeout)
     time.sleep(dwell)
     b = send_and_ack(m, mavutil.mavlink.MAV_CMD_DO_SET_SERVO, ch, closed_us,
                      timeout=ack_timeout)
-    actual = time.time() - t0
+    actual = time.monotonic() - t0
     ok = a == 'MAV_RESULT_ACCEPTED' and b == 'MAV_RESULT_ACCEPTED'
     if not ok:
         print(f"    gate commands: open {a}, close {b}")

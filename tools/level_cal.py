@@ -34,6 +34,7 @@ clearer message.
 import math
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -55,12 +56,25 @@ def read_trim(m, name):
     return None
 
 
-def is_armed(m):
-    """One fresh heartbeat's armed bit, or None if none arrives."""
-    hb = m.recv_match(type='HEARTBEAT', blocking=True, timeout=3)
-    if hb is None:
-        return None
-    return bool(hb.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+def is_armed(m, timeout=3.0):
+    """The autopilot's armed bit, or None if no autopilot heartbeat arrives.
+
+    Filtered to component 1. The ESP32 obstacle module heartbeats as
+    component 195 on the same bus and ArduPilot forwards it; an
+    onboard-controller heartbeat never sets the armed bit, so accepting
+    any heartbeat read "disarmed" on an armed aircraft. Same component-195
+    race as the 2026-08-15 mode-map bug.
+    """
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        hb = m.recv_match(type='HEARTBEAT', blocking=True, timeout=1)
+        if hb is None:
+            continue
+        if hb.get_srcComponent() != mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1:
+            continue
+        return bool(hb.base_mode
+                    & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+    return None
 
 
 def show(label, x, y):

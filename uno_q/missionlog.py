@@ -43,7 +43,7 @@ class MissionLog:
             mission_id = time.strftime('%Y%m%d_%H%M%S', time.localtime(now()))
         self.mission_id = mission_id
         self.path = os.path.join(missions_dir, f'mission_{mission_id}.jsonl')
-        self._f = open(self.path, 'a')
+        self._f = open(self.path, 'a', encoding='utf-8')
 
     def _w(self, e, **kw):
         kw['e'] = e

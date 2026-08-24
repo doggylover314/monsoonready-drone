@@ -55,8 +55,8 @@ def listen(port, baud):
             time.sleep(0.2)
             s.reset_input_buffer()
             data = bytearray()
-            end = time.time() + LISTEN_S
-            while time.time() < end:
+            end = time.monotonic() + LISTEN_S
+            while time.monotonic() < end:
                 chunk = s.read(256)
                 if chunk:
                     data.extend(chunk)

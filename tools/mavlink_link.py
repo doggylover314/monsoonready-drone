@@ -58,7 +58,11 @@ def require_port(conn):
     Ports move constantly here (Pixhawk USB is a ttyACM, the SiK radio and
     the ESP32 both want ttyUSB0, and whichever was plugged in first wins).
     """
-    if conn.startswith(('tcp:', 'udp:', 'tcpin:')) or os.path.exists(conn):
+    # Every network form pymavlink accepts, not just the three that were
+    # listed: udpin/udpout/tcpout/udpbcast were being rejected with a
+    # message claiming no serial devices existed.
+    if conn.startswith(('tcp:', 'tcpin:', 'tcpout:', 'udp:', 'udpin:',
+                        'udpout:', 'udpbcast:')) or os.path.exists(conn):
         return
     found = serial_candidates()
     msg = f"{conn} does not exist. "

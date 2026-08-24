@@ -49,7 +49,7 @@ IST = timezone(timedelta(hours=5, minutes=30), 'IST')
 
 def _uptime_s():
     try:
-        with open('/proc/uptime') as f:
+        with open('/proc/uptime', encoding='utf-8') as f:
             return float(f.read().split()[0])
     except (OSError, ValueError):
         return time.monotonic()   # non-Linux fallback (laptop unit tests)
@@ -68,19 +68,38 @@ def _trim_oldest(path, limit=MAX_BYTES):
         return
     if size <= limit:
         return
+    # Trimming replaces the inode, so a second instance of the same program
+    # appending to the old handle would lose every line it wrote afterwards.
+    # The lock makes concurrent trims exclusive; a holder that is mid-append
+    # simply trims later.
+    lock = path + '.trimlock'
+    try:
+        lock_fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return                            # another process is trimming
+    except OSError:
+        return
+    os.close(lock_fd)
     tmp = path + '.trim'
-    with open(path, 'rb') as src:
-        src.seek(size - limit)
-        src.readline()                    # discard the cut-in-half line
-        with open(tmp, 'wb') as dst:
-            dst.write(b'[boardlog] older lines trimmed here: file exceeded '
-                      b'100 MB at open\n')
-            while True:
-                chunk = src.read(1 << 20)
-                if not chunk:
-                    break
-                dst.write(chunk)
-    os.replace(tmp, path)
+    try:
+        with open(path, 'rb') as src:
+            src.seek(size - limit)
+            src.readline()                # discard the cut-in-half line
+            with open(tmp, 'wb') as dst:
+                dst.write(b'[boardlog] older lines trimmed here: file '
+                          b'exceeded 100 MB at open\n')
+                while True:
+                    chunk = src.read(1 << 20)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+        os.replace(tmp, path)
+    finally:
+        for junk in (lock, tmp):
+            try:
+                os.remove(junk)
+            except OSError:
+                pass
 
 
 class BoardLog:
@@ -99,8 +118,12 @@ class BoardLog:
         os.makedirs(log_dir, exist_ok=True)
         self.path = os.path.join(log_dir, f'{name}.log')
         _trim_oldest(self.path)
-        self._f = open(self.path, 'a', buffering=1)   # line buffered
+        self._f = open(self.path, 'a', buffering=1, encoding='utf-8')   # line buffered
         self.mirror = mirror
+        # Kept so close() can restore them; without this a post-close print()
+        # writes to a closed file and raises ValueError.
+        self._saved_stdout = sys.stdout
+        self._saved_stderr = sys.stderr
         if capture:
             try:
                 if not os.isatty(2):
@@ -140,7 +163,18 @@ class BoardLog:
         self._write('ERROR', msg)
 
     def close(self):
+        """Restore the real stdout/stderr, then close the file.
+
+        Order matters: leaving the capture in place after closing the file
+        makes every later print() raise ValueError, which _write does not
+        catch (it catches OSError). Restoring first means a post-close print
+        goes to the console instead of exploding.
+        """
+        for name, saved in (('stdout', self._saved_stdout),
+                            ('stderr', self._saved_stderr)):
+            if saved is not None and getattr(sys, name, None) is not saved:
+                setattr(sys, name, saved)
         try:
             self._f.close()
-        except OSError:
+        except (OSError, ValueError):
             pass

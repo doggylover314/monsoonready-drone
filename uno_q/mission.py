@@ -34,6 +34,7 @@ import socket
 import subprocess
 import time
 from dataclasses import dataclass, field
+from typing import Optional
 
 from detector import offset_latlon, dist_m
 # make_waypoints owns point-in-polygon and point-to-edge distance, so the
@@ -130,7 +131,7 @@ class MissionConfig:
     arm_retries: int = 12
     end_mode: str = 'RTL'
     # Base station launch argv (None = disabled).
-    basestation_cmd: list = None
+    basestation_cmd: Optional[list] = None
     basestation_port: int = 8080   # checked to prevent double-launch
 
 
@@ -226,6 +227,11 @@ class Mission:
         mlat = 111320.0
         mlon = mlat * math.cos(math.radians(lat0))
         if abs(mlon) < 1.0:
+            # Within ~0.0005 deg of a pole the east-west scale collapses and
+            # the containment test is meaningless. Said out loud rather than
+            # quietly answering "inside".
+            self.log("[mission] fence check DISABLED: this longitude scale "
+                     "is degenerate (are these coordinates near a pole?)")
             return True
         pts = [((a - lat0) * mlat, (b - lon0) * mlon) for a, b in poly]
         p = ((lat - lat0) * mlat, (lon - lon0) * mlon)
@@ -262,19 +268,25 @@ class Mission:
         self.rec.mission_start(cfg)
         if io.set_mode('GUIDED'):
             self._seen_guided = True
+            # Arm result must be checked: end here if refused, reporting the
+            # autopilot's own reason.
+            arm_t = time.monotonic()
+            if not io.arm(retries=cfg.arm_retries):
+                why = io.tel.prearm_messages(since_t=arm_t - 5.0)
+                self._set('NOARM', '; '.join(why) if why
+                          else 'the autopilot refused to arm and gave no '
+                               'reason')
+            else:
+                io.takeoff(cfg.survey_alt_m)
+                self._set('TAKEOFF')
         else:
-            self.log("[mission] GUIDED was accepted but never confirmed by a "
-                     "heartbeat; the override check stays disarmed until it is")
-        # Arm result must be checked: end here if refused, reporting the
-        # autopilot's own reason.
-        arm_t = time.monotonic()
-        if not io.arm(retries=cfg.arm_retries):
-            why = io.tel.prearm_messages(since_t=arm_t - 5.0)
-            self._set('NOARM', '; '.join(why) if why
-                      else 'the autopilot refused to arm and gave no reason')
-        else:
-            io.takeoff(cfg.survey_alt_m)
-            self._set('TAKEOFF')
+            # Every state handler below sends GUIDED-only commands, so arming
+            # into an unconfirmed mode would take off and then ignore every
+            # setpoint. NOARM is terminal: the loop below falls straight
+            # through to the same epilogue any other ending gets.
+            self._set('NOARM', 'GUIDED was accepted but never confirmed by a '
+                               'heartbeat, so the aircraft would have ignored '
+                               'every mission command; did not arm')
 
         while self.state not in self.TERMINAL:
             io.step()
@@ -397,6 +409,10 @@ class Mission:
                 if why != self._last_fix_gripe:
                     self.log(f"[mission] detection IGNORED, fix is poor: {why}")
                     self._last_fix_gripe = why
+                # Recorded like the fence rejection below: a puddle seen
+                # repeatedly under a bad fix otherwise leaves no trace at
+                # all in the mission JSONL, which is the evidence record.
+                self.rec.detection(det.lat, det.lon, det.confidence)
                 self.det.unskip(det.lat, det.lon)   # re-offer on a better fix
                 det = None
             else:

@@ -161,12 +161,24 @@ def connect_new(ssid, password, ifname=None):
         if password:
             add += ['wifi-sec.key-mgmt', 'wpa-psk']
         _run(add, timeout=SHORT_TIMEOUT)
+    elif password:
+        # A profile of this name already exists and may predate any security
+        # section. Setting key-mgmt only on creation meant the PSK below was
+        # handed to a profile not configured to use one, which fails with a
+        # message that blames the password.
+        _run(['connection', 'modify', ssid,
+              'wifi-sec.key-mgmt', 'wpa-psk'], timeout=SHORT_TIMEOUT)
     if not password:
         return connect_saved(ssid)
     fd, path = tempfile.mkstemp(prefix='mr_wifi_', text=True)
     try:
         os.fchmod(fd, 0o600)
-        with os.fdopen(fd, 'w') as f:
+        if '\n' in password or '\r' in password:
+            # The keyfile is line-based: a newline here ends the psk value
+            # early and everything after it is parsed as further settings.
+            raise WifiError('the password contains a line break, which this '
+                            'file format cannot carry')
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(f'802-11-wireless-security.psk:{password}\n')
         _run(['-w', '30', 'connection', 'up', 'id', ssid,
               'passwd-file', path], timeout=CONNECT_TIMEOUT)

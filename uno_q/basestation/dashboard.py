@@ -33,8 +33,11 @@ LOG_DIR = os.path.expanduser('~/logs')
 # Everything that opens the Pixhawk serial port exclusively. The dashboard's
 # own map link must stand down for any of them: losing that race aborts a
 # flight, or fails a param push with a busy port.
+# check_log.py is deliberately absent: it opens a .bin file, never the port.
 PIXHAWK_TOOLS = ('run_mission.py', 'test_everything.py', 'parameters.py',
-                 'bench.py', 'level_cal.py', 'wiring_check.py', 'check_log.py')
+                 'bench.py', 'level_cal.py', 'wiring_check.py', 'fence.py',
+                 'servo_jog.py', 'flow_test.py', 'esp32_mute.py',
+                 'ring_channels.py')
 
 log = None   # BoardLog, bound in main() for handler scope
 
@@ -60,7 +63,7 @@ def find_pids(needle):
 
 def tail(path, lines=14):
     try:
-        with open(path, errors='replace') as f:
+        with open(path, errors='replace', encoding='utf-8') as f:
             return ''.join(f.readlines()[-lines:])
     except OSError:
         return ''
@@ -83,7 +86,7 @@ def load_events(data_dir, mission_id):
     """Tolerant reader: a crash can truncate the last line; skip bad lines."""
     path = os.path.join(missions_dir(data_dir), f'mission_{mission_id}.jsonl')
     events = []
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         for line in f:
             try:
                 ev = json.loads(line)
@@ -116,7 +119,7 @@ def read_waypoints_tolerant(path):
     """
     wps, errors = [], []
     try:
-        f = open(os.path.expanduser(path))
+        f = open(os.path.expanduser(path), encoding='utf-8')
     except OSError as exc:
         return [], [str(exc)]
     with f:
@@ -181,7 +184,7 @@ def make_app(data_dir, control=None):
         p = os.path.join(data_dir, 'site_image.json')
         if not os.path.isfile(p):
             abort(404)
-        with open(p) as f:
+        with open(p, encoding='utf-8') as f:
             return jsonify(json.load(f))
 
     @app.get('/api/site_image')
@@ -189,7 +192,7 @@ def make_app(data_dir, control=None):
         p = os.path.join(data_dir, 'site_image.json')
         if not os.path.isfile(p):
             abort(404)
-        with open(p) as f:
+        with open(p, encoding='utf-8') as f:
             name = os.path.basename(json.load(f)['file'])
         return send_from_directory(data_dir, name)
 
@@ -200,17 +203,19 @@ def make_app(data_dir, control=None):
     def api_layout_get():
         if not os.path.isfile(layout_path):
             return jsonify({})
-        with open(layout_path) as f:
+        with open(layout_path, encoding='utf-8') as f:
             return jsonify(json.load(f))
 
     @app.post('/api/layout')
     def api_layout_post():
+        if not ctl:
+            abort(403)
         body = request.get_json(silent=True)
         if not isinstance(body, dict) or len(json.dumps(body)) > 100_000:
             abort(400)
         tmp = layout_path + '.tmp'
         os.makedirs(data_dir, exist_ok=True)
-        with open(tmp, 'w') as f:
+        with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(body, f)
         os.replace(tmp, layout_path)
         return jsonify({'ok': True})
@@ -229,7 +234,7 @@ def make_app(data_dir, control=None):
         st = None
         try:
             st_m = os.stat(selftest_path).st_mtime
-            with open(selftest_path) as f:
+            with open(selftest_path, encoding='utf-8') as f:
                 st = json.load(f)
             st['age_s'] = round(time.time() - st_m, 1)
         except (OSError, ValueError):
@@ -257,15 +262,19 @@ def make_app(data_dir, control=None):
     # port: run_mission.py and test_everything.py both take it exclusively,
     # and losing that race would abort a flight.
     live = {'io': None, 'fix': None, 'at': 0.0, 'hold': 0.0,
-            'lock': threading.Lock()}
+            'lock': threading.Lock(), 'swap': threading.Lock()}
 
     def port_owner():
         """Name of the tool currently holding the Pixhawk port, or None."""
         return next((n for n in PIXHAWK_TOOLS if find_pids(n)), None)
 
     def live_close(why):
-        io = live['io']
-        live['io'] = None
+        # threaded=True means another request can be inside api_live_position
+        # holding live['lock'] across an 8 s wait_ready. Take the handle out
+        # under the same lock so two closers cannot both see it.
+        with live['swap']:
+            io = live['io']
+            live['io'] = None
         if io is not None:
             try:
                 io.conn.close()
@@ -365,7 +374,7 @@ def make_app(data_dir, control=None):
                             'error': 'need 1..50 [lat,lon] pairs'}), 400
         path = os.path.expanduser(ctl['waypoints'])
         tmp = path + '.tmp'
-        with open(tmp, 'w') as f:
+        with open(tmp, 'w', encoding='utf-8') as f:
             f.write('# edited on the dashboard '
                     + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
             for lat, lon in wps:
@@ -399,6 +408,7 @@ def make_app(data_dir, control=None):
             if start is not None:
                 start = (float(start[0]), float(start[1]))
         except (TypeError, ValueError, IndexError):
+            log.warn('GENERATE refused: a numeric field could not be read')
             return jsonify({'ok': False, 'error': 'bad numbers'}), 400
         if not (1 <= rows <= 25) \
                 or (spacing is not None and not (1 <= spacing <= 50)) \
@@ -469,6 +479,7 @@ def make_app(data_dir, control=None):
                             'error': f'the Pixhawk link is busy '
                                      f'({busy} is running)'}), 409
         live_release(30, 'route generation needs the port')
+        io = None
         try:
             from make_waypoints import build_serpentine
             from mavlink_io import MavIO
@@ -613,12 +624,12 @@ def make_app(data_dir, control=None):
                 os.remove(dw.MANUAL_DONE)
             except OSError:
                 pass
-            with open(dw.MANUAL_REQ, 'w') as f:
+            with open(dw.MANUAL_REQ, 'w', encoding='utf-8') as f:
                 f.write(manual_dir)
             deadline = time.time() + 5.0
             while time.time() < deadline:
                 try:
-                    with open(dw.MANUAL_DONE) as f:
+                    with open(dw.MANUAL_DONE, encoding='utf-8') as f:
                         reply = json.load(f)
                     break
                 except (OSError, ValueError):
@@ -635,6 +646,7 @@ def make_app(data_dir, control=None):
             log(f'PHOTO: via worker: {name}')
             return jsonify({'ok': True, 'file': name})
         # No worker: open the camera directly here, briefly.
+        cap = None
         try:
             from camera import CameraError, open_camera
             import cv2
@@ -642,7 +654,11 @@ def make_app(data_dir, control=None):
             for _ in range(8):            # let auto-exposure settle
                 cap.grab()
             ok, frame = cap.read()
+            # Released in the finally below: a raise from grab()/read() used
+            # to jump past this line to the outer except and leak the handle,
+            # after which nothing could open the camera again.
             cap.release()
+            cap = None
             if not ok or frame is None:
                 raise CameraError(f'{node} opened but gave no frame')
             name = 'manual_' + dw.stamp_name(0)
@@ -652,6 +668,12 @@ def make_app(data_dir, control=None):
         except Exception as exc:                        # noqa: BLE001
             log.error(f'PHOTO: direct capture failed: {exc}')
             return jsonify({'ok': False, 'error': str(exc)}), 500
+        finally:
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception:                       # noqa: BLE001
+                    pass
 
     # Wi-Fi settings: passwords never logged or in command line (see wifi.py)
     # Switching networks kills the connection serving this page
@@ -801,7 +823,20 @@ def make_app(data_dir, control=None):
                                      f'The upload itself was not refused, so '
                                      f'this is storage or read-back, not your '
                                      f'drawing.'}), 500
-        log(f'FENCE: {note}; read back {len(back)} corners on a fresh link')
+        # "matched" has to mean the coordinates, not just the count.
+        # 1e-6 deg is about 0.11 m, well under the upload's own 1e-7
+        # rounding and far under any GPS error that matters here.
+        off = [i for i, (a, b) in enumerate(zip(poly, back), 1)
+               if abs(a[0] - b[0]) > 1e-6 or abs(a[1] - b[1]) > 1e-6]
+        if off:
+            log.error(f'FENCE read-back differs at corner(s) {off}')
+            return jsonify({'ok': False,
+                            'error': f'the Pixhawk stored {len(back)} corners '
+                                     f'but corner(s) {off} came back at '
+                                     f'different coordinates. Do not fly this '
+                                     f'fence.'}), 500
+        log(f'FENCE: {note}; read back {len(back)} corners on a fresh link '
+            f'and every coordinate matches')
         return jsonify({'ok': True, 'count': len(back),
                         'note': f'{len(back)} corners are in the Pixhawk '
                                 f'(read back and matched)'})

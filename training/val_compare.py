@@ -31,7 +31,7 @@ for label, weights in MODELS:
     r = YOLO(str(weights)).val(
         data=str(DATA),
         imgsz=640,
-        batch=16,
+        batch=8,
         project=str(ROOT / "runs"),
         name=f"val_{label}",
         exist_ok=True,

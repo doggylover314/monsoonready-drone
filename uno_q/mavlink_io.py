@@ -43,9 +43,10 @@ SETPOINT_RESEND_S = 0.2
 # Component 191 heartbeat rate (1 Hz, MAVLink convention).
 HEARTBEAT_PERIOD_S = 1.0
 
-# Gate travel is 560us closed to 1760us open; these bounds add margin
-# around that to catch typos, and are shared with dropper.py. Board
-# SERVO9_MIN/_MAX are 500/1800.
+# Gate travel is 500us closed to 1600us open (dropper.py). These bounds
+# catch typos and are shared with it. The closed end sits exactly on
+# PWM_MIN_US, so there is no margin below it: SERVO9_MIN must stay <= 500
+# or the close is clamped short. Board SERVO9_MIN/_MAX are 500/1800.
 PWM_MIN_US = 500
 PWM_MAX_US = 1800
 
@@ -399,11 +400,18 @@ class MavIO:
         """Arm and return success or failure. Default retries: 12 x 5 s, for prearm settling.
 
         The reason lands in tel.statustexts. This never raises, so the
-        caller must act on a False itself.
+        caller must act on a False itself. command_ack signals refusal by
+        raising, so both of its failure exits are converted here; letting
+        them escape turned a refused arm into a crash, and an emergency RTL
+        commanded at a disarmed aircraft standing on the ground.
         """
-        return self.command_ack(
-            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, p1=1,
-            timeout=timeout, retries=retries, retry_failed=True)
+        try:
+            return self.command_ack(
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, p1=1,
+                timeout=timeout, retries=retries, retry_failed=True)
+        except (RuntimeError, TimeoutError) as exc:
+            self.log(f"[mavio] arm refused: {exc}")
+            return False
 
     def takeoff(self, alt_m):
         """Takeoff to relative altitude in meters."""

@@ -23,7 +23,6 @@ import argparse
 import sys
 import time
 
-from pymavlink import mavutil
 
 from detector import FakeDetector, offset_latlon
 from dropper import LogDropper

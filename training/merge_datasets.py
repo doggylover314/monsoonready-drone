@@ -26,6 +26,16 @@ import shutil
 import sys
 from pathlib import Path
 
+
+def _free_stem(dest_dir, stem, suffix):
+    """stem, or stem_2 / stem_3 ... if the file already exists."""
+    if not (dest_dir / (stem + suffix)).exists():
+        return stem
+    n = 2
+    while (dest_dir / f"{stem}_{n}{suffix}").exists():
+        n += 1
+    return f"{stem}_{n}"
+
 import yaml
 
 ROOT = Path(__file__).resolve().parent
@@ -104,8 +114,16 @@ def main() -> None:
             for img in img_dir.iterdir():
                 if img.suffix.lower() not in IMG_EXTS:
                     continue
-                stem = f"{exp.name}_{img.stem}"
-                shutil.copy2(img, OUT / "images" / split / (stem + img.suffix.lower()))
+                # valid/ and test/ both map to split "val", so the same
+                # basename can arrive twice. The old code overwrote silently
+                # while counting both, overstating what was on disk. The
+                # image and its label take the SAME disambiguated stem so
+                # they stay paired.
+                stem = _free_stem(OUT / "images" / split,
+                                  f"{exp.name}_{img.stem}",
+                                  img.suffix.lower())
+                shutil.copy2(img, OUT / "images" / split
+                             / (stem + img.suffix.lower()))
                 lbl = lbl_dir / (img.stem + ".txt")
                 dst_lbl = OUT / "labels" / split / (stem + ".txt")
                 if lbl.exists():

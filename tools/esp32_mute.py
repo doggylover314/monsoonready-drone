@@ -86,8 +86,8 @@ def is_armed(m, timeout=8.0):
     A reboot in flight is the one way this script could hurt anything, so it
     refuses to act on anything but a heartbeat it has actually seen.
     """
-    end = time.time() + timeout
-    while time.time() < end:
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
         hb = m.recv_match(type='HEARTBEAT', blocking=True, timeout=2)
         if hb is None:
             continue
@@ -104,8 +104,8 @@ def ring_traffic(m, seconds=6.0):
     of any origin. No stream request is needed, because forwarded packets
     arrive unbidden; that is the whole problem being measured.
     """
-    end, from_esp, obstacle = time.time() + seconds, 0, 0
-    while time.time() < end:
+    end, from_esp, obstacle = time.monotonic() + seconds, 0, 0
+    while time.monotonic() < end:
         msg = m.recv_match(blocking=True, timeout=1)
         if msg is None:
             continue

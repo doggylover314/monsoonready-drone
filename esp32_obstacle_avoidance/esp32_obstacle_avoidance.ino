@@ -281,7 +281,7 @@ void loop() {
       char label[8];
       if (ch == UP_SENSOR_CHANNEL) snprintf(label, sizeof(label), "up");
       else                         snprintf(label, sizeof(label), "ch%u", ch);
-      if (ch < NUM_RING_SENSORS && !RING_SENSOR_FITTED[ch])
+      if ((ch < NUM_RING_SENSORS ? !RING_SENSOR_FITTED[ch] : !UP_SENSOR_FITTED))
         DEBUG_SERIAL.printf(" %s:--", label);          // not fitted
       else if (sensors.channelHealthy(ch))
         DEBUG_SERIAL.printf(" %s:ok", label);

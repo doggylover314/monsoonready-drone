@@ -86,13 +86,32 @@ def await_param(m, name, timeout=10.0):
     return None
 
 
-def write_param(m, name, value, attempts=3):
-    """Write parameter and verify board stored exact value. False on clamp/refusal."""
+def _is_slow_link(m):
+    """True for a SiK radio link. Network links and USB read as fast.
+
+    pymavlink sets .baud on serial connections only, so a missing attribute
+    means TCP/UDP (SITL), which is not slow.
+    """
+    try:
+        return int(getattr(m, 'baud', 115200)) <= 57600
+    except (TypeError, ValueError):
+        return False
+
+
+def write_param(m, name, value, attempts=3, timeout=None):
+    """Write parameter and verify board stored exact value. False on clamp/refusal.
+
+    timeout defaults by link speed. A SiK at 57600 is far slower than the
+    number suggests, and a flat 2 s reported slow-but-successful writes as
+    "NO ECHO" or "REFUSED OR CLAMPED" and exited 1.
+    """
+    if timeout is None:
+        timeout = 12.0 if _is_slow_link(m) else 4.0
     for _ in range(attempts):
         m.mav.param_set_send(m.target_system, m.target_component,
                              name.encode(), float(value),
                              mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
-        p = await_param(m, name, timeout=2.0)
+        p = await_param(m, name, timeout=timeout)
         if p is not None:
             return f32(p.param_value) == f32(value), p.param_value
     return False, None

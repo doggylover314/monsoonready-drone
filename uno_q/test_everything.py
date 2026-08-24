@@ -120,9 +120,15 @@ def main():
     _write(out_path, [], log, t_start, running=True, plan=plan)
 
     if mission_running():
-        report('mission-clash', False,
-               'a mission is RUNNING; refusing to touch its camera and '
-               'serial port. Stop the mission first.')
+        # NOT via report(): that returns early for any name outside
+        # COMPONENTS, which silently dropped this refusal and left _finish
+        # writing an empty result set that scored as zero failures while the
+        # process exited 1. The dashboard showed a clean run.
+        detail = ('a mission is RUNNING; refusing to touch its camera and '
+                  'serial port. Stop the mission first.')
+        results.append({'name': 'mission-clash', 'ok': False,
+                        'detail': detail})
+        log.error(f'FAIL  mission-clash: {detail}')
         _finish(out_path, results, log, t_start, plan)
         return 1
 
@@ -130,7 +136,7 @@ def main():
     if want('logs'):
         try:
             probe = os.path.expanduser('~/logs/.write_probe')
-            with open(probe, 'w') as f:
+            with open(probe, 'w', encoding='utf-8') as f:
                 f.write('ok')
             os.remove(probe)
             report('logs', True, '~/logs writable')
@@ -153,6 +159,7 @@ def main():
     # camera
     if want('camera'):
         cam_deadline = min(time.monotonic() + CAMERA_BUDGET_S, deadline)
+        cap = None
         try:
             cap, node = open_camera(args.camera, log=log)
             ok, frame = cap.read()
@@ -166,9 +173,19 @@ def main():
                 report('camera', True, f'{node}, {w}x{h} frame saved to {snap}')
             else:
                 report('camera', False, f'{node} opened but produced no frame')
-            cap.release()
         except CameraError as exc:
             report('camera', False, str(exc))
+        except Exception as exc:                        # noqa: BLE001
+            # Anything else used to escape here, leaking the V4L2 handle and
+            # killing the run before _finish, which left selftest.json stuck
+            # at running: true forever and the dashboard spinning.
+            report('camera', False, f'{type(exc).__name__}: {exc}')
+        finally:
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception:                       # noqa: BLE001
+                    pass
 
     # Nothing left needs the aircraft (e.g. --only logs,disk): stop before
     # opening a serial port for no reason.
@@ -413,7 +430,7 @@ def _write(out_path, results, log, t_start, running, plan=None):
     try:
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         tmp = out_path + '.tmp'
-        with open(tmp, 'w') as f:
+        with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(payload, f, indent=1)
         os.replace(tmp, out_path)
     except OSError as exc:

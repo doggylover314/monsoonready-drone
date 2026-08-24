@@ -2898,3 +2898,115 @@ ADJACENT SESSION between 13:19 and 13:45, stacked on top of mine (ecf6057 the
 sessions were working the same repo at once and picked up the same flags. No
 conflict, and the audit even re-anchored its line numbers around my commit
 landing mid-run, but SESSION CONTINUITY did not show either of us. Check it.
+
+### 2026-08-24 ~14:30 IST: 95-FINDING AUDIT WORKED THROUGH. ~70 FIXED
+
+User supplied 95 findings (73 from an agent audit, 22 his own). Line numbers
+were against ecf6057, ten commits behind, so everything was located by content.
+
+FLIGHT-CRITICAL, all verified in source before touching:
+- **`MavIO.arm()` could not return False.** `command_ack` exits only by
+  `return True` or by raising, so mission's NOARM branch was dead code: a real
+  refusal escaped as a crash and run_mission commanded an emergency RTL at a
+  disarmed aircraft on the ground, logging CRASHED:IDLE instead of the
+  autopilot's own reason. Now catches RuntimeError/TimeoutError and returns
+  False, which is what its docstring always promised.
+- **An unconfirmed GUIDED no longer arms.** It logged and fell through to arm
+  and takeoff, after which every state handler sent GUIDED-only commands to an
+  aircraft that would ignore them. Restructured so NOARM is set instead;
+  deliberately NOT an early return, which would have skipped the run epilogue.
+- **Fence read-back could truncate silently.** It re-requested `len(got)`
+  rather than the lowest missing seq, so an out-of-order item spun on an index
+  it already had, and a dropped item was never re-requested at all: it stalled
+  to the 20 s deadline and returned a partial list that the dashboard reported
+  as "read back and matched". Now: lowest-missing seq, per-item retry capped
+  at 3, incompleteness logged, and the dashboard compares COORDINATES (1e-6
+  deg, ~0.11 m) not just the count. Tested against ordered, out-of-order and
+  dropped-item message scripts.
+- **A dead camera never tripped the blind abort** and **a cv2.error in the
+  manual-photo path killed the worker**, taking the detector stale mid-survey
+  while the dashboard's photo button waited forever for a reply that was never
+  written. Both fixed; take_manual_photo now answers on every exit.
+- **`level_cal.is_armed()` accepted any HEARTBEAT.** The ESP32 heartbeats as
+  component 195 and never sets the armed bit, so this read "disarmed" on an
+  armed aircraft, and it is the only guard before PREFLIGHT_CALIBRATION. Same
+  component-195 race as the 2026-08-15 mode-map bug. Now filtered to comp 1.
+- **ESP32: an all-down bus stalled ArduPilot into `PRX1: No Data`.** Outside
+  the 30 s bus-clear window `maintain()` fell through to the per-channel
+  round-robin, each blocking ~1.07 s, well past ArduPilot's 500 ms proximity
+  timeout. That is exactly the prearm refusal that blocked last night's flight.
+  All-down now waits for the next bus clear instead. **NEEDS FLASHING; the
+  assistant has never flashed the board and did not now.**
+- **test_everything's mission-clash refusal was unreachable.** `report()`
+  drops any name not in COMPONENTS, so the refusal was never recorded and
+  `_finish` wrote an empty result set scoring zero failures: a clean-looking
+  dashboard on a run that exited 1.
+- **start_dashboard.sh printed "dashboard UP" when it had not started.** It
+  checked "some matching process exists" rather than the PID it launched, after
+  a flat 1 s grace, so an old process still holding 8080 killed the new one
+  silently. Now waits for the port, escalates to SIGKILL, checks `kill -0` on
+  its own PID, anchors the pkill pattern to the resolved path (it could signal
+  any python process whose argv contained the substring), and logs to
+  ~/logs/dashboard.log per SCOPE RULES 1. Same anchoring in stop/diag.
+- **Dashboard control buttons could stick forever.** `ctlPost` had no timeout,
+  so an unreachable board left every button disabled until a page reload,
+  including STOP. 20 s AbortController with a readable message.
+- **The ARM window still never expired** in the shipped file and is fixed
+  (timer starts only on the false->true transition), re-verified in a browser.
+
+GEOMETRY (the part rebuilt yesterday, which had NO test coverage):
+- `footprint_track_m` had a 30-degree cliff: yaw 45 silently swapped axes. Now
+  raises unless the mount is a multiple of 90.
+- `camera_to_ned` and both detector constructors defaulted mount_yaw to 0.0
+  while the module constant is 90.0. Defaults now point at the constant. This
+  BROKE nine existing assertions in test_camera_geom, which were asserting
+  unrotated behaviour: they now pin mount_yaw_deg=0 explicitly.
+- Added real coverage: 16 new assertions over footprint_track_m and
+  spacing_for_overlap, expectations derived from the geometry rather than from
+  the code, plus the axis-alignment refusals and the 1 m floor. The vfov
+  assertion no longer reads cam.f_px off the object under test.
+- run_mission logged `footprint_m` (axis-labelled) as a ground footprint, so
+  it printed "5.3 x 3.0" when across-track is 3.0. Now uses footprint_track_m
+  and says which side is which.
+- **Detector sharpness was measured over the whole 640x640 letterbox, 44% of
+  which is zero-variance grey padding. Measured: every logged number was
+  exactly 44% low.** Now measured on the image region only. NOTE: last night's
+  darkness argument compared 52 against 105, both deflated by the same factor,
+  so that RATIO and its conclusion are unaffected.
+
+ALSO FIXED: detector site blacklisting before mission validation (already done
+earlier today); poor-fix rejections now recorded to the mission JSONL; fence
+check near a pole says so instead of silently returning True; CLIMB timeout;
+worker conf published and mismatched workers stopped rather than double-opened;
+`[A,B,A]` zero-area fence rejected; dropper constructor dwell validated;
+/api/layout POST guarded; live_close race under threaded=True; unbound `io` in
+generate's finally; silent 400s logged; PIXHAWK_TOOLS corrected in BOTH
+directions (check_log.py removed, fence/servo_jog/flow_test/esp32_mute/
+ring_channels added); boardlog close() restores stdout/stderr and trim takes a
+lock; wifi key-mgmt set on existing profiles and newline passwords refused;
+predict centroid no longer walks outside its members; calibrate_camera uses
+open_camera; check_log throttle read one sample late; wiring_check uses the
+shared connect(); parameters write timeout scales to the link; require_port
+accepts udpin/udpout/tcpout/udpbcast; ring up-sensor stats; monotonic clocks in
+flow_test/esp32_mute/find_pixhawk_uart; baud lists unified; merge_datasets
+collisions; val_compare batch 8; 20 open() calls given encoding.
+
+NOT DONE, deliberately, and each is the user's call:
+- Manual-photo handshake still uses two fixed global filenames with no request
+  id. Fixing it properly means a protocol change on both sides hours before a
+  flight.
+- Tooltip interpolation into innerHTML. The user himself downgraded this: every
+  value is server-generated from a fixed vocabulary and mission ids are
+  regex-gated, so it is unescaped interpolation, not a vulnerability.
+- `mavlink_proximity.cpp` time_usec 32-bit wrap (~71.6 min). Flight times are
+  far under it and whether ArduPilot mishandles it is unverified from source.
+- Panel resize hardcoded 32 / 11*10; tileFailed not resetting tiles.ok;
+  board_setup.sh indentation literal and set -eu.
+
+VERIFICATION: every tracked .py compiles; every .sh parses; a static
+name-resolution pass over all tracked Python finds nothing (the two remaining
+hits are closures over enclosing parameters). Geometry test passes. Endpoint
+smoke test at 5 m gives 20 waypoints on 4 rows with a 3.38 m longest leg, and
+the centre line 5 waypoints on 14 m. **Caught two of my own NameErrors this
+session (missing `time` in level_cal, missing `statistics` in spotcheck) that
+py_compile cannot see; the name checker is now part of the loop.**

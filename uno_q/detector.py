@@ -7,7 +7,8 @@ import math
 import os
 import time
 
-from camera_geom import camera_to_ned, ground_area_m2, letterbox_to_frame
+from camera_geom import (MOUNT_YAW_DEG, camera_to_ned, ground_area_m2,
+                         letterbox_to_frame)
 
 # A rangefinder reading older than this is not trusted as an AGL source.
 RNG_FRESH_S = 1.0
@@ -195,7 +196,7 @@ class OnnxDetector(_RowResolver):
 
     def __init__(self, model_path, camera='auto', conf=0.5, interval_s=1.0,
                  skip_radius_m=8.0, frame_source=None, log=print,
-                 geom=None, mount_yaw_deg=0.0):
+                 geom=None, mount_yaw_deg=MOUNT_YAW_DEG):
         import numpy as np
         ort = quiet_import_onnxruntime()
         self._init_resolver(conf, skip_radius_m, geom, mount_yaw_deg, log)
@@ -267,8 +268,13 @@ class OnnxDetector(_RowResolver):
         # invisible to the model itself. It gates nothing yet: no in-flight
         # distribution exists yet to pick a threshold from. Absolute values mean
         # nothing across scenes, so compare them only within one flight.
+        # Measured on the IMAGE ONLY, not the letterboxed square. At 1280x720
+        # the grey padding is ~44% of that square and has zero variance, so
+        # including it deflated every number the threshold would be chosen
+        # from, by roughly that fraction.
         self.last_sharpness = float(self._cv2.Laplacian(
-            self._cv2.cvtColor(boxed, self._cv2.COLOR_BGR2GRAY),
+            self._cv2.cvtColor(boxed[top:top + nh, left:left + nw],
+                               self._cv2.COLOR_BGR2GRAY),
             self._cv2.CV_64F).var())
         x = boxed[:, :, ::-1].transpose(2, 0, 1)[None].astype(np.float32) / 255
         out = self.sess.run(None, {self._in: x})[0][0]
@@ -325,7 +331,7 @@ class FileDetector(_RowResolver):
     _HIST_LEN = 400            # ~20s of snapshots at the 0.05s cap
 
     def __init__(self, path, conf=0.5, skip_radius_m=8.0, log=print,
-                 geom=None, mount_yaw_deg=0.0, stale_s=None):
+                 geom=None, mount_yaw_deg=MOUNT_YAW_DEG, stale_s=None):
         import collections
         import json
         self._json = json
