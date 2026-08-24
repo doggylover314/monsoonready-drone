@@ -177,6 +177,49 @@
   #edBox button { font-size: 12px; padding: 3px 8px; }
   #edNote { margin-top: 5px; color: var(--ink-2); }
   #edNote.bad { color: var(--critical); }
+
+  /* MAP HEADER: ONE LINE, ALWAYS (user, 2026-08-24: "I hate the way just a
+     couple of buttons overflow to the next line"). The header and this bar
+     both used to wrap, so adding a button re-flowed the row and the map
+     jumped down a line. Now nothing wraps; when the panel is genuinely too
+     narrow the bar scrolls sideways instead, which keeps every control
+     reachable without ever changing the header's height.
+
+     What yields when space runs short is the two note spans, by ellipsis:
+     they are prose and can be truncated. Checkboxes and buttons are targets
+     you have to be able to hit, so they never shrink. */
+  .panel[data-id=map] .ph { flex-wrap: nowrap; }
+  /* With the header no longer wrapping, flex squeezes its text children down
+     to min-content instead, and "Site map" breaks after "Site" - two lines
+     from a rule meant to guarantee one. The title is fixed width and never
+     shrinks; the subtitle is decoration, so it gives up its space FIRST
+     (shrink 999 against the bar's 1) and ellipsises rather than pushing the
+     controls into a sideways scroll. */
+  .panel[data-id=map] .ph .t { flex: none; white-space: nowrap; }
+  .panel[data-id=map] .ph .sub {
+    flex: 0 999 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #mapBar {
+    display: flex; align-items: center; gap: 10px; font-size: 12px;
+    margin-left: 6px; flex-wrap: nowrap;
+    min-width: 0;            /* lets the bar shrink inside the header ... */
+    overflow-x: auto;        /* ... and scroll rather than wrap or clip */
+    scrollbar-width: none;   /* the bar is short; a scrollbar would cost
+                                more height than it saves */
+  }
+  #mapBar::-webkit-scrollbar { display: none; }
+  #mapBar > * { flex: none; }
+  #mapBar label { white-space: nowrap; }
+  #mapBar button { font-size: 12px; padding: 2px 8px; }
+  #mapBar #satNote, #mapBar #wpNote {
+    font-size: 11.5px; color: var(--muted);
+    flex: 0 1 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #gpsNote { color: var(--muted); white-space: nowrap; }
+  #gpsNote.bad { color: var(--critical); font-weight: 600; }
+  #gpsNote.ok { color: var(--good); }
   .legend {
     display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center;
     padding: 6px 12px; color: var(--ink-2); font-size: 12px;
@@ -648,8 +691,9 @@ function buildPanels() {
   // map layer toggles live in the map panel's header, after the title
   const mapPh = document.querySelector('.panel[data-id=map] .ph');
   const lay = document.createElement('span');
-  lay.style.cssText = 'display:inline-flex;gap:10px;flex-wrap:wrap;font-size:12px;margin-left:6px';
+  lay.id = 'mapBar';
   lay.innerHTML = `
+    <span id="gpsNote" title="Satellites and HDOP straight off the flight controller. HDOP is the GPS's own estimate of horizontal position quality: under about 1.4 is good, and a large value means the reported position can be tens of metres out. On 2026-08-23 this read 99.99 under tree canopy and the map was more than 10 m wrong.">GPS –</span>
     <label><input type="checkbox" id="ly-sat" checked> sat</label>
     <label><input type="checkbox" id="ly-wp" checked> route</label>
     <label><input type="checkbox" id="ly-fence" checked> fence</label>
@@ -660,15 +704,15 @@ function buildPanels() {
     <label><input type="checkbox" id="ly-track" checked> track</label>
     <label><input type="checkbox" id="ly-drone" checked> drone</label>
     <label id="ly-site-label" style="display:none"><input type="checkbox" id="ly-site" checked> site</label>
-    <span id="satNote" style="font-size:11.5px;color:var(--muted)"></span>
-    <button id="wpEdit" style="display:none;font-size:12px;padding:2px 8px">Edit route</button>
-    <button id="fnEdit" style="display:none;font-size:12px;padding:2px 8px">Draw fence</button>
-    <button id="fnPush" style="display:none;font-size:12px;padding:2px 8px">Push fence</button>
-    <button id="satAlign" style="font-size:12px;padding:2px 8px" title="The satellite image is georeferenced by its supplier and can be several metres out. Park the aircraft somewhere you can recognise from above, click this, then click the spot in the image where the aircraft actually is. The image moves to agree with the aircraft.">Align imagery</button>
-    <button id="satClear" style="display:none;font-size:12px;padding:2px 8px" title="Forget the imagery correction and draw the tiles where the supplier puts them">Clear align</button>
-    <button id="wpSave" style="display:none;font-size:12px;padding:2px 8px">Save</button>
-    <button id="wpRevert" style="display:none;font-size:12px;padding:2px 8px">Cancel</button>
-    <span id="wpNote" style="font-size:11.5px;color:var(--muted)"></span>`;
+    <span id="satNote"></span>
+    <button id="wpEdit" style="display:none">Edit route</button>
+    <button id="fnEdit" style="display:none">Draw fence</button>
+    <button id="fnPush" style="display:none">Push fence</button>
+    <button id="satAlign" title="The satellite image is georeferenced by its supplier and can be several metres out. Park the aircraft somewhere you can recognise from above, click this, then click the spot in the image where the aircraft actually is. The image moves to agree with the aircraft.">Align imagery</button>
+    <button id="satClear" style="display:none" title="Forget the imagery correction and draw the tiles where the supplier puts them">Clear align</button>
+    <button id="wpSave" style="display:none">Save</button>
+    <button id="wpRevert" style="display:none">Cancel</button>
+    <span id="wpNote"></span>`;
   mapPh.insertBefore(lay, mapPh.querySelector('.x'));
   applyLayout();
   buildPanelMenu();
@@ -1493,6 +1537,42 @@ async function livePoll() {
   // link from repainting the canvas once a second for nothing.
   const after = state.live ? state.live.lat + ',' + state.live.lon : '';
   if (after !== before) render();
+  gpsNote();
+}
+
+/* Satellites and HDOP in the map header. HDOP is the receiver's own estimate
+   of horizontal quality, and it is the number that explains a wrong-looking
+   position: on 2026-08-23 it read 99.99 under tree canopy, the map was more
+   than 10 m out, and nothing on this page said why. 1.4 is ArduPilot's own
+   arming threshold (GPS_HDOP_GOOD defaults to 140), so it is the line drawn
+   here too rather than one invented for the display. */
+function gpsNote() {
+  const el = $('gpsNote');
+  if (!el) return;
+  const f = state.live;
+  if (!f || (f.sats == null && f.hdop == null)) {
+    el.textContent = 'GPS –';
+    el.className = '';
+    el.title = 'No GPS reading. Either the Pixhawk link is not open, or a '
+      + 'mission owns it and has not written a fix yet.';
+    return;
+  }
+  const sats = f.sats == null ? '?' : f.sats;
+  const hdop = f.hdop == null ? '?' : f.hdop.toFixed(2);
+  el.textContent = `GPS ${sats} sats · HDOP ${hdop}`;
+  // Unknown is not good news and must not read as good: only a measured
+  // value inside both limits earns the green.
+  const known = f.sats != null && f.hdop != null;
+  const good = known && f.sats >= 6 && f.hdop <= 1.4;
+  const bad = known && (f.sats < 6 || f.hdop > 2.5);
+  el.className = bad ? 'bad' : good ? 'ok' : '';
+  el.title = bad
+    ? `Poor fix: ${sats} satellites, HDOP ${hdop}. The reported position can `
+      + `be many metres out, the fence may refuse arming, and a detection `
+      + `latched now would be flown to the wrong place. Move clear of tree `
+      + `canopy and walls and wait for it to settle.`
+    : `${sats} satellites, HDOP ${hdop}. Under about 1.4 is good; ArduPilot's `
+      + `own arming threshold is GPS_HDOP_GOOD 1.4.`;
   // Computed in both branches above and previously read nowhere, so a
   // repeatedly failing position poll told the operator nothing.
   const note = $('satNote');

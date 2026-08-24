@@ -3646,3 +3646,50 @@ it resolved before the POST landed. It now returns the promise.
 
 NOT DONE, still the user's call: HDOP is still neither returned by
 api_live_position nor displayed. Satellite count IS in the aircraft tooltip.
+
+### 2026-08-24 ~19:40 IST: GPS quality in the map header, and that header never wraps again (both user-ordered)
+
+USER: "Show HDOP and sats somewhere near the top above the map, not next to
+the drone dot. Also, make it so that everything on that top bar stays in one
+line, I hate the way just a couple of buttons overflow to the next line."
+
+GPS READOUT: new #gpsNote, FIRST item in the map header bar, reading
+"GPS 13 sats - HDOP 0.83". Fed by the 1 Hz position poll, so it is as live as
+the dot. hdop now travels in api_live_position's fix dict (it was populated in
+tel from GPS_RAW_INT all along and simply never sent).
+
+THRESHOLDS ARE NOT INVENTED FOR THE DISPLAY: green needs sats >= 6 AND
+hdop <= 1.4, and 1.4 is ArduPilot's own GPS_HDOP_GOOD arming default. Red is
+sats < 6 or hdop > 2.5. Anything between is plain grey, which is honest about
+being neither. A value that is UNKNOWN never earns green: partial telemetry
+reading as a good fix is exactly the failure this is meant to prevent.
+Verified against the real 2026-08-23 numbers: 0 sats / HDOP 99.99 renders red;
+13 sats / 0.83 renders green; 13 sats with hdop missing stays grey.
+
+ONE-LINE HEADER, and the cause was subtler than it looked. Both .ph and the
+inline-styled layer span carried flex-wrap: wrap, so every button added over
+the last two days re-flowed the row and pushed the map down. Setting nowrap
+alone was NOT enough and introduced a worse bug: flex then squeezed the header's
+TEXT children to min-content instead, and "Site map" broke after "Site", giving
+two lines from a rule meant to guarantee one. Caught only because the header
+height was measured rather than eyeballed.
+
+FINAL RULE SET (CSS now, inline styles removed so the two cannot fight):
+  .panel[data-id=map] .ph   flex-wrap: nowrap
+  .ph .t                    flex: none, nowrap        (title never shrinks)
+  .ph .sub                  flex 0 999 auto, ellipsis (decoration yields FIRST)
+  #mapBar                   nowrap, min-width 0, overflow-x auto, no scrollbar
+  #mapBar > *               flex: none                (hit targets never squash)
+  #mapBar #satNote/#wpNote  ellipsis                  (prose yields next)
+So the order of sacrifice is: subtitle, then the two note strings, then the bar
+scrolls sideways. Buttons and checkboxes are never shrunk or hidden.
+
+MEASURED at panel widths 1600 / 1100 / 900 / 600 / 380 px with EVERY normally
+hidden button forced visible and both note strings at full length: header
+height a constant 37.4 px at all five, one line at all five, title one line,
+subtitle one line, and the page never scrolls horizontally. Before this change
+the same header measured 51.7 px wide and 64 px narrow, i.e. it was wrapping,
+which is the thing the user was complaining about.
+
+Only console error remains /api/site_meta 404, the empty-scratch-data-dir case,
+absent on the board.

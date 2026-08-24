@@ -477,10 +477,14 @@ def make_app(data_dir, control=None):
                 io.step()
             t = io.tel
             if t.lat is not None and (abs(t.lat) > 0.01 or abs(t.lon) > 0.01):
+                # hdop travels with the fix because it is the number that
+                # explains a wrong-looking position, and on 2026-08-23 it
+                # read 99.99 while nothing on this page said so.
                 live['fix'] = {'lat': t.lat, 'lon': t.lon, 'alt': t.rel_alt_m,
                                'rng': t.rng_m if t.rng_valid else None,
                                'heading': t.heading_deg, 'mode': t.mode,
-                               'armed': bool(t.armed), 'sats': t.sats}
+                               'armed': bool(t.armed), 'sats': t.sats,
+                               'hdop': t.hdop}
                 live['at'] = time.time()
             return jsonify({
                 'ok': True, 'source': 'link', 'fix': live['fix'],
