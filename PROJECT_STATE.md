@@ -3693,3 +3693,73 @@ which is the thing the user was complaining about.
 
 Only console error remains /api/site_meta 404, the empty-scratch-data-dir case,
 absent on the board.
+
+### 2026-08-24 ~22:50 IST: THE PROJECT MOVED OFF THE /media/sleuther/Stuff DRIVE (user, that drive is being removed entirely)
+
+NEW LOCATIONS, and these are now the only truth:
+    repo   /home/sleuther/Stuff/Coding/Robu AI Challenge   (was /media/sleuther/Stuff/Robu AI Challenge)
+    SITL   /home/sleuther/Stuff/ardupilot-SITL             (was /media/sleuther/Stuff/ardupilot-SITL)
+    tools  /home/sleuther/Stuff/local-tools                (was /media/sleuther/Stuff/local-tools)
+
+Copied with rsync -a, then verified byte-for-byte with a dry-run --delete
+comparison: 0 files differ on all three. 11.65 GB, 2.12 GB, 6.5 KB. Different
+filesystems (nvme1n1p1 -> nvme0n1p2), so this was a real copy, not a rename.
+THE ORIGINALS WERE NOT DELETED. Wiping the drive is the user's call.
+
+GIT NEEDED ALMOST NOTHING, checked rather than assumed: working tree was clean
+and fully pushed before the move, no worktrees, no objects/info/alternates, no
+absolute paths in .git/config or hooks, no core.worktree, no global
+safe.directory entries. After the move: correct toplevel, origin unchanged
+(github.com/doggylover314/monsoonready-drone), main tracking origin/main, 0
+ahead and 0 behind. A git repository is path-independent; the breakage is
+always elsewhere.
+
+WHAT ACTUALLY BROKE, and what was done about each:
+- BOTH VENVS. A venv hard-codes its own location in every console-script
+  shebang, in the activate scripts, and in pyvenv.cfg. Rewrote 56 files under
+  the repo .venv and 34 under the SITL .venv. Note both the old and new repo
+  paths contain a SPACE, so pip writes the /bin/sh exec-trick shebang rather
+  than a bare #!path; a string substitution handles both forms, which is why
+  substitution beat rebuilding. VERIFIED: sys.prefix now reads the new path,
+  torch 2.13.0+cu130 / onnxruntime 1.28.0 / flask / pymavlink all import,
+  ./pip resolves, test_camera_geom passes, every mission module imports, and
+  the SITL venv plus its prebuilt arducopter binary are intact.
+- ./python and ./pip did NOT break and never could: they are relative wrappers
+  (exec "$(dirname "$0")/.venv/bin/python"), which is the 2026-08-10 decision
+  paying off. Recorded because it is the reason this move was cheap.
+- .venv-tools needed 0 rewrites because it was built on Raghav's Mac
+  (/Library/Frameworks/..., /Users/raghav/...). It was already dead on this
+  laptop and the move changes nothing about that.
+- YOLO LABEL CACHES DELETED, NOT PATCHED. train.cache held 21717 absolute
+  image paths and val.cache 4452. They are pickles, and the old path is 38
+  characters against the new one's 46, so a byte substitution corrupts the
+  length prefixes. Ultralytics regenerates them on the next run. The 21717
+  train images and data.yaml are present and correct at the new path.
+- training/dataset/data.yaml, both training/runs/*/args.yaml, and the two
+  esp32 .vscode json files carried live absolute paths. All rewritten. All are
+  gitignored, so none of this appears in the commit.
+- PRIVATE.md repointed, which also fixes QGC_PATH: QGroundControl already
+  existed at /home/sleuther/Stuff/.
+- Claude's own per-project memory was keyed to the old path slug. Copied to
+  the new one; the old is left in place.
+
+DELIBERATELY NOT REWRITTEN:
+- PROJECT_STATE.md's own 11 remaining /media/sleuther/Stuff mentions. This log
+  is append-only by project rule and those are accurate records of where
+  things were when written. The move gets this entry instead of a rewrite of
+  the past.
+- training/train.log, 29 mentions. A transcript of a finished training run.
+- The two /media/sleuther/0403-0201 mentions. That is the SD CARD mount point,
+  a removable card, NOT the drive being wiped. Rewriting those would have been
+  a real error and they were checked for explicitly.
+
+TRACKED FILES CHANGED BY THE MOVE: CLAUDE.md (the cd-prohibition example and
+the SITL location), tools/ring_channels.py and uno_q/fence.py (comments naming
+the ArduPilot source tree they were read from). One CLAUDE.md hit needed a
+manual fix because the path is wrapped across two lines at 80 columns and the
+line-based substitution could not see it.
+
+STILL ON THE OLD DRIVE AND SAFE TO LOSE ONCE THE NEW COPY IS TRUSTED: nothing
+but the originals, lost+found and .Trash-1000. The drive was inventoried
+before any of this ran; local-tools was the only item the user had not
+mentioned and it was carried across rather than left to be wiped.

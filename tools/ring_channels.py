@@ -69,7 +69,7 @@ RANGE_MAX_CM = 200          # config.h; "clear" arrives as RANGE_MAX_CM + 1
 UP_ORIENT = 24              # MAV_SENSOR_ROTATION_PITCH_90; 25 is the TF-Luna
 FIRMWARE_HZ = 10.0          # config.h TX_RATE_HZ, this build
 # ArduPilot 4.7 source, libraries/AP_Proximity/AP_Proximity_MAV.cpp:27.
-# Read from the tree at /media/sleuther/Stuff/ardupilot-SITL, not remembered.
+# Read from the tree at /home/sleuther/Stuff/ardupilot-SITL, not remembered.
 PRX_TIMEOUT_S = 0.5
 
 # Pass/fail gates for --sensor. These are our own numbers for a 2 m ring on

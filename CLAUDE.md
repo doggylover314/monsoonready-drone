@@ -157,7 +157,7 @@ a working flight. Filming moves to the nearby field.
   ALL git commands are pre-authorised. Every command the user
   needs to run goes in batched blocks at the END of the reply: ONE block PER
   MACHINE, labeled BOARD or LAPTOP in bold above the block, never mixed.
-  NEVER prefix laptop commands with `cd "/media/sleuther/Stuff/Robu AI
+  NEVER prefix laptop commands with `cd "/home/sleuther/Stuff/Coding/Robu AI
   Challenge"` (user, 2026-08-06, emphatic): he knows his working directory
   and the repeated cd is noise. Give the bare command with repo-relative
   paths (e.g. `./python tools/parameters.py push`)
@@ -197,7 +197,7 @@ a working flight. Filming moves to the nearby field.
   /etc/cloudflared; needs board internet at viewing time). Mission data =
   per-flight JSONL from uno_q/missionlog.py under ~/monsoonready_data;
   schema changes happen in missionlog.py ONLY. Dashboard is read-only.
-- Laptop SITL lives at /media/sleuther/Stuff/ardupilot-SITL (Copter-4.7.0
+- Laptop SITL lives at /home/sleuther/Stuff/ardupilot-SITL (Copter-4.7.0
   tag, .venv inside it); project-agnostic SITL files stay in that folder,
   never in this repo.
 

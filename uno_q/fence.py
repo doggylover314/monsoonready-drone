@@ -10,7 +10,7 @@ where it has always lived (tools/parameters.py on the laptop); this file
 never writes a parameter.
 
 Verified against the aircraft's own firmware (ArduCopter 4.7.0 source at
-/media/sleuther/Stuff/ardupilot-SITL, tag Copter-4.7.0):
+/home/sleuther/Stuff/ardupilot-SITL, tag Copter-4.7.0):
   * upload is the MISSION-ITEM protocol with mission_type =
     MAV_MISSION_TYPE_FENCE (1)  [MissionItemProtocol_Fence.cpp:15-77]
   * each corner is MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION (5001) with
