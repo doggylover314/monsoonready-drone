@@ -3085,3 +3085,37 @@ justified, and honest about what it buys: ~48 s.
 
 CONCLUSION for the recording: speed is not the lever. Area, overlap and
 altitude are, in that order.
+
+### 2026-08-24 ~17:00 IST: RAISING WP_ACC ALONE MAKES THE WAYPOINT PHOTOS WORSE. The photo hold is a wall clock, not a settle check
+
+User's call: raise WP_ACC, keep WP_SPD 3, keep 5 m, because the puddle must be
+detected. The altitude and speed halves are right. The accel half backfires as
+the code stands, and the reason is in mission.py, not in the params.
+
+WHAT THE HOLD ACTUALLY DOES (mission.py _st_survey around line 453, and _at_wp
+around line 252): _at_wp returns true at wp_radius_m = 1.5 m from the point,
+and the hold is then a pure time.monotonic() comparison against photo_hold_s.
+Nothing anywhere checks ground speed or attitude. The aircraft is photographed
+wherever it happens to be 1.0 s after crossing a 1.5 m circle.
+
+THE ARITHMETIC (WP_ACC 2.5, ATC_ANGLE_MAX 30 from the dumps):
+- At WP_SPD 3 today, braking from 3 m/s needs 1.8 m, which is MORE than the
+  1.5 m radius. So the hold already starts at ~2.74 m/s, still braking.
+- At WP_ACC 5, braking from 3 m/s needs only 0.9 m, so at the 1.5 m radius the
+  aircraft has not begun braking at all: it is at a full 3 m/s. It then brakes
+  at atan(5/9.81) = 27 deg of lean against an ATC_ANGLE_MAX of 30, and the 1.0
+  s timer expires roughly 0.4 s after arrival, while the airframe is still
+  swinging back to level.
+So the higher the accel, the more tilted and smeared the frame that is supposed
+to be the sharp one. This directly opposes the user's stated reason for the
+change.
+
+THE FIX, and it is small: gate the hold on actual motion, not on a clock. The
+code already has this exact idiom for the descent (settle_vd_mps at
+mission.py:93, used at 580-585); the survey needs the horizontal twin.
+tel.vn_mps / tel.ve_mps are populated from GLOBAL_POSITION_INT
+(mavlink_io.py:269-270), so the data is already there. With that in, WP_ACC can
+rise and the waypoint photo is still taken stopped and level.
+
+NOT WRITTEN YET. Asked the user first (SCOPE RULE 2), because it changes the
+timing of every survey waypoint hours before a recording.
