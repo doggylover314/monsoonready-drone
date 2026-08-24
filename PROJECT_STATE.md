@@ -3381,3 +3381,22 @@ port 8099:
 
 STILL THE USER'S CALL, not changed: whether to fly row-ends-only for the take.
 It is 5.1 min against 7.1, with better along-track overlap, on one pack.
+
+### 2026-08-24 ~17:10 IST: cap fix CONFIRMED LIVE ON THE BOARD; the new box only shows in edit mode
+
+Screenshot shows "route saved (141 waypoints)" on the board's own dashboard.
+That is the proof that 5f4659c is running there: 141 would have been refused by
+the old 50 cap. Board has pulled and restarted.
+
+The "photo every" box lives in #edGen inside #edBox, which is only rendered
+while a route is being edited. The user's panel was collapsed to Edit route /
+Draw fence / Push fence, so the box was not on screen and it read as missing.
+Not a bug; recorded because the same confusion will recur.
+
+STILL UNRESOLVED AND NOW SEEN IN TWO CONSECUTIVE SCREENSHOTS: "WILL NOT ARM:
+PreArm: Vehicle breaching Polygon fence", in both the Flight control panel and
+the Self-test prearm row. On 2026-08-23 the identical message was proven from
+the FNCE log records to be TRUE: the aircraft was 4.54 m outside the drawn
+fence. The fence in the current screenshot is drawn well away from the road
+where the drone is likely standing. Flagged twice now, not acted on, because
+the assistant runs nothing that terminates at the board.
