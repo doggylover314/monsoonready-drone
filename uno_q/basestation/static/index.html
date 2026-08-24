@@ -664,6 +664,8 @@ function buildPanels() {
     <button id="wpEdit" style="display:none;font-size:12px;padding:2px 8px">Edit route</button>
     <button id="fnEdit" style="display:none;font-size:12px;padding:2px 8px">Draw fence</button>
     <button id="fnPush" style="display:none;font-size:12px;padding:2px 8px">Push fence</button>
+    <button id="satAlign" style="font-size:12px;padding:2px 8px" title="The satellite image is georeferenced by its supplier and can be several metres out. Park the aircraft somewhere you can recognise from above, click this, then click the spot in the image where the aircraft actually is. The image moves to agree with the aircraft.">Align imagery</button>
+    <button id="satClear" style="display:none;font-size:12px;padding:2px 8px" title="Forget the imagery correction and draw the tiles where the supplier puts them">Clear align</button>
     <button id="wpSave" style="display:none;font-size:12px;padding:2px 8px">Save</button>
     <button id="wpRevert" style="display:none;font-size:12px;padding:2px 8px">Cancel</button>
     <span id="wpNote" style="font-size:11.5px;color:var(--muted)"></span>`;
@@ -1369,6 +1371,12 @@ function galSwitch(which) {
 function updateEditBox() {
   const pts = editPoints();
   const box = $('edBox');
+  // Clear-align only offers itself once there is something to clear, and the
+  // Align button says out loud that a correction is in force: an aligned map
+  // looks like any other map, and a stale correction is invisible otherwise.
+  const shifted = sat.off.lat !== 0 || sat.off.lon !== 0;
+  $('satClear').style.display = shifted ? '' : 'none';
+  $('satAlign').textContent = shifted ? 'Re-align imagery' : 'Align imagery';
   box.classList.toggle('on', editing());
   $('edGen').classList.toggle('off', edit.mode !== 'route');
   if (!editing()) return;
@@ -1460,12 +1468,31 @@ async function setMode(mode) {
    nothing to draw (user, 2026-08-23, twice). The server reads the Pixhawk
    directly, but only while nothing else owns the port. */
 async function livePoll() {
+  const before = state.live ? state.live.lat + ',' + state.live.lon : '';
   try {
     const j = await getJSON('/api/live_position');
-    if (j.source === 'link' && j.fix) { state.live = j.fix; state.liveAt = Date.now(); }
-    else if (j.source !== 'link') state.live = null;   // mission owns the port
+    if (j.fix && (j.source === 'link' || j.source === 'mission')) {
+      // Both sources land in state.live, so the dot has ONE position that
+      // moves at the poll rate whether the aircraft is parked (read off the
+      // Pixhawk) or flying (tail of the mission JSONL). Before this, an
+      // airborne aircraft only moved when the 3 s events refetch happened
+      // to bring a new fix (user, 2026-08-24: "at least once every second").
+      state.live = j.fix;
+      state.liveAt = Date.now();
+      // Freshness drives solid-vs-hollow on the mission marker, and it was
+      // only stamped by the events tick; without this the dot would go
+      // hollow between refetches while fixes were in fact arriving.
+      if (j.source === 'mission') state.fixFresh = Date.now();
+    } else if (!j.fix) {
+      state.live = null;
+    }
     state.liveErr = j.ok ? null : j.error;
   } catch { state.liveErr = 'no answer from the board'; }
+  // Redraw only when the aircraft actually moved. A parked drone with a good
+  // fix still jitters a little, so this is not "never"; it does keep a dead
+  // link from repainting the canvas once a second for nothing.
+  const after = state.live ? state.live.lat + ',' + state.live.lon : '';
+  if (after !== before) render();
   // Computed in both branches above and previously read nowhere, so a
   // repeatedly failing position poll told the operator nothing.
   const note = $('satNote');
@@ -1575,6 +1602,73 @@ function applyView() {
    uses. Offline or blocked -> tiles simply never arrive and the map renders
    exactly as before. Esri's terms require visible attribution (drawn in
    chrome()). */
+/* Imagery correction, in degrees, loaded from the board so every viewer sees
+   the same corrected map. sat.off holds it; sat.loaded says whether the
+   board has answered yet, so a slow first poll cannot make an aligned site
+   render unaligned for a frame and then jump. */
+const sat = { off: {lat: 0, lon: 0}, loaded: false };
+const satOffset = () => (layer('ly-sat') ? sat.off : {lat: 0, lon: 0});
+
+/* The operator clicked, in the picture, the spot the aircraft is standing on.
+   The aircraft reports where that spot TRULY is. The picture therefore draws
+   a true position p at p + (click - true), so that difference is the error,
+   and drawSat subtracts it. Measured through proj in both directions, so the
+   projection cancels and only the imagery's own error survives. */
+function saveSatAlign(clickLL) {
+  const d = dronePos();
+  if (!d) {
+    $('wpNote').textContent = 'lost the aircraft position; '
+      + 'try again once the dot is back';
+    return Promise.resolve();
+  }
+  // Returns the promise so a caller can await the save actually landing.
+  return saveSatOffset(clickLL[0] - d.lat, clickLL[1] - d.lon);
+}
+
+async function saveSatOffset(dlat, dlon) {
+  const j = await ctlPost('/api/sat_offset', {lat: dlat, lon: dlon},
+                          $('wpNote'));
+  if (!j.ok) return;
+  sat.off = {lat: dlat, lon: dlon};
+  sat.loaded = true;
+  updateEditBox();
+  render();
+  const m = Math.hypot(dlat * 111320,
+                       dlon * 111320 * Math.cos(proj.lat0 * Math.PI / 180));
+  $('wpNote').textContent = (dlat === 0 && dlon === 0)
+    ? 'imagery correction cleared; tiles are back where the supplier puts them'
+    : `imagery moved ${m.toFixed(1)} m to sit under the aircraft. Fences and `
+      + `routes drawn from now on are in the aircraft's own frame — redraw `
+      + `and re-push the fence, the old one still carries the error.`;
+}
+
+async function loadSatOffset() {
+  try {
+    const r = await fetch('/api/sat_offset');
+    if (!r.ok) return;
+    const j = await r.json();
+    sat.off = {lat: +j.lat || 0, lon: +j.lon || 0};
+    sat.loaded = true;
+    render();
+  } catch (e) { /* offline: an uncorrected map still beats no map */ }
+}
+
+/* Where the aircraft is, by the same rule the drone layer draws it: a live
+   mission fix if one is flying, otherwise the ground reading straight off
+   the Pixhawk. Returns null when neither exists, which is the only case the
+   align action has to refuse. */
+function dronePos() {
+  const mid = statusMissionId();
+  const fx = mid ? ofMission('fix', mid) : [];
+  const ended = mid ? ofMission('mission_end', mid).length > 0 : true;
+  const age = (Date.now() - (state.fixFresh || 0)) / 1000;
+  if (fx.length && !ended && (ctl.running || age < GHOST_FIX_S)) {
+    const f = fx[fx.length - 1];
+    return {lat: f.lat, lon: f.lon};
+  }
+  return state.live ? {lat: state.live.lat, lon: state.live.lon} : null;
+}
+
 const TILE_MAX_Z = 19, TILE_MIN_Z = 3, TILE_LIMIT = 64;
 /* mode: 'direct' = fetch Esri from this browser; 'proxy' = ask the BOARD to
    fetch and cache it (the laptop may have no route at the field, or the
@@ -1647,6 +1741,11 @@ function drawSat(ctx, w, h) {
   const zf = Math.log2(156543.03392 *
                        Math.cos(proj.lat0 * Math.PI / 180) / mPerPx);
   let z = Math.max(TILE_MIN_Z, Math.min(TILE_MAX_Z, Math.ceil(zf)));
+  // Tile lookup runs in IMAGERY coordinates, drawing in TRUE ones. A tile
+  // labelled `lat` is drawn at `lat - off`, so the tile covering a viewport
+  // point v is the one labelled v + off: add the offset here, subtract it
+  // below. Getting this backwards leaves a blank strip on one edge.
+  const off = satOffset();
   const [latT, lonL] = unproject(0, 0), [latB, lonR] = unproject(w, h);
   // A wide view (all-flights fit spanning the farm AND the field) can need
   // more than TILE_LIMIT tiles at the screen-matched zoom. This used to
@@ -1655,8 +1754,8 @@ function drawSat(ctx, w, h) {
   // down until it fits: blurrier imagery, never absent imagery.
   let x0, y0, x1, y1;
   for (;;) {
-    const [x0f, y0f] = tileXY(latT, lonL, z);
-    const [x1f, y1f] = tileXY(latB, lonR, z);
+    const [x0f, y0f] = tileXY(latT + off.lat, lonL + off.lon, z);
+    const [x1f, y1f] = tileXY(latB + off.lat, lonR + off.lon, z);
     x0 = Math.floor(x0f); y0 = Math.floor(y0f);
     x1 = Math.floor(x1f); y1 = Math.floor(y1f);
     if ((x1 - x0 + 1) * (y1 - y0 + 1) <= TILE_LIMIT || z <= TILE_MIN_Z) break;
@@ -1682,7 +1781,12 @@ function drawSat(ctx, w, h) {
       if (!img.complete || !img.naturalWidth) continue;  // loading or failed
       const [aLat, aLon] = tileLatLon(tx, ty, z);
       const [bLat, bLon] = tileLatLon(tx + 1, ty + 1, z);
-      const a = proj.px(aLat, aLon), b = proj.px(bLat, bLon);
+      // Subtract the offset: move the picture into the aircraft's frame, so
+      // that clicking a feature yields the coordinates the aircraft would
+      // report standing on it. Everything else on this canvas is already in
+      // that frame, so the imagery is the only layer that shifts.
+      const a = proj.px(aLat - off.lat, aLon - off.lon),
+            b = proj.px(bLat - off.lat, bLon - off.lon);
       // +0.5 px overdraw hides the hairline seams between tiles
       ctx.drawImage(img, a.x, a.y, b.x - a.x + 0.5, b.y - a.y + 0.5);
       tiles.drawn = true;
@@ -1991,7 +2095,12 @@ function render() {
        run_mission is up or a fix has landed inside GHOST_FIX_S. */
     const alive = !ended && (ctl.running || age < GHOST_FIX_S);
     if (fx.length && alive) {
-      const f = fx[fx.length - 1], p = proj.px(f.lat, f.lon);
+      // Position from the 1 s poll when it has one, the rest of the record
+      // (flight state) from the 3 s events payload. state.live carries the
+      // same JSONL fix, just fetched more often.
+      const f = state.live ? {...fx[fx.length - 1], ...state.live}
+                           : fx[fx.length - 1];
+      const p = proj.px(f.lat, f.lon);
       const live = age < LIVE_FIX_STALE_S;
       const col = css('--drone');
       ctx.save();
@@ -2171,9 +2280,12 @@ function wireMap() {
     // the button went down. Pan itself works at ANY zoom because a typed
     // site anchor means the world extends past the fitted frame; dbl-click
     // still resets to the fit.
+    // An armed pick counts as a click target even outside edit mode: the
+    // imagery has to be alignable without first pretending to draw a route.
     dragging = { x: ev.clientX, y: ev.clientY,
                  sx: ev.clientX, sy: ev.clientY, moved: false,
-                 add: (editing() && ev.button === 0) ? {mx, my} : null };
+                 add: ((editing() || edit.pick) && ev.button === 0)
+                      ? {mx, my} : null };
     canvas.style.cursor = 'grabbing';
     $('tip').style.display = 'none';
   });
@@ -2222,11 +2334,15 @@ function wireMap() {
     if (dragging) {
       if (!dragging.moved && dragging.add) {    // stationary click = add
         const ll = unproject(dragging.add.mx, dragging.add.my);
-        if (edit.pick === 'start') {            // ... or set the start point
+        if (edit.pick === 'align') {            // ... or align the imagery
+          edit.pick = null;
+          canvasEl().style.cursor = '';
+          saveSatAlign(ll);
+        } else if (edit.pick === 'start') {     // ... or set the start point
           state.genStart = ll;
           edit.pick = null;
           canvasEl().style.cursor = '';
-        } else {
+        } else if (editPoints()) {
           editPoints().push(ll);
           state.wpDirty = true;
         }
@@ -2386,6 +2502,24 @@ function wireEvents() {
   $('galRefresh').addEventListener('click', () => galLoad(true));
   $('galMore').addEventListener('click', () => galLoad(false));
 
+  $('satAlign').addEventListener('click', () => {
+    if (!layer('ly-sat')) {
+      $('wpNote').textContent = 'tick "sat" first: there is no imagery to '
+        + 'align';
+      return;
+    }
+    if (!dronePos()) {
+      $('wpNote').textContent = 'no aircraft position yet, so there is '
+        + 'nothing to align the image against. Power the Pixhawk, wait for a '
+        + 'GPS fix, and check the drone dot appears.';
+      return;
+    }
+    edit.pick = 'align';
+    canvasEl().style.cursor = 'crosshair';
+    $('wpNote').textContent = 'now click the spot in the picture where the '
+      + 'aircraft is really standing';
+  });
+  $('satClear').addEventListener('click', () => saveSatOffset(0, 0));
   $('wpEdit').addEventListener('click', () => setMode('route'));
   $('fnEdit').addEventListener('click', () => setMode('fence'));
   $('wpSave').addEventListener('click', async () => {
@@ -2513,7 +2647,6 @@ setInterval(() => {
 setInterval(async () => {
   if (document.hidden || !layoutState) return;
   ctlRefresh();          // flight control state + log tail, every tick
-  livePoll();            // where the aircraft is when no mission is running
   try {
     const evs = await getJSON('/api/events/' + state.selected);
     const j = JSON.stringify(evs);
@@ -2531,6 +2664,18 @@ setInterval(async () => {
     }
   } catch {}
 }, 3000);
+
+/* POSITION TICK, 1 s (user, 2026-08-24). On its own timer, not folded into
+   the 3 s tick: the aircraft is the one thing on this map that has to be
+   where it says it is, and 3 s at 2 m/s is 6 m of lag. Overlapping calls
+   cost nothing on the board - api_live_position hands back the cached fix
+   without blocking when another request already holds the link. */
+let liveBusy = false;
+setInterval(async () => {
+  if (document.hidden || !layoutState || liveBusy) return;
+  liveBusy = true;
+  try { await livePoll(); } finally { liveBusy = false; }
+}, 1000);
 
 setInterval(async () => {   // new flight appearing while we're open
   if (!layoutState) return;
@@ -2553,6 +2698,7 @@ async function init() {
   try { theme = localStorage.getItem('mr-theme') || 'light'; } catch {}
   applyTheme(theme);
   await loadSite();
+  await loadSatOffset();   // before reload(): the first render must be aligned
   await reload();
   ctlRefresh();
   wfRefresh();

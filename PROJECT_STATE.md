@@ -3556,3 +3556,93 @@ command_ack call is at 409 and the try/except that converts those raises is at
 is append-only by project rule and no mission has run since the pull (mission
 status still names flight 20260823_223751), so the old crash simply has not
 been pushed out of the 14-line tail yet. The arm fix in e6d5fba is present.
+
+### 2026-08-24 ~19:10 IST: imagery alignment SHIPPED, and the drone dot now moves at 1 Hz (both user-ordered)
+
+USER: "fix the alignment of imagery and real gps", then "make the drone dot
+update its position atleast once every second".
+
+--- PART 1: IMAGERY ALIGNMENT ---
+
+DESIGN, and the reason it is the imagery that moves and not the clicks: every
+other layer on that canvas (fence, route, detections, drone) is already in the
+aircraft's coordinate frame. Only the tiles are in the supplier's. So the fix
+is to draw the tiles shifted, after which a click on a visible feature yields
+the coordinates the aircraft would report standing on it, and everything
+downstream (fence corners, generated route, what gets pushed to the Pixhawk) is
+correct without any further correction anywhere. Correcting clicks instead
+would have left the picture lying and every future feature having to remember.
+
+MEASUREMENT: park the aircraft somewhere recognisable from above, press "Align
+imagery", then click the spot IN THE PICTURE where it is really standing. The
+error is (click - aircraft's reported position), both measured through the same
+projection so the projection cancels and only the imagery's own error survives.
+
+STORED ON THE BOARD, not in a browser: data_dir/sat_offset.json, served by
+GET/POST /api/sat_offset. Every viewer must see the same corrected map, and the
+fence that reaches the Pixhawk depends on it. read_sat_offset() never raises: a
+missing or corrupt file yields zeros, so a bad file leaves the map uncorrected
+rather than broken. POST is bounded by SAT_OFFSET_MAX_DEG 0.001 (~111 m):
+supplier error is metres, so a bigger number means the wrong feature was
+clicked, and it is refused rather than clamped.
+
+FILES: dashboard.py gains SAT_OFFSET_MAX_DEG, read_sat_offset(), and the two
+endpoints. index.html gains sat/satOffset(), loadSatOffset() called before the
+first reload() so the first frame is already aligned, dronePos(), saveSatAlign()
+/ saveSatOffset(), an "Align imagery" / "Clear align" pair in the map header
+(the align button relabels to "Re-align imagery" while a correction is in
+force, because an aligned map otherwise looks like any other map and a stale
+correction would be invisible), and an 'align' case in the existing edit.pick
+one-shot click mechanism. mousedown now accepts a stationary click when a pick
+is armed even outside edit mode, so the imagery can be aligned without first
+pretending to draw a route.
+
+VERIFIED IN A BROWSER against a fake aircraft position, dashboard run locally:
+clicked a point 8 m north and 5 m east of the dot; the offset saved as exactly
+8.00 m north / 5.00 m east; the clicked image feature moved from pixel
+(344.73, 186.37) to (294.82, 266.22), which is the drone dot's pixel to a
+RESIDUAL OF 0.000000 px. Persists across reload. Clear-align returns it to
+zero. Tile FETCH window shifts with the drawing and in the right direction
+(500 m north moves the z19 y index 243056 -> 243050, south moves it -> 243063),
+so no blank strip appears at the edge. Out-of-range, non-numeric and infinite
+offsets all refused with 400.
+
+--- PART 2: 1 HZ DRONE DOT ---
+
+TWO SEPARATE CAUSES OF LAG, both fixed:
+1. livePoll() was folded into the 3 s tick. It now has its own 1 s timer with a
+   liveBusy re-entry guard. Overlap costs nothing on the board because
+   api_live_position hands back the cached fix without blocking when another
+   request holds the link.
+2. WORSE, AND THE ONE THAT ACTUALLY BIT IN THE AIR: while a mission was
+   running, api_live_position returned only {source:'mission'} with no
+   position, and the client set state.live = null. The airborne dot therefore
+   came from the /api/events payload, which is refetched every 3 s AND only
+   triggers a render when the whole payload changed. At WP_SPD 2 that is 6 m of
+   lag. api_live_position now also returns the newest fix while a mission owns
+   the port, read by last_fix() from the TAIL of the mission JSONL (64 KB seek,
+   drops the partial first line, tolerates a truncated final line mid-write).
+   Measured: 0.16 ms on a 343 KB / 4000-fix file, and it returns the same
+   record a full load_events() parse does. Re-reading the whole growing file
+   once a second on the board during a flight was the thing to avoid.
+
+Client: both sources land in state.live, so the dot has ONE position that moves
+at the poll rate whether parked or flying. livePoll() renders only when the
+position actually changed. state.fixFresh is now stamped by the mission branch
+too, or the marker would have gone hollow between events refetches while fixes
+were in fact arriving. The mission marker takes its POSITION from state.live
+and the rest of the record (flight state) from the events payload.
+
+MEASURED IN THE BROWSER: 7 live_position calls in 6.3 s = 1.11 Hz, against 3
+events calls = 0.48 Hz, exactly as intended.
+
+TEST ARTIFACT WORTH RECORDING, because it looked like a bug and was not: the
+first align attempt saved nothing. Cause was my scratch data dir holding a fake
+4000-fix mission with no mission_end, so dronePos() correctly preferred the
+mission fix over the ground reading, and the resulting absurd offset was
+correctly refused by the 0.001 deg bound. Both behaviours were right. A real
+bug did surface underneath it: saveSatAlign() returned undefined, so awaiting
+it resolved before the POST landed. It now returns the promise.
+
+NOT DONE, still the user's call: HDOP is still neither returned by
+api_live_position nor displayed. Satellite count IS in the aircraft tooltip.

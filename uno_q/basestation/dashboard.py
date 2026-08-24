@@ -90,6 +90,24 @@ def tail(path, lines=14):
 # number this endpoint can know.
 MAX_WAYPOINTS = 2000
 
+# Ceiling on the satellite-imagery correction, ~111 m. Supplier
+# georeferencing error is metres, not hundreds of metres, so anything past
+# this means the operator clicked the wrong feature and the map would end up
+# further from the truth than it started.
+SAT_OFFSET_MAX_DEG = 0.001
+
+
+def read_sat_offset(data_dir):
+    """Stored imagery correction, or zeros. Never raises: a missing or
+    corrupt file must leave the map usable, just uncorrected."""
+    try:
+        with open(os.path.join(data_dir, 'sat_offset.json'),
+                  encoding='utf-8') as f:
+            d = json.load(f)
+        return {'lat': float(d['lat']), 'lon': float(d['lon'])}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {'lat': 0.0, 'lon': 0.0}
+
 MISSION_LIMITS = {
     'survey_alt': (1.0, 40.0),
     'photo_hold': (0.0, 30.0),
@@ -144,6 +162,37 @@ def load_events(data_dir, mission_id):
             ev['mission'] = mission_id
             events.append(ev)
     return events
+
+
+def last_fix(data_dir, mission_id, tail_bytes=65536):
+    """Newest 'fix' record of a running mission, or None.
+
+    Reads only the tail of the JSONL. The map polls this once a second while
+    a mission flies, and load_events() would re-read and re-parse the whole
+    growing file every time, on the board, during the flight.
+    """
+    path = os.path.join(missions_dir(data_dir), f'mission_{mission_id}.jsonl')
+    try:
+        with open(path, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            start = max(0, f.tell() - tail_bytes)
+            f.seek(start)
+            chunk = f.read()
+    except OSError:
+        return None
+    lines = chunk.split(b'\n')
+    if start:
+        lines = lines[1:]           # a seek lands mid-line; drop the fragment
+    for line in reversed(lines):
+        if b'"fix"' not in line:
+            continue
+        try:
+            ev = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue                # truncated final line during a write
+        if ev.get('e') == 'fix' and ev.get('lat') is not None:
+            return ev
+    return None
 
 
 def summarize(mission_id, events):
@@ -227,6 +276,53 @@ def make_app(data_dir, control=None):
                 or mission_id not in list_mission_ids(data_dir)):
             abort(404)
         return jsonify(load_events(data_dir, mission_id))
+
+    # Satellite imagery is georeferenced by its supplier, and at this site
+    # Esri's is off by a constant vector: the aircraft's own GPS and the
+    # image disagree by several metres in a fixed direction (confirmed
+    # 2026-08-24 by carrying the aircraft and watching the dot track
+    # correctly while staying offset). That matters far beyond cosmetics,
+    # because a fence drawn by clicking the image inherits the error, so the
+    # aircraft is refused arming for breaching a fence it is standing inside,
+    # and any route generated in that fence surveys the wrong patch.
+    #
+    # The correction is stored per site, on the board, not in one browser:
+    # whoever opens the dashboard must see the same corrected map, and the
+    # fence that gets pushed to the Pixhawk depends on it.
+    @app.get('/api/sat_offset')
+    def api_sat_offset_get():
+        return jsonify(read_sat_offset(data_dir))
+
+    @app.post('/api/sat_offset')
+    def api_sat_offset_post():
+        if not ctl:
+            abort(403)
+        body = request.get_json(silent=True) or {}
+        try:
+            dlat, dlon = float(body['lat']), float(body['lon'])
+        except (KeyError, TypeError, ValueError):
+            return jsonify({'ok': False,
+                            'error': 'need numeric lat and lon'}), 400
+        if not (math.isfinite(dlat) and math.isfinite(dlon)) \
+                or abs(dlat) > SAT_OFFSET_MAX_DEG \
+                or abs(dlon) > SAT_OFFSET_MAX_DEG:
+            log.warn(f'SAT OFFSET refused: {dlat}, {dlon}')
+            return jsonify({'ok': False,
+                            'error': f'offset must be within '
+                                     f'{SAT_OFFSET_MAX_DEG} deg (about '
+                                     f'{SAT_OFFSET_MAX_DEG * 111320:.0f} m); '
+                                     f'a bigger one means the wrong point was '
+                                     f'clicked'}), 400
+        path = os.path.join(data_dir, 'sat_offset.json')
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump({'lat': dlat, 'lon': dlon,
+                       'set_at': time.strftime('%Y-%m-%d %H:%M:%S')}, f)
+        os.replace(tmp, path)
+        north = dlat * 111320.0
+        log(f'SAT OFFSET: imagery shifted {dlat:.7f},{dlon:.7f} deg '
+            f'({north:+.1f} m north) -> {path}')
+        return jsonify({'ok': True, 'lat': dlat, 'lon': dlon})
 
     @app.get('/api/site_meta')
     def api_site_meta():
@@ -354,7 +450,15 @@ def make_app(data_dir, control=None):
         busy = port_owner()
         if busy:
             live_close(f'{busy} owns the port')
-            return jsonify({'ok': True, 'source': 'mission', 'busy': busy})
+            # The mission owns the link, so its JSONL is the only place the
+            # position exists. Served from here too, so the map has ONE
+            # once-a-second source in the air and on the ground instead of
+            # waiting on the 3 s events refetch to move the aircraft.
+            ids = list_mission_ids(data_dir)
+            fix = last_fix(data_dir, ids[-1]) if ids else None
+            return jsonify({'ok': True, 'source': 'mission', 'busy': busy,
+                            'fix': fix,
+                            'mission': ids[-1] if ids else None})
         if time.time() < live['hold']:
             return jsonify({'ok': True, 'source': 'holding'})
         if not live['lock'].acquire(blocking=False):
