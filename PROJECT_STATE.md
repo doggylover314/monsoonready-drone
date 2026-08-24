@@ -2852,3 +2852,49 @@ intended release height and the disagreement abort.
   contradicts the standing rule that QGC bulk load is never trusted because it
   drops writes silently, and that `tools/parameters.py` does every write with a
   per-write ack. Worth correcting, but it is a separate call.
+
+### 2026-08-24 ~14:35 IST: FOUR USER RULINGS, AND THE SERVO ANSWER REVERSES AN AUDIT FINDING
+
+User answered the four open questions from the doc-consolidation pass.
+
+1. **SERVO ENDPOINTS: 560 CLOSED, 1760 OPEN (user, authoritative).** This
+   REVERSES the direction of audit finding at line 2714, which read the
+   disagreement the other way round and called `mavlink_io.py:46`'s comment
+   wrong because "dropper.py actually uses 500/1600". The comment is RIGHT.
+   **`dropper.py:75-76` `DEFAULT_CLOSED_US = 500` / `DEFAULT_OPEN_US = 1600` are
+   the stale pair, and they are CODE, not comments.** Nobody should "fix" the
+   comment to match the code; that would bake the wrong endpoints in.
+   WHY IT MATTERS IN FLIGHT, not just on paper: `run_mission.py:103-105` takes
+   its `--servo-closed-us` / `--servo-open-us` defaults straight from those two
+   constants, and `dashboard.py`'s START never passes either flag. So **every
+   mission launched from the dashboard drives the gate 500 -> 1600, not
+   560 -> 1760.** 160 us short on the open side, on a gate whose dose is set by
+   how far and how long it travels. NOT CHANGED: it is a code change and a
+   hardware endpoint, and the user asked for docs and comments only. VERIFY ON
+   THE BENCH with `tools/servo_jog.py` before the next flight, then decide.
+   (Note the tension to resolve at the bench: `dropper.py:73` says SERVO9_TRIM
+   560 parks the gate PART-OPEN at boot and should be set to 500, which reads
+   as 560 being a park position rather than the closed endpoint. The user's
+   ruling is the primary source; that comment may be the next stale one.)
+2. **DOSE: 0.23 s PER SQUARE METRE IS CORRECT (user).** So the label-rate table
+   in the docs stands and `mission.py`'s `dose_s_per_m2 = 0.4` is the wrong
+   number. Doc updated to say exactly that: the table is the intended figure
+   because it is the only one with a measured flow rate behind it, 0.4 predates
+   that measurement, and the constant waits until after filming because it is a
+   flight-code change. Matches the recommendation the 13:42 session already
+   recorded.
+3. **`ardupilot_proximity.param`: DELETE.** Already done by the adjacent session
+   at 13:45 (commit 4394b37), which compared all 14 of its parameters against
+   the full dump first and found every one already covered. Nothing left to do.
+4. **`HANDOVER.md`: DELETE.** Done. The submission-date question is moot with
+   the file gone. `PROJECT_STATE.md` is the source of truth and a fresh chat
+   reads CLAUDE.md, which already says to read it first, so the handover was a
+   second home for state that kept going stale (see the 2026-08-11 entry at line
+   269, where it was stale while its own header warned against exactly that).
+
+CONCURRENCY NOTE, worth knowing: three commits landed on this laptop from an
+ADJACENT SESSION between 13:19 and 13:45, stacked on top of mine (ecf6057 the
+73-finding audit, d46f141 the dose analysis, 4394b37 the param deletion). Two
+sessions were working the same repo at once and picked up the same flags. No
+conflict, and the audit even re-anchored its line numbers around my commit
+landing mid-run, but SESSION CONTINUITY did not show either of us. Check it.

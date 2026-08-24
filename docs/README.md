@@ -222,12 +222,14 @@ was the first test material and it bridged, which turned out to be cohesion
 between hundred-micron grains rather than the hole being too small. Mustard
 seed at about 1 mm is the closer match to VectoBac G's corn-cob granule anyway.
 
-One thing does not line up, and it is flagged here rather than quietly
-reconciled. The flight code sizes the dwell as area times `dose_s_per_m2`,
-which is 0.4 s/m² clamped between 0.3 and 3.0 s, with 1.0 s used when the area
-is unknown. That gives 0.4 s over a 1 m² puddle where the table above says 0.23
-s. Which figure is the intended one has not been settled, so treat both as
-provisional until a full-hopper flow run decides it.
+The flight code does not currently agree with that table, and this is the
+honest place to say so. `mission.py` sizes the dwell as area times
+`dose_s_per_m2`, which is 0.4 s/m² clamped between 0.3 and 3.0 s, with 1.0 s
+used when the area is unknown. Over a 1 m² puddle that gives 0.4 s where the
+table says 0.23 s, nearly double. The table is the figure we intend, because it
+is the only one with a measured flow rate behind it, and 0.4 predates that
+measurement. Changing the constant is a flight-code change and it waits until
+after filming.
 
 ## Simulation
 
