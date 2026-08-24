@@ -3284,3 +3284,46 @@ param-write endpoint at all (PIXHAWK_TOOLS is a port-ownership list, not a
 runner) and building one hours before a recording is the wrong trade. WP_ACC is
 also persistent in FC storage and survives reboots, so it wants setting ONCE
 with tools/parameters.py, not per launch. Left as a BOARD command for the user.
+
+### 2026-08-24 ~17:00 IST: the real route is 163 wp / 637 m. Timed. NOTHING fits one pack with margin
+
+Dashboard screenshot from the board: "163 waypoints, 15 rows along 94.7 deg,
+2 m clear of the fence, 637 m of path", settings row live and reading alt 5 /
+photo hold 1 / conf 0.25. Mean leg 3.93 m.
+
+Simulated as before (stopping-distance controller, WP_ACC-limited, 2 ms steps):
+
+  WP_SPD WP_ACC hold | survey  +takeoff/RTL  still  aim error
+     2     2.5    1  |  7.1m       8.6m        0%     1.27 m   BOARD AS IT SITS
+     2     2.5    3  | 12.5m      14.0m       66%     1.27 m
+     3     2.5    3  | 12.0m      13.5m       68%     1.27 m
+     3     1.5    3  | 13.1m      14.6m       60%     0.76 m   best photos
+     3     1.5    2  | 10.4m      11.9m       39%     0.76 m
+
+THE HONEST HEADLINE: at the board's current settings 0% of every photo pause
+has the aircraft under 0.3 m/s. Not 2% as at the 203-waypoint geometry, zero.
+The 1.0 s hold on a 3.93 m leg expires before braking finishes, every waypoint,
+all 163 of them. The 7.1 min figure is therefore cheap for a reason: it is not
+photographing anything properly.
+
+Buying stillness costs 5 min, and the pack is one 8000 mAh 3S with no spare.
+Every configuration that actually photographs well lands at 12-15 min including
+takeoff and RTL. THAT IS NOT A FLIGHT THIS AIRCRAFT SHOULD BE ASKED TO MAKE ON
+ONE PACK, and the fence is still too big even after the shrink from 203 to 163
+waypoints. 163 is only a 20% cut; the flight-time problem needed a 3x cut.
+
+WHAT ACTUALLY CLOSES THIS, unchanged from 16:35 and still not chosen: Centre
+line (5 waypoints, under a minute), or a genuinely small fence. Everything else
+is trimming a number that is 2-3x too big.
+
+ALSO VISIBLE IN THE SCREENSHOT, not asked about, flagged and NOT acted on:
+- "WILL NOT ARM: PreArm: Vehicle breaching Polygon fence", same message as the
+  2026-08-23 failure. On that date it was proven from the FNCE log records that
+  the aircraft was genuinely 4.54 m OUTSIDE the drawn fence. Worth checking
+  where the drone is standing relative to the blue box before blaming GPS.
+- The flight-control log tail shows a traceback through mavlink_io.py:366
+  command_ack on the ARM path. run_mission.log is append-only by project rule,
+  so this may well be the 2026-08-23 flight rather than a new one, and the
+  mission status pill says "flight 20260823_223751 - ended". The arm-refusal
+  fix that wraps that call in try/except shipped in e6d5fba. UNVERIFIED whether
+  the board is running that commit; the user has not said it pulled since.
