@@ -3178,3 +3178,51 @@ of deceleration rather than holding WP_ACC to zero speed. Real settle will be
 somewhat slower than simulated, so treat the flight times as lower bounds. Also
 WP_ACC 5 puts 27 deg against ATC_ANGLE_MAX 30 and this airframe has never flown
 it.
+
+### 2026-08-24 ~17:40 IST: TWO NO-CODE KNOBS FOR PHOTO QUALITY. User is shrinking the fence after all, and asked what else helps besides altitude
+
+Restating the problem in one line because the earlier entries buried it: THE
+DRONE NEVER ACTUALLY STOPS TO TAKE THE PHOTO. It reaches the 1.5 m arrival
+radius, a 1.0 s timer runs out about 0.1 s before it finishes braking, and it
+leaves. While braking it is tilted 14.3 deg, so the camera is aimed 1.27 m away
+from where the plan believes it is aimed.
+
+Neither knob below is a code change. Both are already plumbed:
+--photo-hold is a run_mission.py argument (default 1.0, line 83) forwarded by
+dashboard.py:547 and accepted by start_dashboard.sh's "$@" passthrough;
+WP_ACC is a Pixhawk parameter (2.5 on the board), written with
+tools/parameters.py set.
+
+A) LONGER HOLD, WP_ACC untouched. Fraction of the photo window with the
+aircraft under 0.3 m/s, and the cost per waypoint:
+      --photo-hold 1 ->   2% still, 2.40 s/wp   (today)
+      --photo-hold 2 ->  51% still, 3.40 s/wp
+      --photo-hold 3 ->  68% still, 4.40 s/wp
+      --photo-hold 4 ->  76% still, 5.40 s/wp
+
+B) GENTLER BRAKING, hold untouched. Tilt while braking and the resulting aim
+error at 5 m:
+      WP_ACC 1.0 ->  5.8 deg, 0.51 m, 3.21 s/wp
+      WP_ACC 1.5 ->  8.7 deg, 0.76 m, 2.80 s/wp
+      WP_ACC 2.5 -> 14.3 deg, 1.27 m, 2.40 s/wp   (today)
+      WP_ACC 5.0 -> 27.0 deg, 2.55 m, 2.09 s/wp
+
+NOTE THE DIRECTION REVERSAL: the user's earlier plan was to RAISE WP_ACC. For
+photo quality the useful move is to LOWER it. Raising it was only ever a
+flight-time play, and the fence shrink now supplies that time instead.
+
+RECOMMENDED PAIR: --photo-hold 3 with WP_ACC 1.5. 60% of the window stationary
+(against 2%), aim error 0.76 m (against 1.27 m, and now inside the 1.00 m
+overlap budget instead of outside it), 4.80 s per waypoint. On a shrunk fence
+that is 3.2 min at 40 waypoints or 4.8 min at 60. It is 16.2 min at the
+original 203, which is another reason the fence shrink has to happen first.
+
+ALREADY CORRECT, NOTHING TO DO: --conf defaults to 0.25 in run_mission.py:82,
+which is the value the 2026-08-2x spotcheck showed lifts per-frame detection
+from ~48% to ~62% at 160 px. No change needed.
+
+WP_ACC 1.5 IS UNTESTED ON THIS AIRFRAME and slower braking means a longer
+stopping distance: from 3 m/s it needs 3.0 m against 1.8 m today. That is
+larger than wp_radius_m 1.5, which is fine for the hold logic (it only starts
+the clock) but means the aircraft overshoots further past a waypoint if a leg
+is ever commanded short. Watch the first flight.
