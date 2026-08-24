@@ -40,7 +40,8 @@ OPEN:
 - The flow rate is measured for mustard seeds but only from an under-filled
   hopper, about 4.2 to 5.3 g/s from the shortest dwells. A full-hopper run has
   never been taken and no dose figure should be quoted until it is.
-- Dataset URLs and BibTeX for docs/03. Reyansh has the Universe pages.
+- Dataset URLs and BibTeX for the citation tables in docs/README.md. Reyansh
+  has the Universe pages.
 - Compliance verification against current DGCA text, plus the Bti registration
   check. Raghav.
 - All evidence capture, and the video.

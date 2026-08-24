@@ -2433,3 +2433,71 @@ AUDIT (4 Sonnet finders, 13 findings, each verified by me in source; fixed):
 - Detection floor at 5 m unchanged: 55 cm target = 132 px = ~40-60% per frame
   at conf 0.25; overlap and the stop-and-shoot cycle are the lever, plus a
   BIG target. Board must ./git-pull and restart the dashboard.
+
+### 2026-08-24 ~13:30 IST: DOC SET COLLAPSED TO ONE FILE, PROSE + COMMENTS HUMANIZED
+
+User instruction: humanize the docs and the code comments without touching any
+functional element, note somewhere that the FIRST DEMO VIDEO WAS FLOWN AT 15 m
+and has since been reduced, cut the number of docs by shortening or combining,
+and strip the weird formatting.
+
+DOCS. `docs/01` through `docs/08` plus the old `docs/README.md` are GONE, merged
+into a single `docs/README.md` (599 -> one file, ~620 lines against 831 across
+nine). Section order: why granules, the loop, what we claim, hardware, model,
+mission logic, dose, simulation, crashes, datasets, legal, video, evidence, AI
+disclosure, where it stands. The judge-Q&A file did not survive as a format; its
+genuinely distinct answers (the AVOID_ENABLE=0 story, the camera-dead abort, the
+yolo26s/m board benchmarks, the recall argument) were folded into the sections
+they belong to, and its duplication of `01` was dropped. Rhythm score 18,
+burstiness 0.63, em-dashes 0.
+
+15 m NOTE ADDED, in "The loop" and again in "The demo video": the first demo
+video surveyed at 15 m where a half-metre puddle is 44 px and the model hits
+about one frame in ten, and every flight since surveys at 5 m where the same
+puddle is 132 px.
+
+FIELD DOCS OUT OF THE REPO, per user ruling: `FIELD_CHECKLIST.md`,
+`VIDEO_SCRIPT.md` and `VIDEO_SCRIPT.html` moved to `field_ops/`, which is now
+gitignored. They are operational and get rewritten the morning of every field
+day, so they were churning the judged doc set for no reason. Still on disk,
+still in git history.
+
+READMEs SHORTENED AND DE-FORMATTED: root 61 -> 65 (rewritten, points at the one
+doc), `uno_q/` 261 -> 185, `esp32_obstacle_avoidance/` 258 -> 179,
+`uno_q/basestation/` 127 -> 130 (rewritten, was badly stale).
+
+THREE STALE CLAIMS FOUND WHILE CHECKING DOCS AGAINST SOURCE:
+1. **`uno_q/basestation/README.md` said the dashboard is "read-only by design;
+   it never touches MAVLink or the aircraft".** FALSE since the control work.
+   `dashboard.py` has `/api/control/start`, `/stop`, `/test`, `/api/fence/push`,
+   `/api/waypoints/generate`, `/api/live_position`, `/api/photo`, `/api/wifi`.
+   Rewritten to say the read-only line no longer holds and why.
+2. **`esp32_obstacle_avoidance/ardupilot_proximity.param` is STALE and its
+   values were duplicated in that README.** It assumes TELEM2 (the ring is on
+   TELEM1, SiK has TELEM2), sets `AVOID_ENABLE,7` (now 0), `RNGFND2_TYPE,10`
+   (now 0 since ch6 died 2026-08-21), and was checked against Copter 4.5/4.6
+   while the aircraft flies 4.7.0. The README no longer restates any parameter
+   value; it points at `param_dumps/pixhawk_full_setup.param` as the single
+   maintained config and warns not to load the old file. **THE .param FILE
+   ITSELF WAS NOT EDITED** (it is a functional file, user said do not change
+   functional elements). Decide whether to delete it or regenerate it.
+3. **THE DOSE TABLE AND THE FLIGHT CODE DISAGREE.** `docs` carries the
+   label-rate arithmetic (1.1 g/m2 over 4.8 g/s: 1 m2 = 0.23 s). `mission.py`
+   sizes the dwell as area x `dose_s_per_m2` = 0.4 s/m2 clamped 0.3 to 3.0,
+   default 1.0 s for unknown area, so 1 m2 = 0.4 s. Nearly 2x apart. Which is
+   intended is UNRESOLVED; the doc now flags both as provisional until a
+   full-hopper flow run settles it. Nothing was changed in code.
+
+ALSO CORRECTED IN THE MERGED DOC: `docs/evidence/` was described as not
+existing, and it holds the two SITL transcripts. The SITL nominal line no longer
+quotes "one drop at 2.98 m", which came from a 2026-07-26 run when `drop_alt_m`
+was 3.0; it is 1.0 now, so the figure would have been a stale measurement
+presented as current.
+
+`HANDOVER.md` line 43 repointed from `docs/03` to `docs/README.md`. STILL
+DANGLING, not fixed because it is a runtime string and not a comment:
+`uno_q/detect_worker.py:188` names "the docs/07" in argparse help text.
+
+NOTE FOR WHOEVER READS THIS NEXT: `HANDOVER.md` still says "SUBMISSION IS
+2026-08-23". Today is 2026-08-24. Not edited, because whether it went in is not
+recorded anywhere and guessing is worse than a stale line. ASK THE USER.

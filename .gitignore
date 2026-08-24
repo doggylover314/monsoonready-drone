@@ -59,3 +59,8 @@ tools/local/
 # what is already on the SD card, so they never belong in the repo.
 logs/
 *.BIN
+
+# shoot-day working documents: the field checklist and the shooting script.
+# They are operational, not part of the judged documentation, and they change
+# on the morning of every field day. Kept on disk, out of the repo.
+field_ops/
