@@ -3522,3 +3522,37 @@ PROCEDURE for the user:
 CORRECTION to the 17:30 entry: I wrote that the dashboard shows no GPS quality
 at all. Satellite count IS in the aircraft tooltip on the ground branch. HDOP is
 still neither sent by api_live_position nor displayed anywhere.
+
+### 2026-08-24 ~18:40 IST: 74-waypoint route reviewed from the screenshot. IT INHERITS THE FENCE OFFSET
+
+Screenshot: route editor open, spacing auto, photo every auto, direction auto,
+keep out 4, 74 waypoints, scale bar 5 m. Grid reads as 8 rows of 9.
+
+SIZE, ESTIMATED FROM THE SCALE BAR, not from the route note (the note area was
+showing the Generate help text instead of the "m of path" line): rows ~33 m
+long, ~4.1 m between waypoints along a row, ~2.2 m between rows. Those match
+the auto values for 5 m altitude with 1 m overlap (4.34 m and 2.00 m), which is
+a good consistency check on the estimate. Path therefore ~290 m.
+=> ~3.3 min of survey at WP_SPD 2 / hold 1, ~4.8 min with takeoff and RTL.
+THIS ONE FITS THE PACK. The fence shrink finally did the job.
+
+THE PROBLEM, and it is not the route: the user confirmed one message earlier
+that the position offset is CONSTANT and that the fence may therefore be drawn
+wrong. This route was generated INSIDE that fence, so it carries the same
+offset. Flying it surveys a patch displaced by the offset from the one intended,
+and PreArm will keep refusing because the aircraft is outside the real fence.
+The route is fine in shape and size; it is in the wrong place. Redraw the fence
+around the drone dot FIRST (18:50 entry), then regenerate.
+
+"photo every" is still auto, so the along-row stops are still there. At 74
+waypoints that costs ~1.2 min against setting it to 0. Not urgent at this size;
+the user's call.
+
+STALE TRACEBACK, resolved, no action: the Flight control log tail shows
+mavlink_io.py line 397 "in arm / return self.command_ack(". In the current repo
+line 397 is "return False" inside set_mode, arm() begins at 398, its
+command_ack call is at 409 and the try/except that converts those raises is at
+412. So the traceback was written by a PRE-PULL mavlink_io.py. run_mission.log
+is append-only by project rule and no mission has run since the pull (mission
+status still names flight 20260823_223751), so the old crash simply has not
+been pushed out of the 14-line tail yet. The arm fix in e6d5fba is present.
