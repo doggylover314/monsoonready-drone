@@ -2,12 +2,12 @@
 
 WHY THIS FILE EXISTS (user, 2026-08-16): "I will set the geofence manually so
 that the drone doesnt go into any trees. The field is not a cylinder or a
-rectangle, it is a weird shape I have to draw myself." A polygon INCLUSION
+rectangle, it is a weird shape I have to draw myself." A polygon inclusion
 fence is the only fence shape that fits such a field, and a polygon is not a
 parameter: it is uploaded as mission items and lives in the flight
-controller's own fence storage, surviving reboots. Parameter work stays where
-it has always lived (tools/parameters.py on the laptop); this file never
-writes a parameter.
+controller's own fence storage, surviving reboots. Parameter work stays
+where it has always lived (tools/parameters.py on the laptop); this file
+never writes a parameter.
 
 Verified against the aircraft's own firmware (ArduCopter 4.7.0 source at
 /media/sleuther/Stuff/ardupilot-SITL, tag Copter-4.7.0):
@@ -16,16 +16,15 @@ Verified against the aircraft's own firmware (ArduCopter 4.7.0 source at
   * each corner is MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION (5001) with
     param1 = total vertex count and x/y = lat/lon * 1e7 as int32
     [MissionItemProtocol_Fence.cpp:100-143]
-  * the legacy FENCE_POINT protocol is COMPILED OUT in 4.7
+  * the legacy FENCE_POINT protocol is compiled out in 4.7
     (AC_Fence_config.h:11-20), so an old-style upload silently does nothing
-  * minimum 3 vertices; the polygon must NOT repeat its first corner
+  * minimum 3 vertices; the polygon must not repeat its first corner
     (AP_Math/polygon.cpp handles open lists; the loader stores what it is
     given)  [AC_PolyFence_loader.cpp:998-1001]
   * with the polygon bit set in FENCE_TYPE and no valid polygon loaded,
-    prearm REFUSES with "Polygon fence(s) invalid"
-    [AC_Fence.cpp:428-440] -- which is why the field procedure is: push
-    params (laptop, night before), draw and push the polygon (dashboard, on
-    site), then arm.
+    prearm refuses with "Polygon fence(s) invalid" [AC_Fence.cpp:428-440];
+    this is why the field procedure is: push params (laptop, night
+    before), draw and push the polygon (dashboard, on site), then arm.
 
 Run by hand on the board if the dashboard is not up:
 
@@ -112,9 +111,9 @@ def validate(polygon):
 def push(io, polygon, log=print, timeout=25.0):
     """Upload the polygon as fence mission items. Returns a status string.
 
-    Raises RuntimeError on refusal or timeout: a fence that did not land is
-    never reported as success, because the operator would then fly believing
-    a boundary exists.
+    Raises RuntimeError on refusal or timeout: a fence that did not land
+    must never be reported as success, or the operator would fly believing
+    a boundary exists that doesn't.
     """
     bad = validate(polygon)
     if bad:
@@ -133,9 +132,9 @@ def push(io, polygon, log=print, timeout=25.0):
             type=['MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK'],
             blocking=True, timeout=1.0)
         if msg is None:
-            # The autopilot can miss the opening COUNT on a busy link; one
-            # repeat every 3 s is cheap and turns a silent hang into a
-            # completed upload.
+            # The autopilot can miss the opening COUNT message on a busy
+            # link; repeating it every 3 s is cheap, and turns a silent
+            # hang into a completed upload.
             if n and time.monotonic() - last_count_t > 3.0:
                 last_count_t = time.monotonic()
                 conn.mav.mission_count_send(ts, tc, n, MISSION_TYPE_FENCE)
@@ -193,18 +192,19 @@ def read_back(io, log=print, timeout=20.0, attempts=3, settle_s=1.5):
     """Download the fence the Pixhawk actually holds. [[lat, lon], ...].
 
     This is the only honest proof that an upload worked: the ACK says the
-    autopilot liked the exchange, the read-back says what it stored.
+    autopilot liked the exchange, the read-back says what it actually stored.
 
-    WHY IT RETRIES ON AN EMPTY ANSWER (2026-08-18, observed twice on the real
-    aircraft): a MISSION_COUNT of 0 arrives from a Pixhawk that demonstrably
-    holds a fence. The user's own paste shows `fence.py read` returning
-    nothing and then, seconds later and unchanged, all seven corners; the
-    dashboard's verify-after-push hit the same thing and reported "sent 7 but
-    the Pixhawk holds 0" for a fence that was in storage. A single zero is
-    therefore not evidence of an empty fence, and treating it as evidence is
-    what made a working fence look broken. A NON-empty answer is trusted
-    immediately; only zero is retried, so a genuinely empty fence costs
-    attempts * settle_s seconds to confirm and nothing else changes.
+    Why it retries on an empty answer (2026-08-18, observed twice on the
+    real aircraft): a MISSION_COUNT of 0 arrives from a Pixhawk that
+    demonstrably holds a fence. The user's own paste shows `fence.py read`
+    returning nothing and then, seconds later and unchanged, all seven
+    corners; the dashboard's verify-after-push hit the same thing and
+    reported "sent 7 but the Pixhawk holds 0" for a fence that was in
+    storage. A single zero is therefore not evidence of an empty fence,
+    and treating it as evidence is what made a working fence look broken.
+    A non-empty answer is trusted immediately; only zero gets retried, so
+    a genuinely empty fence costs attempts * settle_s seconds to confirm,
+    and nothing else changes.
     """
     for attempt in range(attempts):
         got = _read_back_once(io, timeout, log=log)
@@ -220,16 +220,17 @@ def read_back(io, log=print, timeout=20.0, attempts=3, settle_s=1.5):
 def _read_back_once(io, timeout=20.0, log=print, count_wait=1.5, count_tries=3):
     """One download attempt. Returns [] for an empty or unanswered fence.
 
-    TWO WAITS, NOT ONE, because they fail differently and the operator was
-    left staring at a stuck button for over a minute (user, 2026-08-19).
-    The opening MISSION_COUNT comes back in well under a second on a healthy
-    link, so waiting the FULL download timeout for it is how an unanswered
-    request turned into a 20 s hang per attempt. Now the request is RE-SENT
-    every count_wait seconds up to count_tries times, which also fixes the
-    likelier cause: a single lost MISSION_REQUEST_LIST on a link that is
-    already carrying the ring's 10 Hz stream looks exactly like an empty
-    fence. Only once a COUNT has landed does the longer timeout apply, and
-    that part is real work (one round trip per corner).
+    Two waits, not one, because they fail differently, and the operator
+    was once left staring at a stuck button for over a minute (user,
+    2026-08-19). The opening MISSION_COUNT comes back in well under a
+    second on a healthy link, so waiting out the full download timeout
+    for it is how an unanswered request turned into a 20 s hang per
+    attempt. Now the request is resent every count_wait seconds, up to
+    count_tries times, which also fixes the likelier cause: a single lost
+    MISSION_REQUEST_LIST on a link already carrying the ring's 10 Hz
+    stream looks exactly like an empty fence. Only once a COUNT has
+    landed does the longer timeout apply, and that part is real work: one
+    round trip per corner.
     """
     conn = io.conn
     ts, tc = conn.target_system, conn.target_component

@@ -130,7 +130,7 @@ def main():
     sys_status_seen = False
 
     def all_satisfied():
-        """Healthy aircraft must produce all core messages. Requires TWO
+        """Healthy aircraft must produce all core messages. Requires two
         heartbeats per source: first proves sender exists, second proves
         still-sending. Does not wait for GPS fix (indoors won't arrive)."""
         core = (seen['fc_hb'] >= 2 and seen['gps_msgs'] and gps_present
@@ -196,7 +196,8 @@ def main():
             # (channel values won't show this).
             rc_present = bool(msg.onboard_control_sensors_enabled & RC_BIT)
             rc_healthy = bool(msg.onboard_control_sensors_health & RC_BIT)
-            # Sticky check: safety property is solid for whole window.
+            # Sticky: a safety property has to hold the whole window, not
+            # just the final sample.
             if not rc_healthy:
                 rc_ever_bad = True
             if not bool(msg.onboard_control_sensors_health & MAG_BIT):
@@ -353,9 +354,9 @@ def main():
 
 
 def motor_test(m, motors, throttle_pct, rc_live, ack_timeout=5.0):
-    """Spin each motor in ArduPilot's TEST ORDER, one at a time.
+    """Spin each motor in ArduPilot's test order, one at a time.
 
-    TRANSMITTER MUST BE ON: ArduPilot gates motor test on live RC.
+    Transmitter must be on: ArduPilot gates motor test on live RC.
     Motors numbered clockwise from front-right. Out-of-sequence motor =
     swapped ESC signal lead. Direction alternates CW/CCW per hexa layout.
     Verify by eye: software only commands spin, eyes verify motion.

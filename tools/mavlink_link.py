@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Shared MAVLink transport plumbing. A LIBRARY, not a tool: nothing here
+"""Shared MAVLink transport plumbing. A library, not a tool: nothing here
 prints a verdict or exits with a judgement, and it has no CLI.
 
 Everything that talks to the Pixhawk needs the same four things right, and
 each one has cost this project a wasted bench session at least once:
 
-  WHICH PORT      device names differ by OS and move between reboots
-  WHICH BAUD      115200 on the Pixhawk's USB, 57600 for a SiK ground radio
-  WHICH TARGET    there are TWO MAVLink talkers on this bus, and locking onto
+  Which port      device names differ by OS and move between reboots
+  Which baud      115200 on the Pixhawk's USB, 57600 for a SiK ground radio
+  Which target    there are two MAVLink talkers on this bus, and locking onto
                   the wrong one leaves every command addressed to nobody
-  WHICH ACK       the reply you want is behind a pile of streamed telemetry
+  Which ack       the reply you want is behind a pile of streamed telemetry
 
 These lived in wiring_check.py until 2026-08-10, so bench.py, flow_test.py and
 the param tools all had to import from a 623-line PASS/FAIL test just to open
@@ -54,7 +54,7 @@ def require_port(conn):
     """Fail with something actionable when the device node is not there.
 
     pymavlink's own failure is a two-screen traceback ending in ENOENT, which
-    buries the only useful question: which serial devices DO exist right now?
+    buries the only useful question: which serial devices do exist right now?
     Ports move constantly here (Pixhawk USB is a ttyACM, the SiK radio and
     the ESP32 both want ttyUSB0, and whichever was plugged in first wins).
     """
@@ -80,8 +80,8 @@ def resolve_link(conn, baud):
     ttyUSB with whichever was plugged in first taking the lower number; on
     macOS they are /dev/cu.usbmodem* and /dev/cu.usbserial* (or SLAB_*).
     Hard-coding a default just produces a traceback on the wrong machine, so
-    when the caller does not name a port we pick the only candidate if there
-    is exactly one, and refuse to guess when there is more than one.
+    when the caller does not name a port this picks the only candidate if
+    there is exactly one, and refuses to guess when there is more than one.
 
     Baud follows the port type unless the caller asked for a specific rate:
     115200 for a directly-attached Pixhawk, 57600 for a SiK ground radio.
@@ -104,15 +104,15 @@ def resolve_link(conn, baud):
 
 
 def wait_autopilot(m, timeout=30):
-    """Lock onto the AUTOPILOT's heartbeat, not whatever heartbeat lands first.
+    """Lock onto the autopilot's heartbeat, not whatever heartbeat lands first.
 
-    mavutil.wait_heartbeat() returns the first HEARTBEAT of ANY kind, and this
+    mavutil.wait_heartbeat() returns the first HEARTBEAT of any kind, and this
     bus has two senders: the flight controller (sys 1 comp 1) and the ESP32
     (sys 1 comp 195). When the ESP32's arrives first, wait_heartbeat returns
     it, but pymavlink refuses to lock its sysid onto it (correctly: the ESP32
     declares MAV_TYPE_ONBOARD_CONTROLLER + MAV_AUTOPILOT_INVALID, both of
     which probably_vehicle_heartbeat() rejects). target_system is then left at
-    0 = BROADCAST, so every command goes out addressed to nobody in
+    0 = broadcast, so every command goes out addressed to nobody in
     particular and the acks do not come back reliably. That is exactly the
     "no ack" seen on 2026-08-02, on the runs whose banner said "system 0".
 
@@ -182,7 +182,7 @@ def drain_statustext(m):
 
 
 def send_and_ack(m, cmd, *params, timeout=5.0):
-    """Send a COMMAND_LONG and wait for ITS ack.
+    """Send a COMMAND_LONG and wait for its ack.
 
     Drains the receive backlog first: this link streams everything at 4 Hz and
     a command sent on top of an unread pile means the ack is behind seconds of

@@ -193,8 +193,8 @@ def make_app(data_dir, control=None):
             name = os.path.basename(json.load(f)['file'])
         return send_from_directory(data_dir, name)
 
-    # ---------------- layout (server-stored so BOTH laptops see the same
-    # arrangement, user 2026-08-16; survives reboots and refreshes) ---------
+    # Layout: server-stored so both laptops see the same arrangement (user
+    # 2026-08-16); survives reboots and refreshes.
 
     @app.get('/api/layout')
     def api_layout_get():
@@ -215,7 +215,7 @@ def make_app(data_dir, control=None):
         os.replace(tmp, layout_path)
         return jsonify({'ok': True})
 
-    # ---------------- flight control (only when --enable-control) ----------
+    # Flight control: only active when --enable-control is set.
 
     @app.get('/api/control')
     def api_control():
@@ -247,15 +247,15 @@ def make_app(data_dir, control=None):
             'log': tail(os.path.join(LOG_DIR, 'run_mission.log')),
         })
 
-    # ---------------- waypoints (map shows the planned route BEFORE flight
-    # and lets it be edited by dragging, user 2026-08-16) -------------------
+    # Waypoints: the map shows the planned route before flight and lets it
+    # be edited by dragging (user 2026-08-16).
 
-    # LIVE POSITION. The mission writes fixes to its JSONL, so the map can
-    # show the aircraft while flying with no link of its own. Before launch
-    # there is no mission and therefore no position, which is what the map was
-    # missing. The dashboard opens its OWN link, but only while nothing else
-    # owns the port: run_mission.py and test_everything.py both take it
-    # exclusively, and losing that race would abort a flight.
+    # Live position: the mission writes fixes to its JSONL, so the map can
+    # show the aircraft while flying, with no link of its own. Before launch
+    # there is no mission and so no position, which is what the map lacked.
+    # The dashboard opens its own link, but only while nothing else owns the
+    # port: run_mission.py and test_everything.py both take it exclusively,
+    # and losing that race would abort a flight.
     live = {'io': None, 'fix': None, 'at': 0.0, 'hold': 0.0,
             'lock': threading.Lock()}
 
@@ -634,7 +634,7 @@ def make_app(data_dir, control=None):
             name = os.path.basename(reply['path'])
             log(f'PHOTO: via worker: {name}')
             return jsonify({'ok': True, 'file': name})
-        # No worker: open the camera ourselves, briefly.
+        # No worker: open the camera directly here, briefly.
         try:
             from camera import CameraError, open_camera
             import cv2
@@ -929,7 +929,7 @@ def main():
         log(f'FLIGHT CONTROL ENABLED on port {args.port}: anyone who can '
             f'reach this host can start and stop the mission')
     # threaded: live_position can hold a request for up to 8 s while the
-    # link opens; single-threaded that would queue the START click behind it.
+    # link opens; single-threaded that would queue the Start click behind it.
     make_app(args.data_dir, control).run(host=args.host, port=args.port,
                                          threaded=True)
 

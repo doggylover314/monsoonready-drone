@@ -3,31 +3,32 @@
 
     ~/python ~/monsoonready-drone/tools/level_cal.py
 
-WHY THIS EXISTS (2026-08-22): QGC's bulk parameter download fails over the
+Why this exists (2026-08-22): QGC's bulk parameter download fails over the
 degraded SiK radio, so the "Level Horizon" button in QGC never becomes
-usable. But levelling is not a parameter download: it is ONE command,
+usable. But levelling is not a parameter download, it is a single command,
 MAV_CMD_PREFLIGHT_CALIBRATION with param5=2, which ArduPilot answers by
 computing the current tilt and folding it into AHRS_TRIM_X/Y (verified against
 ArduPilot's GCS handler and MAVProxy's `ahrstrim`, which sends 0,0,0,0,2,0,0).
-It travels over the board's reliable Pixhawk USB link, so the SiK problem does
-not touch it.
+It travels over the board's reliable Pixhawk USB link, so the SiK problem
+never touches it.
 
-WHAT IT FIXES: logs 47-50 (2026-08-21) showed the aircraft resting at a
+What it fixes: logs 47-50 (2026-08-21) showed the aircraft resting at a
 standing -1 to -2 deg pitch in every session. The roll controller integrated
 that error while the throttle sat part-way up on the ground, then applied the
 whole wound-up correction the instant the aircraft got light, which is the
-tilt Raghav felt on the attempted take-off. Levelling zeroes the MOUNT part of
-that standing error. The rest is procedural (brisk continuous throttle to
-lift-off, no dwelling at partial throttle).
+tilt Raghav felt on the attempted take-off. Levelling zeroes the mount's
+share of that standing error; the rest is procedural (brisk continuous
+throttle to lift-off, no dwelling at partial throttle).
 
-THE ONE RULE THAT MATTERS: the FRAME must be physically level and still when
-you run this, checked with a bubble/phone level on the booms, NOT the table.
-The command bakes whatever tilt it sees into the trim, so running it on a
-tilted frame makes the aircraft worse, not better. Run it ONCE; the before/after
-trim it prints is the proof it worked.
+The one rule that matters: the frame must be physically level and still
+while this runs, checked with a bubble or phone level on the booms, not on
+the table. The command bakes whatever tilt it sees straight into the trim,
+so running it on a tilted frame makes the aircraft worse, not better. Run it
+a single time; the before/after trim it prints is the proof it worked.
 
-No reboot needed: AHRS_TRIM is used live. Disarmed only (ArduPilot refuses
-calibration while armed; this refuses first, with a clearer message).
+No reboot needed, AHRS_TRIM is used live. Disarmed only: ArduPilot refuses
+calibration while armed, and this checks first so the refusal comes with a
+clearer message.
 """
 
 import math
@@ -40,7 +41,7 @@ from pymavlink import mavutil                                    # noqa: E402
 from mavlink_link import connect, send_and_ack, drain_statustext  # noqa: E402
 from parameters import await_param                              # noqa: E402
 
-TRIMS = ('AHRS_TRIM_X', 'AHRS_TRIM_Y')      # roll, pitch, in RADIANS
+TRIMS = ('AHRS_TRIM_X', 'AHRS_TRIM_Y')      # roll, pitch, in radians
 CONSTRAIN_DEG = 10.0                          # ArduPilot's own trim ceiling
 
 

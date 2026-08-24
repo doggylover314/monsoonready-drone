@@ -185,7 +185,7 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
     inset_m (distance inside fence); start (operator's click; default: southwest-most);
     step_m (sampling interval); min_row_m (minimum row length).
 
-    Inset enforced via scan lines sampled every step_m, kept if inside polygon AND
+    Inset enforced via scan lines sampled every step_m, kept if inside polygon and
     >= inset_m from all edges. Accurate to step_m. Handles concave fences: all pieces
     flown with leg checks preventing transitions across notches.
 
@@ -245,7 +245,7 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
     _legs = {}
 
     def leg_ok(p, q):
-        """Is straight flight from p to q inside keep-out zone?
+        """Does the straight line from p to q stay clear of the keep-out zone?
 
         Memoised: traversal tries all starting ends, same legs repeat.
         """
@@ -335,7 +335,7 @@ def build_coverage(polygon, heading_deg=None, spacing_m=5.0, inset_m=4.0,
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    # Default wp_field.txt is used by start_dashboard.sh START button.
+    # Default wp_field.txt is used by start_dashboard.sh Start button.
     ap.add_argument('--out', default='wp_field.txt')
     ap.add_argument('--conn', default='auto',
                     help="'auto' (default) = the Pixhawk's USB via "

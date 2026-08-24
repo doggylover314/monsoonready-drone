@@ -1,6 +1,6 @@
 """Recurrence scoring over past missions (TODO 14): which sites persist and rank for revisit.
 
-Does NOT forecast rainfall. Measures what data supports: site recurrence across
+Does not forecast rainfall. Measures what data supports: site recurrence across
 flights to establish stagnation. Site seen once is a puddle. Site on four days
 is a breeding site.
 
@@ -30,7 +30,7 @@ HALF_LIFE_DAYS = 14.0
 
 # Vocabulary shared with dashboard. Past ambiguity: "persistent" meant 2
 # flights in dashboard, 3 flights over 7 days here, confusing judges reading
-# the map and table. This file holds stricter definition; dashboard follows.
+# the map and table. This file holds the stricter definition; dashboard follows it.
 RECURRING_MIN_FLIGHTS = 2
 PERSISTENT_MIN_FLIGHTS = 3
 PERSISTENT_MIN_SPAN_DAYS = 7.0
@@ -153,8 +153,8 @@ def build_sites(data_dir, radius_m=CLUSTER_RADIUS_M):
             if kind == 'detection':
                 hit.detections += 1
             elif kind == 'drop':
-                # 'ok' absent in older logs (all drops assumed successful);
-                # absent defaults to true.
+                # 'ok' absent in older logs, where every drop counted as
+                # successful; the default of True preserves that reading.
                 if ev.get('ok', True):
                     hit.drops += 1
                 else:

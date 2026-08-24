@@ -90,7 +90,7 @@ def main():
     print(f"\ngate on ch{args.channel}, {args.us_per_deg:g} us/deg readout")
     print(HELP)
 
-    pos = None          # last pulse width the board ACCEPTED
+    pos = None          # last pulse width the board accepted
     ref = args.start    # angle readout zero
     marks = {}          # 'closed'/'open' -> us
 
@@ -148,7 +148,7 @@ def main():
             continue
         goto(val if kind == 'abs' else pos + val, raw)
 
-    # --- summary ----------------------------------------------------------
+    # Summary: report where the gate ended up and whatever got marked.
     print(f"\nGATE LEFT AT {pos}us, not closed.")
 
     if 'closed' in marks and 'open' in marks:

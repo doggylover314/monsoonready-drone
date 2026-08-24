@@ -15,8 +15,9 @@ Two options for doses below the scale's resolution:
   --grain-mg X  enter a grain count instead of grams. A 1 mm mustard seed is
                 about 0.6 mg. Calibrate X by counting 200 and weighing them.
 
-Several dwells rather than one, because the question is whether flow is linear
-in time: a gate takes time to swing open, so short doses can under-deliver.
+Multiple dwells, not one, because the real question is whether flow stays
+linear in time: a gate takes a moment to swing open, so a short dose can
+under-deliver.
 
 Aircraft on the bench, hopper loaded, tray under the gate. Commands the servo
 channel only, nothing arms and no motor turns.
@@ -35,10 +36,10 @@ from pymavlink import mavutil                                    # noqa: E402
 from mavlink_link import connect, send_and_ack                   # noqa: E402
 from dropper import PixhawkServoDropper as Gate                  # noqa: E402
 
-# Bti label rates, VectoBac G (Valent BioSciences) 2.5-20 lb/acre over
-# 4046.86 m2/acre. Low band is 1st-2nd instar larvae, high band 3rd-4th or
-# polluted water. Surrogate granules give the right seconds, not the right
-# grams: recalibrate on real Bti.
+# Bti label rates, VectoBac G (Valent BioSciences), 2.5-20 lb/acre over
+# 4046.86 m2/acre. The low band is 1st-2nd instar larvae, the high band
+# 3rd-4th or polluted water. Surrogate granules give the right seconds, not
+# the right grams: recalibrate on real Bti.
 BTI_G_PER_M2_LOW = 0.28
 BTI_G_PER_M2_TYPICAL = 1.1
 BTI_G_PER_M2_HIGH = 2.24
@@ -141,7 +142,7 @@ def main():
                 continue
             total_g = caught * args.grain_mg / 1000.0 if args.grain_mg \
                 else caught
-            # Per cycle, so every figure below describes ONE dose.
+            # Per cycle: every figure below describes a single dose.
             grams = total_g / args.cycles
             actual = total_open / args.cycles
             results.append((dwell, actual, grams))
@@ -159,9 +160,9 @@ def main():
     for dwell, actual, grams in results:
         print(f"{dwell:>7.2f}{actual:>8.2f}{grams:>9.3f}{grams / actual:>8.2f}")
 
-    # Supply check first, since a hopper running dry mid-dwell fakes the same
-    # positive intercept as a fixed slug. The discriminator is g/s falling as
-    # dwell rises.
+    # Supply check first: a hopper running dry mid-dwell fakes the same
+    # positive intercept as a fixed slug. The discriminator is g/s falling
+    # as dwell rises.
     starved = False
     if len(results) >= 2:
         by_dwell = sorted(results, key=lambda r: r[1])
@@ -197,8 +198,8 @@ def main():
                 print(f"  intercept {intercept:+.2f} g is the supply decay "
                       f"above, not a slug. Refill and re-run.")
             elif intercept > 0.05 * slope:
-                # Granules already past the gate fall at gate-crack, so flow
-                # is linear but does not pass through the origin.
+                # Granules already past the gate fall as soon as it cracks
+                # open, so flow is linear but never passes through the origin.
                 print(f"  fixed slug per open: about {intercept:.2f} g falls "
                       f"regardless of dwell. Minimum dose; only a smaller "
                       f"aperture reduces it.")

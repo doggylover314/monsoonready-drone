@@ -1,15 +1,15 @@
-"""Prove the MISSION STACK sees the Pixhawk over its USB link.
+"""Prove the mission stack sees the Pixhawk over its USB link.
 
 This proves the exact objects the mission flies with (MavIO on the
 Pixhawk's USB port through the board's hub, resolved from
-/dev/serial/by-id) produce live telemetry. One terminal on the BOARD:
+/dev/serial/by-id) produce live telemetry. One terminal on the board:
 
     ~/venv/bin/python uno_q/test_mission_link.py
 
 PASS = "MISSION STACK LIVE" with a mode and a battery voltage. Position may
-be None indoors (no GPS fix) - that is the sky's fault, not the stack's.
-Nothing here arms, changes mode, or moves a servo: read-only by design,
-because it will be run the night before the flight.
+be None indoors (no GPS fix): that is the sky's fault, not the stack's.
+Nothing here arms, changes mode, or moves a servo. It is read-only by
+design, since it gets run the night before the flight.
 
 (Until 2026-08-16 this went through the STM32 byte-shovel on SERIAL5; that
 chain is deleted, the wires are out, and 'auto' finds the USB device.)
@@ -35,7 +35,7 @@ def main():
     print("heartbeat received: RECEIVE direction live at MAVLink level")
 
     # setup_streams sends SET_MESSAGE_INTERVAL commands and waits for their
-    # COMMAND_ACKs, so it succeeding IS the transmit-direction proof: the
+    # COMMAND_ACKs, so it succeeding is the transmit-direction proof: the
     # Pixhawk heard a command that originated in this process. It raises on
     # no-ack, so reaching the next line means both directions work.
     try:

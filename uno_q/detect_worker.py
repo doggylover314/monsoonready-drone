@@ -2,10 +2,11 @@
 """Camera + ONNX inference in a process of its own (2026-08-01 split).
 
 Measured on the board: yolo26n blocks 511ms per frame, yolo26s 1518ms. Run
-in-process (the old way) that is time the single-threaded mission loop is
-not pumping MAVLink and not noticing a pilot override. Run here, the mission
-loop never blocks: this process captures, infers, and atomically rewrites
-one small JSON file; FileDetector in the mission process reads it.
+in-process (the old way), and that is time the single-threaded mission loop
+is not pumping MAVLink and not noticing a pilot override. Run here instead
+and the mission loop never blocks: this process captures, infers, and
+atomically rewrites one small JSON file; FileDetector in the mission process
+reads it.
 
     ~/venv/bin/python uno_q/detect_worker.py --model models/best.onnx
 
@@ -13,16 +14,16 @@ run_mission.py launches this itself (and reuses an already-running one, so
 starting it by hand first is fine too). It owns the camera exclusively; do
 not run it and an --inline-detector mission at the same time.
 
-THE PHOTO PIPELINE (user spec 2026-08-16). The camera stays open for the
+The photo pipeline (user spec 2026-08-16). The camera stays open for the
 whole run and capture is paced by inference, one frame in hand at a time:
 the next frame is grabbed as soon as the previous one's processing cycle
 completes, so there is never an idle gap and never a backlog (the V4L2
 buffer is pinned to 1 and flushed before every read, so a grab always
 returns the freshest frame, not a stale queued one). Every captured frame
 is saved full-resolution to --photo-dir as future training data; the folder
-is capped at --photo-cap-gb with the OLDEST photos deleted first.
+is capped at --photo-cap-gb with the oldest photos deleted first.
 
-MANUAL PHOTOS (dashboard button): the dashboard writes a request file
+Manual photos (dashboard button): the dashboard writes a request file
 (MANUAL_REQ) whose content is the target directory; this loop notices it,
 saves the current frame there, and answers in MANUAL_DONE with the saved
 path. Manual photos are never inferred on and never counted; they are only
@@ -30,7 +31,7 @@ saved and shown.
 
 Output file contract (all FileDetector relies on):
   seq        increments every cycle; unchanged seq = nothing new
-  t_frame    time.time() at CAPTURE (not after inference), for telemetry
+  t_frame    time.time() at capture (not after inference), for telemetry
              pairing in the mission process (same machine, same clock)
   w, h       frame size, so geometry mismatches are still caught
   rows       [x1,y1,x2,y2,conf] per detection at/above --conf, letterbox space
@@ -45,7 +46,7 @@ heartbeat that tells the mission process this worker is alive.
 Writes go to a temp file then os.replace(), which is atomic on the same
 filesystem: the reader sees the old payload or the new one, never half.
 Default output is under /tmp (tmpfs) so the once-per-cycle writes never
-touch the eMMC; photos DO go to the eMMC, deliberately, they are the point.
+touch the eMMC; photos do go to the eMMC, deliberately: they are the point.
 
 A dead camera is reported every cycle but never retried automatically
 (user, 2026-08-16: diagnosis belongs to the dashboard's test button, not to
@@ -74,7 +75,7 @@ CAP_CHECK_EVERY = 100          # photos between folder-size enforcements
 def save_annotated(save_dir, seq, frame, rows, w, h):
     """Write the frame with its detection boxes drawn on it.
 
-    The boxes come back from the model in LETTERBOX space (the padded 640
+    The boxes come back from the model in letterbox space (the padded 640
     square), so they have to be un-padded and un-scaled before they mean
     anything about the real image; camera_geom.letterbox_to_frame is the same
     conversion the flight code uses to locate a puddle, reused here so the
@@ -111,7 +112,7 @@ def stamp_name(seq):
 
 
 def enforce_cap(photo_dir, cap_bytes, log):
-    """Delete OLDEST photos until the folder is back under cap_bytes.
+    """Delete the oldest photos until the folder is back under cap_bytes.
     Oldest by mtime, which is capture order. Never touches non-jpg files."""
     files = []
     total = 0
@@ -207,10 +208,11 @@ def main():
         cam_error = str(exc)
         log.error(f'camera did not open: {cam_error}')
 
-    # OnnxDetector is used as engine only (infer_rows): no telemetry, no
-    # dedup, no geometry here. Site logic stays in the mission process, which
-    # is the only place the telemetry to do it lives. frame_source is OUR cap
-    # so this loop keeps direct access to the raw frame for the photo saves.
+    # OnnxDetector here is just the inference engine (infer_rows): no
+    # telemetry, no dedup, no geometry. That logic stays in the mission
+    # process, the only place with the telemetry to run it. frame_source is
+    # our own capture object, so this loop still gets direct access to the
+    # raw frame for the photo saves.
     def grab():
         cap.grab()                       # flush the 1-deep buffer: freshest
         ok, frame = cap.read()

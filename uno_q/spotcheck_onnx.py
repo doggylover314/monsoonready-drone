@@ -3,7 +3,7 @@
 
 Writes one JSON line per image (sorted filenames, deterministic) plus an
 annotated copy of every image and a single grid montage for the docs. Run
-the SAME script on the laptop and on the UNO Q over the SAME folder, then
+the same script on the laptop and on the UNO Q over the same folder, then
 diff the two results.jsonl files: matching detections = the deployed
 ONNX + onnxruntime + preprocessing chain reproduces the training machine.
 
@@ -87,7 +87,7 @@ def main():
     # grid montage: 6 columns of 320x240 thumbnails
     if not annotated:
         # cv2.imwrite throws on a zero-height array, and ms[len(ms)//2] two
-        # lines later would IndexError anyway. Say WHY nothing was found:
+        # lines later would IndexError anyway. Say why nothing was found:
         # the usual cause is a directory of .bmp/.webp, which the extension
         # filter above skips silently.
         print(f"no images matched in {args.dir} (looking for "

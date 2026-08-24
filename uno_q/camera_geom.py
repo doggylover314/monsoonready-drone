@@ -9,14 +9,14 @@ Geometry, for a camera pointing straight down:
 
     image centre ..... the point directly under the drone (nadir)
     half-width ....... h * tan(hfov / 2) metres on the ground
-    a pixel offset ... scales linearly in TANGENT space, not in pixels
+    a pixel offset ... scales linearly in tangent space, not in pixels
 
 So the ground offset of a pixel is
 
     x_right_m = (2*px/W - 1) * h * tan(hfov/2)
     y_down_m  = (2*py/H - 1) * h * tan(vfov/2)
 
-where x_right/y_down are in CAMERA frame (right and down as the image is
+where x_right/y_down are in camera frame (right and down as the image is
 drawn). Those are then rotated by the drone's heading into North/East.
 
 Two things this deliberately does not model, because they are not worth the
@@ -27,7 +27,7 @@ error they would remove at these angles and altitudes:
     altitude. Tilt is the dominant error term if that ever changes: at 15 m,
     2 degrees of tilt shifts the nadir point by ~0.5 m.
 
-HFOV IS A MEASURED NUMBER, NOT A DATASHEET NUMBER. Run calibrate_fov() with a
+HFOV is a measured number, not a datasheet number. Run calibrate_fov() with a
 tape measure once the camera is in its final housing; lenses vary between
 units and the stated diagonal FOV of a webcam is frequently optimistic.
 Until it is measured, DEFAULT_HFOV_DEG is a placeholder and every offset
@@ -36,7 +36,7 @@ computed from it inherits its error proportionally.
 
 import math
 
-# MEASURED, no longer a placeholder. 2026-08-15 at the farm, wall method with
+# Measured, no longer a placeholder. 2026-08-15 at the farm, wall method with
 # a tape measure (uno_q/calibrate_camera.py): 0.950 m of wall visible at
 # 0.890 m => 2*atan(0.475/0.890) = 56.18 deg, at the mission's own 1280x720.
 # Consequences that follow from this number, recorded so they are not
@@ -47,9 +47,9 @@ DEFAULT_HFOV_DEG = 56.2
 
 # The camera is mounted rotated 90 deg: the 1280 px axis runs fore-aft, so a
 # forward-facing frame covers more ground ahead-behind than side-to-side
-# (user, 2026-08-24). VERIFY THE SIGN before a live drop: object in front of
-# the nose appearing in the LEFT half of the photo means +90 is right;
-# appearing in the RIGHT half means this must be -90.
+# (user, 2026-08-24). Verify the sign before a live drop: object in front of
+# the nose appearing in the left half of the photo means +90 is right;
+# appearing in the right half means this must be -90.
 MOUNT_YAW_DEG = 90.0
 
 
@@ -69,7 +69,7 @@ def footprint_track_m(geom, height_m, mount_yaw_deg=MOUNT_YAW_DEG):
 class CameraGeometry:
     """Nadir pinhole projection for one camera at one resolution.
 
-    hfov_deg: horizontal field of view of the FULL frame, in degrees.
+    hfov_deg: horizontal field of view of the full frame, in degrees.
     vfov is derived from the frame aspect ratio rather than taken separately,
     because a rectilinear lens shares one focal length across both axes.
     """
@@ -112,14 +112,14 @@ class CameraGeometry:
 def ground_area_m2(geom, px1, py1, px2, py2, height_m):
     """Approximate ground area of a detection box, in square metres.
 
-    Computed by projecting the box's two opposite CORNERS to the ground and
-    multiplying the resulting side lengths, NOT by scaling the pixel area by a
+    Computed by projecting the box's two opposite corners to the ground and
+    multiplying the resulting side lengths, not by scaling the pixel area by a
     single factor: ground_offset is linear in tangent space, so a box far from
     the image centre covers more ground per pixel than one at the centre, and
     a single scale factor would understate it.
 
-    THREE ERRORS THIS CARRIES, all of which matter if a dose is sized from it:
-      * a bounding BOX overestimates any non-rectangular puddle, without
+    Three errors this carries, all of which matter if a dose is sized from it:
+      * a bounding box overestimates any non-rectangular puddle, without
         bound. An L-shaped or diagonal puddle can be a small fraction of its
         box. Honest area needs a segmentation model, which is a different
         training run (PROJECT_STATE records the dataset already has polygons
@@ -141,8 +141,8 @@ def camera_to_ned(right_m, down_m, heading_deg, mount_yaw_deg=0.0):
 
     heading_deg: aircraft heading, degrees clockwise from north (MAVLink hdg).
     mount_yaw_deg: camera rotation within the airframe. 0 when the top of the
-        image points out the nose. Positive is clockwise AS SEEN IN THE IMAGE,
-        which for a belly-mounted downward camera means clockwise looking UP
+        image points out the nose. Positive is clockwise as seen in the image,
+        which for a belly-mounted downward camera means clockwise looking up
         at the aircraft from the ground, not looking down at it from above.
         Stated explicitly because the sign is otherwise a coin flip: rotate
         the camera 90 degrees, fly the mission, and if targets land to the
@@ -179,7 +179,7 @@ def calibrate_fov(distance_m, visible_width_m):
 
     Procedure, done once, with the camera in its final housing:
       1. Point the camera squarely at a wall, lens `distance_m` from it.
-      2. Capture one frame at the SAME resolution the mission uses.
+      2. Capture one frame at the same resolution the mission uses.
       3. Mark on the wall where the left and right edges of the frame fall.
       4. Measure between the marks -> visible_width_m.
 

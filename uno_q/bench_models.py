@@ -8,8 +8,8 @@ numpy and cv2 only, no ultralytics, no torch.
 
 Answers one question: how long does a frame take, end to end, on this board.
 
-WHY THIS SCRIPT AND NOT benchmark_onnx.py: that one profiles the flight model
-on one image. This one compares SEVERAL models over the SAME images with the
+Why this script and not benchmark_onnx.py: that one profiles the flight model
+on one image. This one compares several models over the same images with the
 same preprocessing, warms each up first, and reports the spread rather than a
 single number, because the decision it feeds ("is yolo26s affordable") turns
 on the slow frames, not the average one.
@@ -18,7 +18,7 @@ The preprocessing is byte-identical to detector.OnnxDetector on purpose. A
 benchmark that preprocesses differently from the flight code is measuring a
 program that will never run.
 
-REPORTED NUMBERS
+Reported numbers
   preprocess   letterbox + colour + scale, per frame
   inference    the ONNX session run alone
   total        what the mission loop actually blocks for
@@ -75,7 +75,7 @@ def bench(model_path, frames, np, cv2, ort, warmup, threads):
                                 providers=['CPUExecutionProvider'])
     inp = sess.get_inputs()[0]
     out_shape = sess.get_outputs()[0].shape
-    # Letterbox to the model's OWN input size, read from the ONNX, so a
+    # Letterbox to the model's own input size, read from the ONNX, so a
     # 1280-input export is benchmarked as itself instead of erroring on a
     # 640 tensor. Dynamic-dim exports fall back to the mission's 640.
     size = inp.shape[2] if isinstance(inp.shape[2], int) else SIZE
@@ -123,7 +123,7 @@ def main():
 
     import numpy as np
     import cv2
-    # ort 1.28 prints its /sys/class/drm GPU-probe warning AT IMPORT (before
+    # ort 1.28 prints its /sys/class/drm GPU-probe warning at import (before
     # any severity call can exist), so the suppression is an fd-level stderr
     # park around the import itself.
     saved, devnull = os.dup(2), os.open(os.devnull, os.O_WRONLY)

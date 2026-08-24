@@ -8,7 +8,7 @@ itself.
 
 On the UNO Q the interpreter is ~/venv/bin/python, not ./python.
 
-WHY THIS EXISTS. ArduPilot forwards any MAVLink message with no target_system
+Why this exists. ArduPilot forwards any MAVLink message with no target_system
 field to every other link it has learned a route on (MAVLink_routing::forward,
 read from the Copter 4.7.0 source on 2026-08-17). OBSTACLE_DISTANCE carries no
 target field, and the ESP32 sends one every 100 ms with all 72 sector slots
@@ -18,20 +18,20 @@ heartbeat that is roughly 2.2 kB/s re-sent out TELEM2 into a 57600 SiK link.
 It competes with everything QGC asks for, which is the leading explanation for
 a full parameter download going from about a minute to ten and then failing.
 
-THIS IS A SWITCH, NOT THE FIX. It disables a working sensor to buy radio
-bandwidth, so it is for calibration and parameter sessions on the ground, not
-for flying. The permanent options are recorded in PROJECT_STATE.md.
+This is a switch, not the fix. It disables a working sensor to buy radio
+bandwidth, so it belongs in calibration and parameter sessions on the ground,
+never in flight. The permanent options are recorded in PROJECT_STATE.md.
 
-BOTH PARAMETERS MOVE TOGETHER, deliberately. Turning off SERIAL1 alone would
+Both parameters move together, deliberately: turning off SERIAL1 alone would
 leave PRX1_TYPE=2 pointing at a port that can no longer deliver data, and this
-project's own record (2026-08-13, 2026-08-14) treats a proximity sensor
-configured but not streaming as an arming risk. off parks PRX1_TYPE at 0; on
-restores it from param_dumps/pixhawk_full_setup.param, so the restored values
-can never drift from the project's config.
+project's own record (2026-08-13, 2026-08-14) treats a proximity sensor that
+is configured but not streaming as an arming risk. off parks PRX1_TYPE at 0;
+on restores it from param_dumps/pixhawk_full_setup.param, so the restored
+values can never drift from the project's own config.
 
-Serial protocol and proximity type are both bound at startup, so each change
-reboots the flight controller and then verifies the result by reading the
-parameters back AND by counting what the ESP32 actually puts on the link.
+Serial protocol and proximity type both bind at startup, so each change
+reboots the flight controller, then confirms the result two ways: reading
+the parameters back, and counting what the ESP32 actually puts on the link.
 """
 
 import argparse
@@ -55,7 +55,7 @@ ESP32_COMPID = 195                 # the ring announces itself as component 195
 
 
 def live_values():
-    """Restore values come from the project's param file, never from here.
+    """The values to restore come from the project's param file, never from here.
 
     Hard-coding "SERIAL1_PROTOCOL 2, PRX1_TYPE 2" in this script would create a
     second source of truth that silently rots the day the file changes.
@@ -98,7 +98,7 @@ def is_armed(m, timeout=8.0):
 
 
 def ring_traffic(m, seconds=6.0):
-    """Count what the ESP32 puts on THIS link, which is the real proof.
+    """Count what the ESP32 puts on this link, which is the real proof.
 
     Two independent counts: anything from component 195, and OBSTACLE_DISTANCE
     of any origin. No stream request is needed, because forwarded packets

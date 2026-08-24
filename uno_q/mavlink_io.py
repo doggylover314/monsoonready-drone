@@ -1,11 +1,12 @@
 """MAVLink link layer for the UNO Q mission computer.
 
-Single-threaded: step() pump receives and dispatches telemetry; commands
-needing ACK pump the same loop. No locks. Identical behavior on laptop
-(SITL over TCP) and UNO Q (Pixhawk USB via hub).
+Single-threaded: the step() pump receives and dispatches telemetry, and
+commands that need an ACK pump that same loop. No locks. Behavior is
+identical on the laptop (SITL over TCP) and the UNO Q (Pixhawk USB via a
+hub).
 
-Component 191 (MAV_COMP_ID_ONBOARD_COMPUTER). Connection 'auto' resolves
-/dev/serial/by-id stable Pixhawk entries.
+Runs as component 191 (MAV_COMP_ID_ONBOARD_COMPUTER). Connection 'auto'
+resolves the stable Pixhawk entries under /dev/serial/by-id.
 """
 
 import glob
@@ -42,8 +43,9 @@ SETPOINT_RESEND_S = 0.2
 # Component 191 heartbeat rate (1 Hz, MAVLink convention).
 HEARTBEAT_PERIOD_S = 1.0
 
-# Gate travel: 560us closed, 1760us open. Bounded with margin to catch typos.
-# Shared with dropper.py. SERVO9_MIN/_MAX on board: 500/1800.
+# Gate travel is 560us closed to 1760us open; these bounds add margin
+# around that to catch typos, and are shared with dropper.py. Board
+# SERVO9_MIN/_MAX are 500/1800.
 PWM_MIN_US = 500
 PWM_MAX_US = 1800
 
@@ -183,10 +185,11 @@ class MavIO:
     # ---------- connection ----------
 
     def wait_ready(self, timeout=60):
-        """Wait for autopilot (component 1) heartbeat + mode map. Raises on timeout.
+        """Wait for the autopilot's (component 1) heartbeat and mode map. Raises on timeout.
 
-        MUST be component 1, not 195 (ESP32 ring). pymavlink locks target_system
-        only to VEHICLE types; ESP32-first leaves it at 0, breaking mode mapping.
+        Must be component 1, not 195 (the ESP32 ring): pymavlink locks
+        target_system only to VEHICLE types, and an ESP32 heartbeat
+        arriving first leaves it at 0, breaking mode mapping.
         """
         deadline = time.monotonic() + timeout
         hb = None
@@ -322,8 +325,9 @@ class MavIO:
     def run_prearm_checks(self):
         """Request autopilot prearm checks via MAV_CMD_RUN_PREARM_CHECKS.
 
-        Forces failing checks to STATUSTEXT immediately (vs. 30 s throttle).
-        ACCEPTED does not mean passed; check STATUSTEXTs and SYS_STATUS prearm bit.
+        Forces any failing check straight to STATUSTEXT instead of waiting
+        out the normal 30 s throttle. ACCEPTED does not mean passed: check
+        the STATUSTEXTs and the SYS_STATUS prearm bit.
         """
         return self.command_ack(mavutil.mavlink.MAV_CMD_RUN_PREARM_CHECKS,
                                 timeout=2.0, retries=1)
@@ -332,8 +336,9 @@ class MavIO:
                     timeout=3.0, retries=3, retry_failed=False):
         """Send command_long and wait for COMMAND_ACK, pumping telemetry meanwhile.
 
-        Logged per SCOPE RULES 1. retry_failed: also retry on MAV_RESULT_FAILED
-        (ArduPilot issues FAILED while prearm checks settle, e.g., EKF).
+        Logged per SCOPE RULES 1. retry_failed also retries on
+        MAV_RESULT_FAILED, since ArduPilot issues FAILED while prearm
+        checks are still settling (EKF, for instance).
         """
         name = self._CMD_NAMES.get(cmd, f'cmd{cmd}')
         for attempt in range(1, retries + 1):
@@ -368,8 +373,9 @@ class MavIO:
     def set_mode(self, name, confirm_s=5.0):
         """Change mode and wait for heartbeat confirmation. Returns bool.
 
-        COMMAND_ACK arrives in ~10 ms but mode confirmation needs HEARTBEAT (1 Hz).
-        Caller sees old mode for up to 1 s. Returns False if accepted but unconfirmed.
+        COMMAND_ACK arrives in ~10 ms, but mode confirmation needs a
+        HEARTBEAT (1 Hz), so the caller can see the old mode for up to 1 s.
+        Returns False when accepted but never confirmed.
         """
         mapping = self._mode_names or {}
         if name not in set(mapping.values()):
@@ -390,9 +396,10 @@ class MavIO:
         return False
 
     def arm(self, retries=12, timeout=5.0):
-        """Arm and return success/failure. Default retries: 12 x 5 s (prearm settling).
+        """Arm and return success or failure. Default retries: 12 x 5 s, for prearm settling.
 
-        Reason in tel.statustexts. Caller must act on False; does not raise.
+        The reason lands in tel.statustexts. This never raises, so the
+        caller must act on a False itself.
         """
         return self.command_ack(
             mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, p1=1,
@@ -426,8 +433,9 @@ class MavIO:
     def velocity_ned(self, vn, ve, vd, force=False):
         """Guided velocity target (rate-limited, 5 Hz minimum).
 
-        force=True bypasses rate limiter for setpoint CHANGES only (critical:
-        drop commands must not be swallowed; drop too late if limited).
+        force=True bypasses the rate limiter, but only for setpoint
+        changes: a drop command must never be swallowed, and rate-limiting
+        it would just mean dropping too late.
         """
         now = time.monotonic()
         if not force and now - self._last_setpoint_t < SETPOINT_RESEND_S:

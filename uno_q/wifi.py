@@ -1,24 +1,24 @@
 """Wi-Fi switching for the board, through NetworkManager's nmcli.
 
-WHY (user, 2026-08-16): "Add a small settings window to the dashboard which
+Why (user, 2026-08-16): "Add a small settings window to the dashboard which
 allows easy changing of wifi connections." The WISP router plan is dead (the
 MR3020 kept failing to associate), so at the field the board joins the phone
-hotspot DIRECTLY, and that switch has to be doable from the dashboard rather
+hotspot directly, and that switch has to be doable from the dashboard rather
 than from an SSH session that the switch itself is about to kill.
 
 Everything here is verified nmcli 1.46 syntax:
   * TYPE reads "802-11-wireless" from `connection show` but "wifi" from
-    `device status` -- the same radio, two spellings, so both are handled.
+    `device status`: same radio, two spellings, so both are handled.
   * `-t` escapes literal ':' inside values as '\\:', so a naive split(':')
     corrupts any SSID or MAC containing a colon. _split() below splits on
-    UNESCAPED colons only.
+    unescaped colons only.
   * `device wifi list` re-scans and blocks if its cache is stale, so the
     scan path is `rescan` then `list --rescan no`, each under a timeout.
-  * PASSWORDS NEVER GO IN argv. `nmcli device wifi connect ... password X`
+  * Passwords never go in argv. `nmcli device wifi connect ... password X`
     would expose the secret in `ps` to every user on the box. The
     documented safe path, and the one used here, is: create the profile
     without a secret, then `connection up ... passwd-file FILE` with a
-    0600 temp file that is deleted immediately afterwards.
+    0600 temp file deleted immediately afterwards.
 
 Reads (listing, scanning) need no privileges. Bringing a connection up or
 creating a profile is polkit-gated: on a headless SSH/service session the
@@ -60,7 +60,7 @@ def _run(args, timeout=SHORT_TIMEOUT):
 
 
 def _split(line):
-    """Split one -t line on UNESCAPED colons, then unescape."""
+    """Split one -t line on unescaped colons, then unescape."""
     parts = re.split(r'(?<!\\):', line)
     return [p.replace('\\:', ':').replace('\\\\', '\\') for p in parts]
 
@@ -147,7 +147,7 @@ def connect_saved(name):
 def connect_new(ssid, password, ifname=None):
     """Join a new network. The password never appears in argv.
 
-    Profile is created first WITHOUT the secret, then brought up with
+    Profile is created first without the secret, then brought up with
     `passwd-file`, a 0600 file removed in the finally block.
     """
     dev = ifname or wifi_device()

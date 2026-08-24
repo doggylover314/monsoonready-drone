@@ -8,7 +8,7 @@ schema stays defined in exactly one place. Default = two curated flights:
   flight B (today): shorter pass, re-detects one flight-A site ~3 m away
       (becomes a "persistent site" on the accumulated view) + 1 new site
 
---flights N switches to RANDOM mode: N serpentine surveys, one per day,
+--flights N switches to random mode: N serpentine surveys, one per day,
 drawing detection sites from a shared pool so some recur across flights
 (persistence rings) and some are new; ~1 in 4 descents aborts. --seed makes
 a run reproducible.

@@ -4,8 +4,14 @@
     ./python tools/check_log.py ~/logs/00000037.BIN
 
 Exit: 0 = pass, 1 = gate failed, 2 = cannot judge.
-Reports: vibration per IMU, clipping, GPS quality, compass field, hover throttle, battery, errors.
-VibeZ median < 15 per IMU gates AltHold/Loiter. Throttle-gated on VIBE only: bench zeros drag median. GPS unfiltered at arming (zero throttle). Compass before/after-throttle split diagnoses calibration vs. wiring current."""
+Reports vibration per IMU, clipping, GPS quality, compass field, hover
+throttle, battery, and errors.
+
+VibeZ median < 15 per IMU gates AltHold/Loiter. Only VIBE is throttle-gated:
+an un-gated bench log, motors idle, drags the median toward zero and hides
+real vibration. GPS quality is read unfiltered, at arming (zero throttle).
+The compass split, before throttle against under throttle, tells a
+calibration problem apart from current in nearby wiring."""
 
 import argparse
 import math
@@ -35,7 +41,9 @@ ERR_SUBSYS = {
 # Subsystems that fail the run.
 ERR_FATAL = {12, 16, 17, 26, 30}
 
-# MSG substrings to highlight. 'Crash' and 'Thrust': ArduPilot encodes prop/motor failures without generic keywords.
+# MSG substrings worth surfacing. 'Crash' and 'Thrust' are here because
+# ArduPilot describes prop and motor failures without using any of the
+# other, more generic keywords in this list.
 MSG_KEYS = ('EKF', 'Vibration', 'Failsafe', 'failsafe', 'Error', 'PreArm',
             'Glitch', 'Bad', 'Crash', 'Thrust', 'Motor', 'Yaw', 'Compass',
             'Baro', 'Internal')
@@ -124,7 +132,8 @@ def main():
             if ns is not None and hd is not None:
                 (gps_fly if flying else gps_pre).append((ns, hd))
         elif t == 'MAG':
-            # |B| from RAW field: what the arming check uses. Offsets logged separately, don't subtract.
+            # |B| from the raw field: what the arming check actually uses.
+            # Offsets are logged separately; don't subtract them.
             x = getattr(msg, 'MagX', None)
             y = getattr(msg, 'MagY', None)
             z = getattr(msg, 'MagZ', None)
@@ -151,7 +160,7 @@ def main():
 
     print(f"\n=== {args.logfile} ===")
 
-    # --- can this log be judged at all? -------------------------------------
+    # Can this log be judged at all?
     if not vibe:
         if not ctun_seen:
             print("CANNOT EVALUATE: no CTUN messages in this log, so throttle "
@@ -166,7 +175,7 @@ def main():
 
     failed = []
 
-    # --- vibration, per IMU instance ----------------------------------------
+    # Vibration, per IMU instance
     print(f"\nVIBRATION  (throttle > {args.min_throttle}, "
           f"{len(vibe)} IMU instance(s))")
     worst = 0.0
@@ -189,7 +198,7 @@ def main():
     if not gate_ok:
         failed.append('vibration gate')
 
-    # --- clipping ------------------------------------------------------------
+    # Clipping
     rises = {i: clip_last[i] - clip_first[i] for i in clip_last}
     print("\nCLIPPING   (rise while the motors were running)")
     for imu in sorted(rises):
@@ -200,7 +209,7 @@ def main():
               "passing median.")
         failed.append('accelerometer clipping')
 
-    # --- GPS, unfiltered by throttle ----------------------------------------
+    # GPS, unfiltered by throttle
     print("\nGPS")
     for label, data in (('before motors (the arming window)', gps_pre),
                         ('while flying', gps_fly)):
@@ -221,7 +230,7 @@ def main():
         print("  NO GPS DATA AT ALL in this log: GPS-dependent modes cannot "
               "be cleared from it.")
 
-    # --- compass field strength ----------------------------------------------
+    # Compass field strength
     print(f"\nCOMPASS    |B| in mG, gate {MAG_FIELD_GATE:.0f} (this site's "
           f"figure, from the aircraft's own arming message)")
     if not mag_pre and not mag_fly:
@@ -256,7 +265,7 @@ def main():
               f"the battery leads away from the compass instead.")
         failed.append('compass field under throttle')
 
-    # --- hover throttle, learned ---------------------------------------------
+    # Hover throttle, learned
     if hover:
         med_h, fin_h = statistics.median(hover), hover[-1]
         print(f"\nHOVER      learned CTUN.ThH median {med_h:.3f}, "
@@ -266,7 +275,7 @@ def main():
                   f"payload.")
             failed.append('hover throttle')
 
-    # --- battery -------------------------------------------------------------
+    # Battery
     # Resolve parameters to motor-start values; track later changes separately.
     batt_cal, batt_late = {}, {}
     for pt, name, val in batt_parms:
@@ -322,7 +331,7 @@ def main():
                   f"WHOLE log, so a log with many arm/disarm cycles is not "
                   f"one flight's worth.")
 
-    # --- errors and messages --------------------------------------------------
+    # Errors and messages
     print(f"\nERRORS     {len(errs)} ERR events")
     for sub, code in errs[:25]:
         name = ERR_SUBSYS.get(sub, f'subsys {sub}')
@@ -336,7 +345,7 @@ def main():
     for s in dict.fromkeys(interesting):
         print(f"  {s}")
 
-    # --- verdict --------------------------------------------------------------
+    # Verdict
     if failed:
         print(f"\nVERDICT: FAIL ({', '.join(dict.fromkeys(failed))})")
         sys.exit(1)

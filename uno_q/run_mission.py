@@ -1,8 +1,9 @@
 """Onboard mission runner for UNO Q.
 Usage: setsid nohup python uno_q/run_mission.py --waypoints wp_field.txt &
 
-Logs to ~/logs/run_mission.log. Signals enable graceful shutdown with RTL;
-exceptions trigger emergency RTL. Waypoint file: lat,lon per line.
+Logs to ~/logs/run_mission.log. A signal triggers a graceful shutdown into
+RTL; an exception triggers an emergency RTL. Waypoint file format: lat,lon
+per line.
 """
 
 import argparse
@@ -23,7 +24,8 @@ from mavlink_io import MavIO
 from mission import Mission, MissionConfig
 from missionlog import MissionLog
 
-# Found relative to this file so works on laptop, board, and any checkout.
+# Found relative to this file, so it works on the laptop, the board, and
+# any checkout.
 DEFAULT_MODEL = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     'models', 'best.onnx')
@@ -64,11 +66,14 @@ def main():
     ap.add_argument('--waypoints', required=True)
     ap.add_argument('--data-dir', default='~/monsoonready_data')
     ap.add_argument('--survey-alt', type=float, default=5.0)
-    # 2.0, not 3.0: prevents zero descent if survey is at tree line.
+    # Has to stay above floor_margin_m or the EKF floor abort goes dead:
+    # that check is rel_alt < drop_alt - margin, which at 1.0 and a 1.0
+    # margin means rel_alt < 0 and can never fire.
     ap.add_argument('--drop-alt', type=float, default=1.0)
-    # Metres from detected puddle centre. TF-Luna cannot range still water,
-    # so descend this far to side before crossing over to release. North by default
-    # (site decision). 0 disables offset.
+    # Metres from the detected puddle centre. TF-Luna cannot range still
+    # water, so the aircraft descends this far to the side before crossing
+    # over to release. North by default is a site decision; 0 disables
+    # the offset.
     ap.add_argument('--offset-n', type=float, default=1.5,
                     help='metres north of the puddle to descend over')
     ap.add_argument('--offset-e', type=float, default=0.0,
@@ -77,13 +82,13 @@ def main():
     ap.add_argument('--photo-hold', type=float, default=1.0,
                     help='seconds to hold at each waypoint so the frame is '
                          'taken stationary. 0 flies the rows continuously')
-    # 'auto' resolves camera by name (camera.py). Bare indexes race Venus codecs;
-    # use number or /dev/videoN to pin for bench.
+    # 'auto' resolves the camera by name (camera.py). A bare index can race
+    # the Venus codecs; use a number or /dev/videoN to pin it on the bench.
     ap.add_argument('--camera', default='auto')
     ap.add_argument('--frame-w', type=int, default=1280)
     ap.add_argument('--frame-h', type=int, default=720)
-    # Defaults to measured 56.2 deg in camera_geom; geometry is always on.
-    # Pass 0 to disable.
+    # Defaults to the measured 56.2 deg in camera_geom; geometry is always
+    # on unless 0 is passed to disable it.
     ap.add_argument('--hfov-deg', type=float, default=DEFAULT_HFOV_DEG,
                     help=f'MEASURED horizontal FOV, default {DEFAULT_HFOV_DEG} '
                          f'(camera_geom.DEFAULT_HFOV_DEG). 0 = nadir only.')
@@ -135,8 +140,9 @@ def main():
         log("[run] no --hfov-deg: detections assumed directly below "
             "the aircraft (nadir)")
 
-    # Inference in separate process (detect_worker.py) to avoid blocking MAVLink.
-    # Inline inference causes 511ms/frame (yolo26n) to 1518ms/frame (yolo26s) lag.
+    # Inference runs in a separate process (detect_worker.py) so it can't
+    # block MAVLink: inline inference costs 511ms/frame with yolo26n and up
+    # to 1518ms/frame with yolo26s.
     if args.inline_detector:
         detector = OnnxDetector(model, camera=args.camera, conf=args.conf,
                                 geom=geom, mount_yaw_deg=args.mount_yaw_deg,
@@ -152,7 +158,8 @@ def main():
         sys.exit("[run] camera preflight failed, refusing to fly a blind survey")
 
     if args.dry_run:
-        # Before MissionLog creation to prevent phantom in-progress state.
+        # Runs before MissionLog is created, so a dry run never leaves a
+        # phantom in-progress mission record.
         log("[run] DRY RUN: not arming. Polling the detector for 30s.")
         deadline = time.monotonic() + 30
         seen = 0
@@ -192,9 +199,10 @@ def main():
                           'basestation', 'dashboard.py')
         bs_cmd = [sys.executable, bs, '--data-dir', args.data_dir]
 
-    # Fence defines detection boundary. Camera sees ~8m either side of aircraft
-    # while rows sit only metres inside. Missing fence disables check; this is
-    # logged so protection cannot silently fail.
+    # The fence defines the detection boundary. The camera sees roughly 8m
+    # either side of the aircraft, while the rows themselves sit only
+    # metres inside it. A missing fence disables the check, and that gets
+    # logged so the protection can never silently fail.
     import fence as fence_mod
     poly = fence_mod.load()
     if len(poly) >= 3:
@@ -215,7 +223,8 @@ def main():
     stop = {'why': None}
 
     def _wind_up(signum, _frame):
-        # Set flag and return. State machine will RTL at next tick via normal path.
+        # Sets the flag and returns; the state machine RTLs on its next
+        # tick through the normal path.
         if stop['why'] is None:
             stop['why'] = f"{signal.Signals(signum).name} received"
             log(f"[run] {stop['why']}: winding up, {cfg.end_mode} at the "
@@ -267,9 +276,11 @@ def _worker_pids():
 
 
 def _spawn_or_reuse_worker(args, model, log):
-    """Start detect_worker.py unless already publishing (fresher than STALE_S).
-    Prevents double-spawn on V4L2 device. Spawned workers stopped at exit.
-    Logs to ~/logs/detect_worker.log; stdout redirected to /dev/null.
+    """Start detect_worker.py, unless one is already publishing fresher than STALE_S.
+
+    Avoids a double-spawn on the V4L2 device. Any worker spawned here is
+    stopped at exit; it logs to ~/logs/detect_worker.log with stdout sent
+    to /dev/null.
     """
     det_file = os.path.expanduser(args.det_file)
     try:
@@ -278,8 +289,9 @@ def _spawn_or_reuse_worker(args, model, log):
     except OSError:
         fresh = False
     if fresh:
-        # A leftover hand-started worker filters at ITS conf before writing,
-        # so reusing one with a higher threshold silently blinds the mission.
+        # A leftover, hand-started worker filters at its own conf before
+        # writing, so reusing one with a higher threshold would silently
+        # blind the mission.
         try:
             with open(det_file) as f:
                 wconf = json.load(f).get('conf')

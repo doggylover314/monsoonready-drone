@@ -8,13 +8,16 @@
     ./python tools/bench.py rng           # downward rangefinder
     ./python tools/bench.py nodes         # who else is on the MAVLink bus
 
-Parameters go to tools/parameters.py (distinct from sensor probing).
+Parameter work belongs to tools/parameters.py; this file is sensor probing only.
 
-PORT/BAUD auto-detect on single device: ttyUSB (SiK, 57600) or ttyACM (Pixhawk USB, 115200).
-With multiple present, use --conn.
+Port and baud auto-detect when a single device is present: ttyUSB is a SiK
+radio at 57600, ttyACM is the Pixhawk over USB at 115200. Pass --conn when
+more than one is plugged in.
 
-Critical: wait_autopilot() locks onto Pixhawk, not first heartbeat (ESP32 may respond at compid 195).
-SiK links saturate with standard stream rates; probes use 2 Hz to prevent losses mimicking faults.
+wait_autopilot() waits specifically for the Pixhawk's heartbeat rather than
+the first one seen, since the ESP32 can answer too, at compid 195. SiK links
+saturate at standard stream rates, so probes request only 2 Hz, low enough
+that dropped packets do not masquerade as a real fault.
 """
 
 import argparse
@@ -26,7 +29,6 @@ from pymavlink import mavutil
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Shared MAVLink setup in separate module.
 from mavlink_link import connect, request_streams
 
 DOWN = mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_270
@@ -60,10 +62,11 @@ KNOWN_COMPONENTS = {
 
 
 def cmd_nodes(m, args):
-    """MAVLink nodes on bus by system and component.
+    """List MAVLink nodes on the bus by system and component.
 
-    Component 191 heartbeat from UNO Q confirms its transmit path to Pixhawk.
-    Listens unfiltered since unknown nodes are the interesting case.
+    A heartbeat from component 191 (the UNO Q) confirms its transmit path to
+    the Pixhawk works. Listens unfiltered, since an unknown node is exactly
+    the interesting case.
     """
     request_streams(m, args.baud)
     print(f"listening {args.seconds:.0f}s for heartbeats from anyone ...")
@@ -91,8 +94,9 @@ def cmd_nodes(m, args):
         print(f"  sys {sysid:3d} comp {compid:3d}  {rec['n']:4d} heartbeats  "
               f"{KNOWN_COMPONENTS.get(compid, 'UNKNOWN')}")
     if not any(c == 191 for _, c in seen):
-        # Component 191 only heartbeats while a MavIO process is running.
-        # Idle board is silent by design; absence alone does not indicate link failure.
+        # Component 191 only sends heartbeats while a MavIO process is
+        # running on the UNO Q; an idle board is silent by design, so its
+        # absence here does not by itself mean the link is broken.
         print("\n  no component 191 heard. THIS ALONE DOES NOT MEAN THE LINK "
               "IS BROKEN.\n"
               "  Nothing on the UNO Q heartbeats unless a MavIO process is "
@@ -139,7 +143,8 @@ def cmd_gps(m, args):
         if g is None:
             continue
         hdop = g.eph / 100.0
-        # 3D fix required: 2D fix has no altitude and won't navigate despite good sats/HDOP.
+        # A 3D fix is required: a 2D fix has no altitude and will not
+        # navigate, however good the satellite count or HDOP look.
         ok = (g.fix_type >= mavutil.mavlink.GPS_FIX_TYPE_3D_FIX
               and g.satellites_visible >= 10 and 0 < hdop < 1.5)
         print(f"  {time.time() - t0:5.0f}s  fix {g.fix_type}  "
@@ -149,7 +154,8 @@ def cmd_gps(m, args):
 
 def cmd_rng(m, args):
     request_streams(m, args.baud)
-    # TF-Luna does not work over water; probe tests rangefinder over ground.
+    # The TF-Luna does not work over water, so this probe only covers the
+    # rangefinder over ground.
     print("downward rangefinder over GROUND (the over-water question is "
           "settled: it does not work, descend-beside only):")
     end = time.time() + args.seconds
@@ -157,7 +163,9 @@ def cmd_rng(m, args):
     misses = 0
     while time.time() < end:
         d = m.recv_match(type='DISTANCE_SENSOR', blocking=True, timeout=0.5)
-        # Track gap between DOWNWARD frames; other sensors reset recv_match timeout.
+        # last_down tracks gaps between DOWNWARD frames specifically: any
+        # DISTANCE_SENSOR message satisfies recv_match's own timeout, so
+        # relying on that alone would hide a dropout in just the downward one.
         if time.time() - last_down > 1.0:
             misses += 1
             print(f"  --- NO DOWNWARD READING for "
@@ -195,7 +203,7 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        # Probes run until --seconds expires; Ctrl-C is normal termination.
-        # Suppress traceback since this is not an error.
+        # Probes run until --seconds expires. Ctrl-C ends one early; that is
+        # normal, not an error, so no traceback here.
         print("\nstopped.")
         sys.exit(0)

@@ -1,6 +1,6 @@
-"""Find and open the USB camera BY NAME, never by bare index.
+"""Find and open the USB camera by name, never by bare index.
 
-WHY THIS FILE EXISTS (2026-08-16, the farm post-mortem). /dev/video numbers on
+Why this file exists (2026-08-16, the farm post-mortem). /dev/video numbers on
 the UNO Q are a race: the Qualcomm Venus codec devices and the USB camera all
 register V4L2 nodes, and whoever probes first gets video0. Both orders have
 been observed on this exact board within one evening:
@@ -8,26 +8,26 @@ been observed on this exact board within one evening:
     boot with camera direct:   camera = video0/1, codecs = video2/3
     replug behind the hub:     codecs = video0/1, camera = video2/3
 
-cv2.VideoCapture(0) on the second layout opens the VIDEO ENCODER, which fails
+cv2.VideoCapture(0) on the second layout opens the video encoder, which fails
 with the exact error the farm produced three times ("can't open camera by
 index"). The camera never moved; the number did. So: resolve the device from
 /sys/class/video4linux/*/name, which names the driver behind each node, and
 try only nodes that belong to a real camera.
 
-A UVC camera registers TWO nodes (capture + metadata) with the same name; the
-capture node has the lower number (observed both layouts). We try candidates
-in ascending order and require an actual frame before declaring success, so a
-metadata node can never be picked.
+A UVC camera registers two nodes (capture + metadata) with the same name; the
+capture node has the lower number (observed both layouts). Candidates are
+tried in ascending order, and each must return an actual frame before it
+counts as opened, so a metadata node can never be picked.
 
 Also owns focus locking and the diagnosis path: when no camera opens, say
-WHY in plain words (no camera on USB at all, or the exact OS error and which
+why in plain words (no camera on USB at all, or the exact OS error and which
 process is holding the node).
 """
 
 import glob
 import os
 
-# Substrings that mark a V4L2 node as NOT a camera (platform codecs).
+# Substrings that mark a V4L2 node as not a camera (platform codecs).
 _NOT_CAMERA = ('venus', 'codec', 'decoder', 'encoder')
 
 # The mission's capture resolution: the B525's maximum. The geometry
@@ -59,7 +59,7 @@ def camera_nodes():
 def holders(node):
     """[(pid, comm)] of processes with the node open. Same-user only: /proc
     fd links of other users are unreadable, so an empty answer means 'none of
-    OUR processes', not 'nobody'."""
+    our processes', not 'nobody'."""
     out = []
     for pid_dir in glob.glob('/proc/[0-9]*'):
         try:
@@ -92,8 +92,8 @@ def diagnose(node):
 
 
 def _lock_focus(node, log=print):
-    """Focus to infinity, best effort. Two separate v4l2-ctl calls: both in
-    one transaction fails (EACCES, seen on the board 2026-08-15)."""
+    """Focus to infinity, best effort. Two separate v4l2-ctl calls: putting
+    both in one transaction fails (EACCES, seen on the board 2026-08-15)."""
     import subprocess
     for ctrl in ('focus_automatic_continuous=0', 'focus_absolute=0'):
         try:

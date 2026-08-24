@@ -106,7 +106,7 @@ def reboot_note(names):
             print(f"  {n}  ({NEEDS_REBOOT[n]})")
 
 
-# --- subcommands ------------------------------------------------------------
+# Subcommands
 
 def cmd_get(args):
     m, _, _ = connect(args.conn, args.baud)

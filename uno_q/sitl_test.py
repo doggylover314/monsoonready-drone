@@ -1,7 +1,7 @@
 """Scripted SITL scenarios for the mission state machine.
 
-Start SITL first (hexa, matching the F550; rangefinder params from the parm
-file; speedup makes the run quick):
+Start SITL first (hexa, matching the F550; rangefinder params come from the
+parm file; speedup makes the run quick):
 
   ../ardupilot/Tools/autotest/sim_vehicle.py -v ArduCopter -f hexa \
       --no-mavproxy --speedup 5 \
@@ -14,8 +14,9 @@ Then:
 
 Happy path PASS: survey -> latch -> descend -> exactly one drop -> resume ->
 survey completes -> RTL, no aborts.
-Dropout drill PASS: rangefinder 'goes silent' below 6m (client-side hook, no
-SIM param surgery), mission aborts UPWARD, zero drops, survey still completes.
+Dropout drill PASS: the rangefinder 'goes silent' below 6m (a client-side
+hook, no SIM param surgery), the mission aborts upward, zero drops, and the
+survey still completes.
 """
 
 import argparse

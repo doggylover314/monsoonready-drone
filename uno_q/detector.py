@@ -63,7 +63,7 @@ class DetectionSource:
 
 
 class _RowResolver(DetectionSource):
-    """Converts model output rows (LETTERBOX space) to Detection via geom and telemetry.
+    """Converts model output rows (letterbox space) to Detection via geom and telemetry.
 
     Rows format: x1,y1,x2,y2,conf[,cls]. at_t is frame capture time (for rangefinder freshness vs. read time).
     """
@@ -95,8 +95,9 @@ class _RowResolver(DetectionSource):
                          f"to nadir for the rest of the flight")
                 self._size_warned = True
             self.geom = None
-        # All rows above threshold, best first. A frame holds both treated and untreated puddles;
-        # taking only strongest would suppress neighbours on every frame until they leave footprint.
+        # A frame can hold several untreated puddles at once; keeping only the
+        # strongest match would suppress the others until they left the
+        # footprint. So every row above threshold survives here, sorted best first.
         rows = sorted((r for r in rows if float(r[4]) >= self.conf),
                       key=lambda r: -float(r[4]))
         for row in rows:
@@ -262,9 +263,10 @@ class OnnxDetector(_RowResolver):
             import cv2
             self._cv2 = cv2
         boxed[top:top + nh, left:left + nw] = self._cv2.resize(frame, (nw, nh))
-        # Sharpness (Laplacian variance) logged for analysis; motion blur is invisible to model.
-        # Not a gate (no frame skipped), no gating without in-flight distribution.
-        # Absolute values meaningless across scenes; compare within single flight only.
+        # Sharpness (Laplacian variance) is logged for analysis; motion blur is
+        # invisible to the model itself. It gates nothing yet: no in-flight
+        # distribution exists yet to pick a threshold from. Absolute values mean
+        # nothing across scenes, so compare them only within one flight.
         self.last_sharpness = float(self._cv2.Laplacian(
             self._cv2.cvtColor(boxed, self._cv2.COLOR_BGR2GRAY),
             self._cv2.CV_64F).var())

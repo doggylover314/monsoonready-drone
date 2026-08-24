@@ -7,19 +7,21 @@
     ./python tools/sik.py set S2 64                # one register, then AT&W + ATZ
     ./python tools/sik.py sweep-air                # hunt the far radio's AIR_SPEED
 
-Parameters addressed by REGISTER NUMBER (S0, S1, S2, ...). Run `probe` to dump
-ATI5 with register mapping; do not guess at numbers.
+Parameters are addressed by register number (S0, S1, S2, ...). Run `probe`
+first to dump ATI5 with the register mapping; never guess at a number.
 
-Radio-only tool; separate from parameters.py, bench.py, mavlink_link.py.
+A radio-only tool, kept separate from parameters.py, bench.py and mavlink_link.py.
 
-Command mode: radio watches for `+++` between >= 1 second silence blocks.
-ATI/ATI5 run locally; RT forms run remote. RT needs established link and cannot
-rescue mismatched pair. Firmware flashes need bootloader over direct serial; QGC
-handles firmware, not this tool.
+Command mode: the radio watches for `+++` between two silences of at least a
+second each. ATI and ATI5 run locally; the RT forms run on the far radio, but
+only over an established link, so they cannot rescue a mismatched pair.
+Firmware flashes need the bootloader over a direct serial connection; QGC
+handles firmware, this tool does not.
 
-Firmware upgrades reset radio to new defaults; old and new ends can differ on
-SERIAL_SPEED, AIR_SPEED, or NETID. Mismatch prevents link; indistinguishable
-from dead radio without LEDs.
+A firmware upgrade resets the radio to the new image's defaults, so the two
+ends can end up disagreeing on SERIAL_SPEED, AIR_SPEED or NETID. A mismatch
+kills the link and, without checking the LEDs, looks exactly like a dead
+radio.
 """
 
 import argparse
@@ -32,7 +34,8 @@ try:
 except ImportError:
     sys.exit("pyserial missing: ./pip install pyserial")
 
-# Ordered by likelihood. 57600 is SiK default; 115200 for reconfigured host links.
+# Ordered by likelihood: 57600 is the SiK default, 115200 shows up on
+# reconfigured host links.
 BAUDS = [57600, 115200, 38400, 19200, 9600, 230400]
 
 # AIR_SPEED values the firmware accepts, in kbps. Both ends must agree exactly.
@@ -42,7 +45,7 @@ GUARD_S = 1.2          # silence either side of +++, spec minimum is 1.0
 
 
 def find_port():
-    """Find SiK radio USB-serial bridge. Print options to avoid confusion with ESP32."""
+    """Find the SiK radio's USB-serial bridge. Prints the candidates so it is never confused with the ESP32."""
     cands = [p for p in list_ports.comports()
              if 'USB' in p.device or 'ACM' in p.device]
     if not cands:
@@ -57,10 +60,10 @@ def find_port():
 
 
 def command_mode(ser):
-    """Enter command mode or confirm already there.
+    """Enter command mode, or confirm the radio is already there.
 
-    Radio already in command mode does not answer `+++` with OK (no response);
-    check with ATI first to detect existing mode.
+    A radio already in command mode does not answer `+++` with OK, it gives
+    no response at all, so check with ATI first to catch that case.
     """
     ser.reset_input_buffer()
     ser.write(b'\r\nATI\r\n')
@@ -77,7 +80,7 @@ def command_mode(ser):
 
 
 def leave_command_mode(ser):
-    """Exit command mode with ATO; without it radio stays in command mode and carries no MAVLink."""
+    """Exit command mode with ATO; without it the radio stays in command mode and carries no MAVLink."""
     try:
         ser.write(b'ATO\r\n')
         ser.flush()
@@ -96,12 +99,14 @@ def at(ser, cmd, wait=0.6):
 
 
 def open_at(port, baud, quiet=False):
-    """Open at one baud and try to reach command mode. Caller closes."""
+    """Open the port at one baud and try to reach command mode. The caller closes it."""
     try:
         ser = serial.Serial(port, baud, timeout=0.5)
     except serial.SerialException as exc:
-        # Do not quiet busy errors: different root cause from radio silence.
-        # Hiding this error sends search toward dead radio when port is held.
+        # Do not silence "busy" errors: the root cause differs from a radio
+        # that is simply not answering. Hiding it would send the search
+        # toward a dead radio when the real problem is the port already
+        # being held open.
         busy = 'busy' in str(exc).lower()
         print(f"  {baud:>6}: cannot open ({exc})")
         if busy:
@@ -110,7 +115,6 @@ def open_at(port, baud, quiet=False):
         return None
     if command_mode(ser):
         if not quiet:
-            # Success: radio answers in command mode.
             print(f"  {baud:>6}: radio answers here")
         return ser
     if not quiet:
@@ -141,7 +145,8 @@ def probe(port):
     print(local.strip())
 
     print("\nREMOTE RADIO (through the link)")
-    # Remote dump over air link with ECC is slow; 4s timeout per attempt, 3 retries.
+    # A remote dump over the air link with ECC on is slow: 4s timeout per
+    # attempt, 3 retries.
     remote = ''
     for _ in range(3):
         remote += at(ser, 'RTI5', wait=4.0) or ''
@@ -173,7 +178,7 @@ def probe(port):
 
 
 def read_reg(ser, n):
-    """One register's value, or None. ATSn? echoes just the number."""
+    """One register's value, or None: ATSn? echoes just the number."""
     for line in at(ser, f'ATS{n}?').splitlines():
         line = line.strip()
         if line.isdigit():
@@ -182,9 +187,10 @@ def read_reg(ser, n):
 
 
 def sweep_air(port):
-    """Sweep local radio's AIR_SPEED until remote answers.
+    """Sweep the local radio's AIR_SPEED until the remote radio answers.
 
-    No confirmation prompt; reversible setting. Restores original on failure.
+    No confirmation prompt, since the setting is reversible; restores the
+    original value on failure.
     """
     print("\nfinding a baud that reaches the local radio")
     ser = None
@@ -206,7 +212,8 @@ def sweep_air(port):
         at(ser, 'AT&W')
         at(ser, 'ATZ', wait=2.0)
         ser.close()
-        # SiK pair hops channel sequence to sync; sleep 3s to allow link before query.
+        # The SiK pair hops its channel sequence to resync; sleep 3s to let
+        # the link form before querying it.
         time.sleep(3.0)
         ser = open_at(port, baud, quiet=True)
         if not ser:

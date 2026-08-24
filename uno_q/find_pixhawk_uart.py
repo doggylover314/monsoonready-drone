@@ -3,30 +3,30 @@
 
     python3 ~/find_pixhawk_uart.py
 
-RUN THIS BEFORE WRITING ANY STM32 SKETCH. The recorded plan for TODO 7 is
+Run this before writing any STM32 sketch. The recorded plan for TODO 7 is
 Linux -> Bridge RPC -> STM32 sketch -> Serial1 (D0/D1) -> Pixhawk SERIAL5,
 which needs a byte-shovel sketch, a working Bridge, and Serial1 to be unclaimed
 by the router. That is three unknowns stacked on each other.
 
 But the Linux side exposes /dev/ttyS0..S3, and if the Pixhawk's SERIAL5 TX
-happens to land on one of them, ALL THREE UNKNOWNS VANISH: pymavlink opens the
-port directly and the STM32 is not involved at all. That would be a strictly
-simpler, strictly more reliable architecture than the recorded plan, and it
-costs one read-only test to find out.
+happens to land on one of them, all three unknowns vanish: pymavlink opens
+the port directly and the STM32 is not involved at all. That would be a
+strictly simpler, strictly more reliable architecture than the recorded
+plan, and it costs one read-only test to find out.
 
 The recorded claim is "UNO Q D0/D1 = STM32 USART1 (PB7/PB6)", which if true
 means no ttyS can see the Pixhawk and the sketch route is the only one. That
 claim has never been verified against the board. This settles it either way.
 
-STRICTLY READ-ONLY. It opens each port, listens, and closes. It never writes a
-byte, so it cannot contend with the Pixhawk's TX5 and cannot corrupt anything
-that may be using a port for something else.
+Strictly read-only. It opens each port, listens, and closes. It never writes
+a byte, so it cannot contend with the Pixhawk's TX5 and cannot corrupt
+anything that may be using a port for something else.
 
-WHAT THE RESULT MEANS:
-  MAVLINK on some port -> use it directly. Skip the sketch entirely.
-  BYTES but no MAVLink -> something is talking at another baud, or that port
+What the result means:
+  MAVLink on some port -> use it directly. Skip the sketch entirely.
+  Bytes but no MAVLink -> something is talking at another baud, or that port
                           is the Linux<->STM32 Bridge. Not the Pixhawk.
-  SILENCE everywhere   -> the recorded claim holds. The Pixhawk is only
+  Silence everywhere   -> the recorded claim holds. The Pixhawk is only
                           reachable through the STM32, so the sketch route is
                           the real one.
 """
@@ -93,12 +93,12 @@ def main():
                   f"{sample.hex(' ') if n else ''}{note}")
 
     print()
-    # A port that REFUSED TO OPEN proves nothing about MAVLink, and conflating
-    # the two is how this script lied on 2026-08-13: all four ttyS returned
-    # "Input/output error" on configure and it reported "NO MAVLINK ... that
-    # CONFIRMS the recorded claim", which was a conclusion drawn from a failure
-    # mode it had never distinguished. Silence is evidence; an unopenable port
-    # is the absence of evidence.
+    # A port that refused to open proves nothing about MAVLink, and
+    # conflating the two is how this script lied on 2026-08-13: all four
+    # ttyS returned "Input/output error" on configure and it reported "NO
+    # MAVLINK ... that CONFIRMS the recorded claim", which was a conclusion
+    # drawn from a failure mode it had never distinguished. Silence is
+    # evidence; an unopenable port is the absence of evidence.
     if unopenable and not hits:
         print(f"INCONCLUSIVE. {unopenable} of {len(ports) * len(BAUDS)} "
               f"attempts could not even OPEN the port.")

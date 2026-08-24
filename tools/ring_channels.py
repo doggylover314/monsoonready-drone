@@ -6,40 +6,41 @@
     ~/venv/bin/python tools/ring_channels.py --sensor 3 --truth 50
     ~/venv/bin/python tools/ring_channels.py --sensor all --truth 50
 
-TWO MODES, because "is the ring wired up" and "is this sensor any good" are
+Two modes, because "is the ring wired up" and "is this sensor any good" are
 different questions:
 
-  SURVEY (default) answers WHICH CHANNELS ARE ALIVE, in one pass, with nothing
+  Survey (default) answers which channels are alive, in one pass, with nothing
   set up in front of the drone. It needs no ground truth and no hands.
 
-  --sensor answers IS THIS SENSOR RELIABLE AND ACCURATE. You put a target at a
-  distance you have measured with a tape, and it reports how often the sensor
-  actually saw it, how much the reading jittered, and how far it sat from the
-  tape. A survey cannot answer that, because a survey has nothing to compare
-  against: a sensor stuck at a plausible-looking 80 cm passes a survey.
+  --sensor answers whether one sensor is reliable and accurate. You put a
+  target at a distance you have measured with a tape, and it reports how
+  often the sensor actually saw it, how much the reading jittered, and how
+  far it sat from the tape. A survey cannot answer that, because a survey has
+  nothing to compare against: a sensor stuck at a plausible-looking 80 cm
+  passes a survey.
 
-WHY THIS EXISTS: "prx ring 4/6" says how many channels are alive but not
-WHICH, and test_everything's "bearing bins that see an object" omits a healthy
+Why this exists: "prx ring 4/6" says how many channels are alive but not
+which, and test_everything's "bearing bins that see an object" omits a healthy
 channel that simply has nothing in front of it. The only thing that names them
 is the ESP32's own debug log over USB, and the ESP32's USB is not always
 reachable. It does not need to be: the answer is already on the wire.
 
-HOW IT TELLS DEAD FROM CLEAR (config.h, this build):
+How it tells dead from clear (config.h, this build):
   * a channel whose sensor failed reports SENSOR_MM_ERROR -> SECTOR_NO_DATA,
-    which goes out as 65535 = "unknown". ArduPilot treats unknown as NO
-    INFORMATION, never as clear, which is why an absent sector is safe but
+    which goes out as 65535 = "unknown". ArduPilot treats unknown as no
+    information, never as clear, which is why an absent sector is safe but
     also why it is invisible in any "what can we see" summary.
   * a channel that is alive with nothing in range sends RANGE_MAX_CM + 1,
     a real number. Alive and clear is therefore distinguishable from dead.
   * a channel with an object sends its distance in cm.
 
-CHANNEL 6, the UPWARD sensor, is not in OBSTACLE_DISTANCE at all: it travels
+Channel 6, the upward sensor, is not in OBSTACLE_DISTANCE at all: it travels
 as its own DISTANCE_SENSOR with orientation 24 (up), which the Pixhawk sees as
 RNGFND2. It is reported here anyway, because "which channels are alive" is the
 question and ch6 is a channel. Orientation 25 on the same message is the
 downward TF-Luna and is deliberately ignored.
 
-So: 65535 = DEAD, anything else = ALIVE. That is the whole trick.
+So: 65535 = dead, anything else = alive. That is the whole trick.
 
 Sampling over several seconds rather than reading one message is deliberate:
 the fault this chases is intermittent (loose contact / sagging 3V3 per
@@ -71,9 +72,9 @@ FIRMWARE_HZ = 10.0          # config.h TX_RATE_HZ, this build
 # Read from the tree at /media/sleuther/Stuff/ardupilot-SITL, not remembered.
 PRX_TIMEOUT_S = 0.5
 
-# PASS/FAIL GATES for --sensor. These are OUR numbers for a 2 m ring on an
-# aircraft flown at <= 2 m/s, NOT VL53L0X datasheet figures, and they are not
-# claimed to be: if a number ever has to be defended, read the datasheet.
+# Pass/fail gates for --sensor. These are our own numbers for a 2 m ring on
+# an aircraft flown at <= 2 m/s, not VL53L0X datasheet figures, and they do
+# not claim to be: if a number ever has to be defended, go read the datasheet.
 # The reasoning: at 2 m/s the aircraft covers 20 cm per 100 ms sample, so a
 # sensor that drops 5% of samples still gives roughly a reading every 20 cm,
 # and jitter under 5 cm is small against the distances avoidance acts on.
@@ -81,19 +82,19 @@ DROPOUT_GATE_PCT = 5.0
 NOISE_GATE_CM = 5.0
 BIAS_GATE_CM = 5.0          # absolute floor, so a 20 cm target is not judged
 BIAS_GATE_FRAC = 0.10       # by percentage alone
-DETECT_GATE_PCT = 90.0      # with a target in front, this fraction must SEE it
+DETECT_GATE_PCT = 90.0      # with a target in front, this fraction must see it
 
 
 def collect(m, seconds, show=True):
     """Listen for `seconds` and return (elapsed, msg count, raw, up, gaps).
 
     `raw[ch]` is every value that channel sent, in order, sentinels included,
-    because the ORDER is what separates a sensor that flickers evenly from one
+    because the order is what separates a sensor that flickers evenly from one
     that vanishes for a second at a time.
 
-    `gaps` is the longest SILENCE in seconds, for each message type and for
+    `gaps` is the longest silence in seconds, for each message type and for
     the two combined. That number is the arming blocker, measured: ArduPilot's
-    AP_Proximity_MAV declares PRX No Data when BOTH the obstacle message and
+    AP_Proximity_MAV declares PRX No Data when both the obstacle message and
     the upward one have been absent for PROXIMITY_MAV_TIMEOUT_MS, which is 500
     ms in 4.7 source (libraries/AP_Proximity/AP_Proximity_MAV.cpp:27). Note
     "both": either message alone keeps the sensor healthy, so gaps['any'] is
@@ -110,7 +111,7 @@ def collect(m, seconds, show=True):
     gaps = {'any': 0.0, 'obst': 0.0, 'up': 0.0}
     stalls = []                  # (start, end) of every silence over the gate
     beats = []                   # autopilot HEARTBEAT arrival times
-    sectors = 0                  # AP_Proximity's OWN re-emission (see below)
+    sectors = 0                  # AP_Proximity's own re-emission (see below)
 
     def mark(kind, now):
         if now - last['any'] > PRX_TIMEOUT_S:
@@ -128,7 +129,7 @@ def collect(m, seconds, show=True):
             continue
         kind = msg.get_type()
         if kind == 'HEARTBEAT':
-            # The autopilot's own 1 Hz beat, which does NOT come from the
+            # The autopilot's own 1 Hz beat, which does not come from the
             # ESP32. It is the control experiment for every silence below.
             if msg.get_srcComponent() == 1:
                 beats.append(time.monotonic())
@@ -136,7 +137,7 @@ def collect(m, seconds, show=True):
         if kind == 'DISTANCE_SENSOR':
             # Orientations 0-7 are the autopilot's 45 deg proximity sectors,
             # which only AP_Proximity emits: the ESP32 sends DISTANCE_SENSOR
-            # for the UP sensor alone. Seeing them proves the ring reached the
+            # for the up sensor alone. Seeing them proves the ring reached the
             # autopilot even when the raw OBSTACLE_DISTANCE never reaches us.
             if 0 <= msg.orientation <= 7:
                 sectors += 1
@@ -163,7 +164,7 @@ def report_stream(gaps, total, elapsed):
     """The arming-relevant lines: how much of the stream arrived, and did it
     ever go quiet for 500 ms?
 
-    The RATE belongs here and not only in --sensor mode, because it is what
+    The rate belongs here and not only in --sensor mode, because it is what
     exposed the fault on 2026-08-20: a 60 s survey took 446 messages, 7.4 Hz
     against the 10 Hz config.h sends, while 10 s runs the same evening ran at
     full rate. A short run cannot see a stall that happens once a minute.
@@ -193,9 +194,9 @@ def report_stream(gaps, total, elapsed):
           f"over that, totalling {dead:.1f}s = {pct_dead:.0f}% of the run. An "
           f"arming attempt lands inside one about {pct_dead:.0f}% of the time; "
           f"the rest of the time the aircraft arms normally.")
-    # WHERE the packets are lost. The board reads this stream AFTER the
+    # Where the packets are lost. The board reads this stream after the
     # autopilot forwards it to USB, so a gap here is not by itself proof that
-    # the autopilot never got the packets - and only what the AUTOPILOT
+    # the autopilot never got the packets, and only what the autopilot
     # received decides the prearm. Its own heartbeat is the control: it is
     # generated by the autopilot, not the ESP32, and travels the same USB
     # path. Beats inside the silence = the path was alive and the ring
@@ -221,14 +222,14 @@ def stats(vals, elapsed, sentinels=True):
     """Everything derivable from one channel's raw sample list.
 
     `sentinels=False` for the up sensor, which carries no 65535 convention of
-    its own. The RANGE_MAX_CM + 1 "clear" value applies to it EITHER WAY, and
+    its own. The RANGE_MAX_CM + 1 "clear" value applies to it either way, and
     that is a correction, not a detail: the first version of this tool fed the
     up sensor's 201s into the distance statistics, and a sensor alternating
     between a real 54 cm and the clear sentinel came out as "mean 97.5 cm,
     jitter 68.1 cm, NOISY", which is a fabricated fault. The real reading was
     "sees the target half the time".
 
-    Clear samples are also counted as RUNS, because 30 scattered single misses
+    Clear samples are also counted as runs, because 30 scattered single misses
     and 3 bursts of 10 are different faults: scattered ones are individual
     reads returning no-target (weak return, ambient light, low reflectance),
     bursts are the object or the sensor dropping out for a stretch.
@@ -398,10 +399,10 @@ def sensor_mode(m, args):
 
 
 def silence_help(sectors=0):
-    """What silence MEANS, which changed on 2026-08-21 and made the old text
+    """What silence means, which changed on 2026-08-21 and made the old text
     actively wrong.
 
-    This tool reads the RAW OBSTACLE_DISTANCE that the autopilot forwards to
+    This tool reads the raw OBSTACLE_DISTANCE that the autopilot forwards to
     USB. Forwarding is a courtesy, not a guarantee: the autopilot can consume
     the ring perfectly while forwarding none of it, and after the ch6 repair
     that is exactly what happened. The old message told the user to suspect
@@ -442,7 +443,7 @@ def silence_help(sectors=0):
 def survey(m, args):
     elapsed, total, raw, up, gaps = collect(m, args.seconds)
     alive, lo, hi, clear_n = defaultdict(int), {}, {}, defaultdict(int)
-    # RANGE, not just the minimum (user, 2026-08-18): one number cannot tell a
+    # Range, not just the minimum (user, 2026-08-18): one number cannot tell a
     # sensor pinned at a fixed distance from one that is tracking the world.
     # 5-5 cm across a whole run is a stuck or blocked sensor; 39-125 cm is a
     # sensor doing its job. Clear readings (RANGE_MAX_CM + 1) are counted
@@ -501,7 +502,7 @@ def survey(m, args):
         print(f"DEAD: channel(s) {dead} at bearing(s) "
               f"{[c * INCREMENT_DEG for c in dead]} deg clockwise from the nose.")
         if live or up:
-            # The live channels ARE the control experiment. They sit on the
+            # The live channels are the control experiment. They sit on the
             # same common 3V3/GND and the same mux as the dead ones, so if they
             # report, a sagging rail or a broken bus cannot be the explanation.
             # Saying so matters: this project has twice chased a shared-supply

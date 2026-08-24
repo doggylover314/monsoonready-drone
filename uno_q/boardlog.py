@@ -17,9 +17,9 @@ board has no RTC battery; at the farm it woke up 6 h behind), while
 seconds-since-boot (/proc/uptime) is always monotonic and always comparable to
 dmesg, but means nothing across a reboot.
 
-RETENTION (user, 2026-08-15): logs are NEVER overwritten and never rotated
+Retention (user, 2026-08-15): logs are never overwritten and never rotated
 into .1/.2 files. Append forever. The single exception: when the file exceeds
-100 MB at open time, the OLDEST lines are dropped, and only as many as needed
+100 MB at open time, the oldest lines are dropped, and only as many as needed
 to get back under the limit. Trimming happens only at open (program start): an
 in-flight rewrite would break a running `tail -f`, and no single run of any of
 these programs writes 100 MB.
@@ -88,7 +88,7 @@ class BoardLog:
         """mirror: also print() every line, so an interactive run reads the
         same as before.
 
-        capture: when a std stream is NOT a terminal (the program was spawned
+        capture: when a std stream is not a terminal (the program was spawned
         by the dashboard, or detached under nohup), point its fd into the log
         file. For stderr that catches C-level warnings (OpenCV, onnxruntime)
         and crash tracebacks, which no in-Python logger ever sees. For stdout

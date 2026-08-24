@@ -1,7 +1,7 @@
-"""Per-mission JSONL event log — the base station's only data source.
+"""Per-mission JSONL event log, the base station's only data source.
 
 One file per mission under <data_dir>/missions/mission_<id>.jsonl, one JSON
-object per line, append-only and flushed per event so a crash mid-mission
+object per line, append-only and flushed per event, so a crash mid-mission
 loses at most the current line. The base station (uno_q/basestation/) never
 talks MAVLink; it just reads these files, which also makes every mission
 replayable evidence for the docs.
@@ -14,15 +14,15 @@ Event schema (field "e" discriminates):
   latch          t, lat, lon            latched target (after lateral offset)
   drop           t, lat, lon, rng, ok  payload release attempted; ok=false
                                        means the gate did not actuate, so
-                                       the site is NOT treated (readers that
-                                       count treatments must check it; absent
-                                       ok means true, for logs written before
-                                       2026-08-01)
+                                       the site is not treated (readers that
+                                       count treatments must check it; an
+                                       absent ok means true, for logs written
+                                       before 2026-08-01)
   abort          t, lat, lon, reason   descent aborted upward
   mission_end    t, final, drops
 
 `now` is injectable so the fake-mission generator can write historic
-timestamps through this same class (schema lives here and only here).
+timestamps through this same class; the schema lives here, and only here.
 """
 
 import json

@@ -5,31 +5,32 @@
     ./python tools/sik_config.py --set NETID=25
     ./python tools/sik_config.py --set MIN_FREQ=433050 --set MAX_FREQ=434790
 
-WHY THIS EXISTS (2026-08-23): QGC flashed the ground radio's firmware, which
-resets EVERY radio parameter to the firmware's defaults, and QGC then stopped
-detecting the radio at all. Two of those defaults will do exactly that:
+Why this exists (2026-08-23): QGC flashed the ground radio's firmware, which
+resets every radio parameter to the firmware's defaults, and QGC then stopped
+detecting the radio at all. Two of those defaults do exactly that:
 
-  SERIAL_SPEED  the rate the radio talks to the COMPUTER. If the flash moved
+  SERIAL_SPEED  the rate the radio talks to the computer. If the flash moved
                 it, nothing that opens the port at the old baud sees anything,
-                which looks identical to a dead radio. This is why the tool
-                SCANS bauds instead of trusting one.
+                which looks identical to a dead radio. That is why the tool
+                scans bauds instead of trusting one.
   MIN_FREQ/MAX_FREQ  which band the radio transmits on. The generic hm_trp
                 image supports 433 and 915, and a 433 radio carrying 915
-                settings will never hear its partner however close you stand.
+                settings will never hear its partner, no matter how close
+                the two sit.
 
-NOTHING HERE IS FROM MEMORY. The tool never hardcodes an S-register number: it
+Nothing here is from memory. The tool never hardcodes an S-register number: it
 asks the radio for ATI5, which returns every parameter as "S3:NETID=25", and
-looks names up in that. If a register moved between firmware versions, this
-still works and a hardcoded table would have lied.
+looks names up in that reply. A register that moved between firmware versions
+still resolves correctly; a hardcoded table would have lied instead.
 
-LOCAL RADIO ONLY, DELIBERATELY. The remote radio is reachable with RT commands
-instead of AT, but only over a working link, and if the link worked you would
-not be running this.
+Local radio only, deliberately. The remote radio answers RT commands instead
+of AT, but only over a working link, and a working link means there is
+nothing here left to fix.
 
-AT MODE IS TIMING-SENSITIVE, not a command: one second of silence, the three
-characters +++, one second of silence. Traffic on the port defeats it, so if
-the aircraft is powered and the link IS up, this will fail until you unplug
-one end. That is the firmware's rule, not a limitation here.
+AT mode is timing-sensitive, not a command: a second of silence, the three
+characters +++, another second of silence. Traffic on the port defeats it, so
+if the aircraft is powered and the link is up, this fails until one end is
+unplugged. That is the firmware's rule, not a limitation of this tool.
 """
 
 import argparse
@@ -201,7 +202,7 @@ def main():
               "them.\n  Re-run with --write once you know the values are "
               "right.")
 
-    # ALWAYS hand the radio back in data mode. A radio left in command mode
+    # Always hand the radio back in data mode. Left in command mode it
     # carries no telemetry and looks exactly like a dead link, so forgetting
     # this turns a diagnostic tool into the fault it was meant to find.
     if not rebooted:

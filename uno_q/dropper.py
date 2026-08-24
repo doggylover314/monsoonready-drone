@@ -1,11 +1,12 @@
 """Payload drop actuation. MG90 metal-gear servo on the hopper gate.
 
-Servo power: XY-3606 buck at 5.00 V, separate from the Pixhawk and UNO Q rails.
-PWM signal: Pixhawk AUX output, which has hardware timers. MAIN 1-6 are the
-six motors, so AUX is free.
+Servo power comes from the XY-3606 buck at 5.00 V, separate from the
+Pixhawk and UNO Q rails. The PWM signal comes from a Pixhawk AUX output,
+which has hardware timers; MAIN 1-6 are the six motors, so AUX is free.
 
-ServoDropper at the bottom is an unused alternative that drives the servo from
-the UNO Q's STM32 over the Bridge. Future option, not wired.
+ServoDropper, at the bottom of this file, is an unused alternative that
+drives the servo from the UNO Q's STM32 over the Bridge: a future option,
+not currently wired.
 """
 
 import time
@@ -39,7 +40,7 @@ class LogDropper(Dropper):
 
 
 def _default_bridge_call():
-    """Resolve the UNO Q Bridge. Lazy import so laptop/SITL runs need no board."""
+    """Resolve the UNO Q Bridge. The import is lazy, so laptop/SITL runs need no board."""
     try:
         from arduino.app_utils import Bridge
     except ImportError as exc:      # pragma: no cover - board-only path
@@ -51,7 +52,7 @@ def _default_bridge_call():
 
 
 class PixhawkServoDropper(Dropper):
-    """Hopper gate driven by a Pixhawk servo output. The flight configuration.
+    """Hopper gate driven by a Pixhawk servo output. This is the flight configuration.
 
     Board setup (tools/parameters.py push, then reboot):
         SERVO<channel>_FUNCTION = 0     Disabled, so DO_SET_SERVO owns it
@@ -60,14 +61,16 @@ class PixhawkServoDropper(Dropper):
     Wiring: signal from the Pixhawk AUX pin, power from the XY-3606 buck,
     grounds common.
 
-    Failure policy, deliberately asymmetric:
-      * __init__ close fails -> raise. Ground-side proof of the whole chain.
-      * trigger() fails -> return False. An exception mid-descent is a runaway.
+    Failure policy is deliberately asymmetric:
+      * __init__'s close fails -> raise. This is the ground-side proof of
+        the whole chain.
+      * trigger() fails -> return False. Raising mid-descent would be a
+        runaway, not a fix.
     """
 
-    # Gate travel, set on the bench with tools/servo_jog.py 2026-08-22.
-    # SERVO9_MIN must stay <= 500 or the close is clamped short.
-    # SERVO9_TRIM 560 parks the gate part-open at boot; set it to 500.
+    # Gate travel, set on the bench with tools/servo_jog.py on 2026-08-22.
+    # SERVO9_MIN must stay <= 500 or the close gets clamped short.
+    # SERVO9_TRIM 560 parks the gate part-open at boot; set it to 500 instead.
     US_PER_DEG = 10.0
     DEFAULT_CLOSED_US = 500
     DEFAULT_OPEN_US = 1600
@@ -93,7 +96,7 @@ class PixhawkServoDropper(Dropper):
         self.succeeded = 0      # gate cycles the autopilot accepted
         self.times = []
         self.gate_open = False
-        # Close on construction: shuts a gate left open by a crashed run, and
+        # Closes on construction: shuts a gate a crashed run left open, and
         # doubles as the pre-arm end-to-end check.
         if self._safe(self.closed_us, 'initial close') is None:
             raise RuntimeError(
@@ -144,15 +147,15 @@ class PixhawkServoDropper(Dropper):
 class ServoDropper(Dropper):
     """Hopper gate driven from the UNO Q STM32 over the Bridge.
 
-    Future alternative to PixhawkServoDropper, for the case where no Pixhawk
-    output is available. Needs a Zephyr PWM implementation in the sketch and
-    3.3 V level verification on the MG90 input.
+    A future alternative to PixhawkServoDropper, for when no Pixhawk
+    output is available. Needs a Zephyr PWM implementation in the sketch,
+    plus 3.3 V level verification on the MG90 input.
 
     Expects two Bridge RPC methods:
         servo_set(angle)  -> int   move the gate, returns the angle applied
         servo_detach()    -> int   stop pulsing, so the servo stops holding
 
-    detach_after releases the servo once closed, saving current and heat.
+    detach_after releases the servo once closed, to save current and heat.
     """
 
     def __init__(self, open_deg=90, closed_deg=0, dwell_s=1.0,

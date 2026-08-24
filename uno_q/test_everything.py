@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test every component EXCEPT motors and servos, in one 30-second budget.
+"""Test every component except motors and servos, in one 30-second budget.
 
 The dashboard's "Test everything" button runs this (user spec 2026-08-16);
 it also runs by hand:
@@ -9,7 +9,7 @@ it also runs by hand:
 What it checks, in order:
   logs        ~/logs is writable
   disk        free space on the data filesystem
-  camera      resolved BY NAME, opened, one real frame captured and saved
+  camera      resolved by name, opened, one real frame captured and saved
   pixhawk     heartbeat from component 1 over the USB link
   gps         fix type, satellite count, HDOP against the arming rules
   battery     voltage from SYS_STATUS
@@ -17,7 +17,7 @@ What it checks, in order:
   ring        ESP32 proximity ring: how many DISTANCE_SENSOR orientations
               are reporting (upward RNGFND2 counted separately)
 
-DELIBERATELY ABSENT: anything that arms, spins a motor, or moves the gate
+Deliberately absent: anything that arms, spins a motor, or moves the gate
 servo (user: "everything except motors and servo"). Read-only on the
 aircraft; the only commands sent are SET_MESSAGE_INTERVAL stream requests.
 
@@ -25,7 +25,7 @@ Results go three places: this process's exit code (number of failed tests),
 ~/logs/test_everything.log (boardlog), and --out (default
 ~/monsoonready_data/selftest.json), which is what the dashboard displays.
 
-It REFUSES to run while a mission is active: the mission owns the serial
+It refuses to run while a mission is active: the mission owns the serial
 port and the camera, and stealing either mid-flight to run a bench test is
 how a self-test becomes a crash.
 """
@@ -41,17 +41,18 @@ import time
 from boardlog import BoardLog
 from camera import CameraError, open_camera
 
-# The full run plan, published in selftest.json BEFORE the run starts so the
+# The full run plan, published in selftest.json before the run starts so the
 # dashboard can list every component name immediately and fill in ticks and
 # crosses as they land (user, 2026-08-16: the names must never disappear,
 # only grey out). Order matches the order they are executed below.
 COMPONENTS = ['logs', 'disk', 'camera', 'pixhawk', 'gps', 'battery',
               'luna', 'ring', 'fence', 'prearm']
 
-TOTAL_BUDGET_S = 30.0          # user spec: 30 s TOTAL, not per component
+TOTAL_BUDGET_S = 30.0          # user spec: 30 s total, not per component
 CAMERA_BUDGET_S = 8.0          # slice for the camera; the rest is MAVLink
 MIN_DISK_FREE_GB = 2.0
-# The project's own arming rules (FIELD_CHECKLIST): 10 sats, HDOP 1.5.
+# The project's own arming rules: 10 sats, HDOP 1.5. They came out of crash 2
+# and are written up in docs/README.md.
 MIN_SATS = 10
 MAX_HDOP = 1.5
 MIN_BATT_V = 10.8              # BATT_LOW_VOLT; below this fix before flying
@@ -108,7 +109,7 @@ def main():
         results.append({'name': name, 'ok': bool(ok), 'detail': detail})
         (log.info if ok else log.error)(
             f"{'PASS' if ok else 'FAIL'}  {name}: {detail}")
-        # Publish after EVERY component, not only at the end: the dashboard
+        # Publish after every component, not only at the end: the dashboard
         # polls this file and fills each tick/cross in as it happens.
         _write(out_path, results, log, t_start, running=True, plan=plan)
 
@@ -125,7 +126,7 @@ def main():
         _finish(out_path, results, log, t_start, plan)
         return 1
 
-    # ---- logs writable ----
+    # logs writable
     if want('logs'):
         try:
             probe = os.path.expanduser('~/logs/.write_probe')
@@ -136,7 +137,7 @@ def main():
         except OSError as exc:
             report('logs', False, f'~/logs NOT writable: {exc}')
 
-    # ---- disk space ----
+    # disk space
     if want('disk'):
         try:
             du = shutil.disk_usage(os.path.expanduser('~'))
@@ -149,7 +150,7 @@ def main():
         except OSError as exc:
             report('disk', False, str(exc))
 
-    # ---- camera ----
+    # camera
     if want('camera'):
         cam_deadline = min(time.monotonic() + CAMERA_BUDGET_S, deadline)
         try:
@@ -175,7 +176,7 @@ def main():
                                  'fence', 'prearm')):
         return _finish(out_path, results, log, t_start, plan)
 
-    # ---- everything MAVLink, on one connection for the rest of the budget --
+    # everything MAVLink, on one connection for the rest of the budget
     try:
         from mavlink_io import MavIO
         io = MavIO(args.conn, log=log)
@@ -213,7 +214,7 @@ def main():
                 up_m = msg.current_distance / 100.0
             else:
                 ring_orients.add(msg.orientation)
-        # Stop early once every WANTED answer is in: GPS+battery arrive at
+        # Stop early once every wanted answer is in: GPS+battery arrive at
         # 1 Hz, the ring's orientations within a couple of seconds. 5 bins
         # is the ring's healthy ceiling (6 sensors, ch2 dead chip).
         tel = io.tel
@@ -241,7 +242,7 @@ def main():
     if tel.batt_v is None:
         report('battery', False, 'no voltage in SYS_STATUS')
     else:
-        # % comes from VOLTAGE (survives reboots), not ArduPilot's coulomb
+        # % comes from voltage (survives reboots), not ArduPilot's coulomb
         # counter, which resets to ~100% every boot and lies after a swap.
         est = tel.batt_pct_est
         report('battery', tel.batt_v >= MIN_BATT_V,
@@ -255,12 +256,12 @@ def main():
         report('luna', False,
                'no downward DISTANCE_SENSOR: TF-Luna silent (SERIAL4)')
     else:
-        # THE ON-GROUND RULE (same rule wiring_check has carried since the
-        # bench: an aircraft on its legs LEGITIMATELY reads below the rated
+        # The on-ground rule (same rule wiring_check has carried since the
+        # bench: an aircraft on its legs legitimately reads below the rated
         # minimum). Landed, the lens sits ~0.13 m over the floor
         # (RNGFND1_GNDCLR) and the TF-Luna's rated minimum is 0.2 m, so
-        # ArduPilot flags the reading out-of-range BY DESIGN while the sensor
-        # is in fact alive and measuring. That is a PASS: the failure this
+        # ArduPilot flags the reading out-of-range by design while the sensor
+        # is in fact alive and measuring. That is a pass: the failure this
         # test exists to catch is silence, not sitting on the ground.
         d, dmin, dmax = luna
         if 0.0 < d < dmin:
@@ -279,7 +280,7 @@ def main():
                else '; up sensor SILENT (RNGFND2, known-flaky power plug)')
     # The 2026-08-16 firmware broadcasts its own health every 15 s
     # ("prx ring 4/6 up:ok"): that is the alive-count ground truth. Bearing
-    # bins only show sectors that SEE an object during the listen window (a
+    # bins only show sectors that see an object during the listen window (a
     # sensor staring at open air fills no bin), so bins must never be read
     # as an alive-count. 2026-08-16: bins were [0, 4] on the bench while
     # the ESP32's own serial showed 4/6 alive, and the old bin-based guess
@@ -296,10 +297,10 @@ def main():
                'no ring DISTANCE_SENSOR messages and no "prx ring" health '
                'text: ESP32 silent or dead (cold power cycle)' + up_note)
     elif alive is not None:
-        # ch2 (120 deg) is a KNOWN DEAD CHIP (proven at four bus speeds
+        # ch2 (120 deg) is a known dead chip (proven at four bus speeds
         # 2026-08-14), so 5/6 is the healthy ceiling until it is replaced.
-        # The firmware retries every DOWN channel each 10 s and announces
-        # BACK by itself, so a channel that STAYS down is hardware (chip or
+        # The firmware retries every down channel each 10 s and announces
+        # itself back, so a channel that stays down is hardware (chip or
         # wiring at the mux), never a reflash job.
         report('ring', alive >= 5,
                f'ESP32 says {alive}/6 ring sensors alive '
@@ -317,12 +318,12 @@ def main():
                f'"prx ring" health text reached this link (pre-08-16 '
                f'firmware, or TELEM2 STATUSTEXT not forwarded)' + up_note)
 
-    # ---- fence: does the AIRCRAFT hold the polygon that was drawn? ------
+    # fence: does the aircraft hold the polygon that was drawn?
     # This check exists because the firmware will not do it. Tested in SITL
     # 2026-08-16: with FENCE_TYPE bit 2 set and zero corners stored, Copter
     # 4.7 arms happily (loaded() is "a load happened", and an empty fence
     # loads fine), so a fence that was drawn but never pushed protects
-    # nothing and says nothing. Here it is a loud FAIL.
+    # nothing and says nothing. Here it is a loud fail.
     if want('fence'):
         try:
             import fence as fence_mod
@@ -355,7 +356,7 @@ def main():
         except Exception as exc:                        # noqa: BLE001
             report('fence', False, f'could not read the fence back: {exc}')
 
-    # ---- prearm: WHY the aircraft will not arm (user, 2026-08-16: "make
+    # prearm: why the aircraft will not arm (user, 2026-08-16: "make
     # sure that the dashboard shows prearm issues and all that so it can be
     # easily fixed"). RUN_PREARM_CHECKS forces the autopilot to re-report
     # every failing check immediately instead of on its 30 s display cycle
