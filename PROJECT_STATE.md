@@ -2792,3 +2792,33 @@ MARGIN NOTE, not a bug, recorded because it is tight: floor_margin_m is 0.5
 and run_mission never overrides it, so at --drop-alt 1.0 the EKF floor abort
 fires at rel_alt < 0.5 m. It is live, but there is only 0.5 m between the
 intended release height and the disagreement abort.
+
+### 2026-08-24 ~13:45 IST: THE DOSE CONFLICT IS SETTLED BY DATE. 0.4 PREDATES ALL FLOW DATA
+
+- User asked which of the two dose figures is intended. **Answer: neither was
+  ever chosen over the other, and the git history decides it.**
+- `dose_s_per_m2 = 0.4` was committed **2026-08-10** (e06aace). On that date NO
+  FLOW RATE EXISTED. The salt runs read 0 g every time and PROJECT_STATE said
+  in terms "flow_test.py therefore cannot be run and NO g/s figure exists".
+  So 0.4 was picked with nothing to derive it from. Under the rule that a
+  decision without its why is UNVERIFIED, 0.4 is unverified, and no entry
+  anywhere records a rationale for it.
+- The 0.23 s/m2 table was derived **2026-08-22** (aed2fc6) from the mustard-seed
+  runs: 1.1 g/m2 mid-label Bti over 4.8 g/s, the midpoint of the 4.2 to 5.3 g/s
+  measured at the two shortest, least-starved dwells. It has real inputs.
+- What 0.4 would imply if back-solved: 1.1 / 0.4 = **2.75 g/s**, or at the
+  measured 4.8 g/s it implies **1.92 g/m2**, near the top of the 0.28 to 2.24
+  label range. Note 2.70 g/s IS one of the four measured points (the 2.04 s
+  dwell), but that point is the STARVED one the analysis already discarded as
+  an under-filled-hopper artifact. Suggestive, not evidence: nothing records
+  that as the derivation and it must not be presented as one.
+- **IT CHANGES NOTHING FOR TODAY'S FLIGHT, which is why it was not touched.**
+  `dose_s_min` is 0.3 s, so the clamp floor covers everything below 0.75 m2 at
+  0.4 and everything below 1.31 m2 at 0.23. Computed both ways: at 0.3, 0.5 and
+  0.75 m2 both give exactly 0.30 s. The demo target is ~0.3 m2, so the two
+  figures are indistinguishable on the aircraft today. They first diverge at
+  1 m2 (0.40 vs 0.30 s).
+- RECOMMENDATION, NOT APPLIED (user asked a question, not for a change): make
+  `dose_s_per_m2` 0.23 so the code matches the only figure with a measured
+  input, and do it AFTER filming, not before. Until a full-hopper flow run
+  exists, both remain provisional and the doc should keep saying so.
