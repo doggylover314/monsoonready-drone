@@ -3327,3 +3327,57 @@ ALSO VISIBLE IN THE SCREENSHOT, not asked about, flagged and NOT acted on:
   mission status pill says "flight 20260823_223751 - ended". The arm-refusal
   fix that wraps that call in try/except shipped in e6d5fba. UNVERIFIED whether
   the board is running that commit; the user has not said it pulled since.
+
+### 2026-08-24 ~17:20 IST: "too many waypoints, max is 50" FIXED, and the stops turn out to be unnecessary
+
+USER: Save refused the generated route with "need 1..50 [lat,lon] pairs". Then:
+"what is the fix? Do we just remove the stop and photograph?" Both answered.
+
+BUG: dashboard.py api_waypoints_post capped a saved route at 50 points. Written
+2026-08-16 (c7b17a8) when routes were dragged out by hand a dozen points at a
+time. Survey altitude has since come down to 5 m, where the generator
+legitimately makes hundreds, so the cap refused perfectly good routes. NOTHING
+DOWNSTREAM CARES: run_mission.py reads the file with no limit, and the points
+are flown as GUIDED targets one at a time, never uploaded as an FC mission, so
+no autopilot storage limit applies either. Raised to MAX_WAYPOINTS = 2000 as a
+malformed-body guard, with the reasoning in a comment so it is not re-tightened
+by someone who assumes it was a real limit. The real limit is battery, which
+this endpoint cannot know.
+
+THE USER'S INSTINCT IS RIGHT AND THE NUMBERS BACK IT HARD. The stops were never
+buying along-track coverage. OnnxDetector runs at interval_s = 1.0, so at
+WP_SPD 2 the aircraft takes a frame every 2.0 m along track while the
+along-track footprint at 5 m is 5.34 m. That is 3.34 m of overlap and ~2.7
+frames on any given point, from continuous flight alone, against the 1.00 m of
+overlap the densified waypoints were designed to provide. The stops were
+delivering LESS than flying past does.
+
+    WP_SPD 2       163 wp, hold 1 (now)      7.1 min
+                   163 wp, hold 3           12.5 min
+                    30 wp row ends, no hold  5.1 min
+                    30 wp row ends, hold 1   5.6 min
+
+ROW SPACING IS UNAFFECTED and must not be touched: it comes from the 3.00 m
+ACROSS-track footprint, and stopping never had anything to do with it. Only the
+along-row densification goes away.
+
+SHIPPED: the server already supported this and no one had noticed. The generate
+endpoint has taken a max_leg field all along (range 0-200) and
+make_waypoints.densify treats max_leg <= 0 as "return the row ends unchanged".
+The UI simply never sent the field, so it always auto-derived to 4.34 m. Added
+a "photo every ___ m" box to the route row: blank keeps today's behaviour
+(derive from altitude), 0 means row ends only. index.html sends max_leg with
+the generate POST.
+
+VERIFIED on this laptop against a ~45x30 m test fence, dashboard run locally on
+port 8099:
+- Flask test client: max_leg blank -> 154 waypoints, 14 rows, 580 m; max_leg 0
+  -> 28 waypoints, SAME 14 rows, SAME 580 m of path. Both saved with HTTP 200,
+  which is the cap fix proven (154 would have been refused before).
+- 2001 points still refused, HTTP 400 "need 1..2000 [lat,lon] pairs".
+- In the browser, driving the real Generate button: box present, blank posts
+  max_leg null and reports "154 waypoints", 0 posts max_leg 0 and reports "28
+  waypoints, 14 rows along 90 deg, 2 m clear of the fence, 580 m of path".
+
+STILL THE USER'S CALL, not changed: whether to fly row-ends-only for the take.
+It is 5.1 min against 7.1, with better along-track overlap, on one pack.

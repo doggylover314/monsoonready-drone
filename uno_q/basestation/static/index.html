@@ -378,6 +378,7 @@
             <label>row length <input id="genLen" type="number" min="2" max="500" value="20"> m</label>
           </span>
           <label>spacing <input id="genSp" type="number" min="1" max="50" placeholder="auto"> m</label>
+          <label title="Distance between waypoints ALONG a row. Blank derives it from altitude for the overlap set above. 0 puts waypoints only at row ends, so the aircraft flies each row without stopping and the detector covers the row from its continuous frames.">photo every <input id="genLeg" type="number" min="0" max="200" step="0.5" placeholder="auto"> m</label>
           <label>direction <input id="genHdg" type="number" min="0" max="359" placeholder="auto"> &deg;</label>
           <label id="genInsetL">keep out <input id="genInset" type="number" min="0" max="50" step="0.5" value="4"> m</label>
           <button id="genStart">Set start point</button>
@@ -2444,6 +2445,9 @@ function wireEvents() {
       spacing: $('genSp').value === '' ? null : +$('genSp').value,
       inset: $('genInset').value === '' ? 4 : +$('genInset').value,
       heading: $('genHdg').value === '' ? null : +$('genHdg').value,
+      // '' lets the server derive it from altitude; 0 means "row ends only",
+      // which the server honours because densify() treats <= 0 as no split.
+      max_leg: $('genLeg').value === '' ? null : +$('genLeg').value,
       start: state.genStart, mode: mode || '',
     }, $('edNote'));
     btn.disabled = false; btn.textContent = label;

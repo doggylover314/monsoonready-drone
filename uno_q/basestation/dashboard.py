@@ -78,6 +78,18 @@ def tail(path, lines=14):
 #   photo_hold  0 disables the hold entirely (mission.py:453 tests > 0).
 #               30 s is far past useful and only guards a typo.
 #   conf        the detector's own threshold, a probability.
+# Sanity bound on a saved route, not a policy. The old value was 50, written
+# 2026-08-16 when routes were dragged out by hand a dozen points at a time.
+# Survey altitude has since come down to 5 m, where the across-track footprint
+# is 3.00 m and the generator legitimately produces hundreds of points for a
+# modest fence, so 50 refused perfectly good routes. Nothing downstream cares:
+# run_mission.py reads the file with no limit and the points are flown as
+# GUIDED targets one at a time, never uploaded as an FC mission, so no
+# autopilot storage limit applies either. What actually limits a route is
+# flight time on one battery, and that is the operator's judgement, not a
+# number this endpoint can know.
+MAX_WAYPOINTS = 2000
+
 MISSION_LIMITS = {
     'survey_alt': (1.0, 40.0),
     'photo_hold': (0.0, 30.0),
@@ -404,7 +416,7 @@ def make_app(data_dir, control=None):
                                      'from here'}), 409
         body = request.get_json(silent=True) or {}
         wps = body.get('waypoints')
-        if (not isinstance(wps, list) or not 1 <= len(wps) <= 50
+        if (not isinstance(wps, list) or not 1 <= len(wps) <= MAX_WAYPOINTS
                 or not all(isinstance(p, (list, tuple)) and len(p) == 2
                            and all(isinstance(v, (int, float)) for v in p)
                            and abs(p[0]) <= 90 and abs(p[1]) <= 180
@@ -413,7 +425,8 @@ def make_app(data_dir, control=None):
                      f'({type(wps).__name__}, '
                      f'{len(wps) if isinstance(wps, list) else "-"} items)')
             return jsonify({'ok': False,
-                            'error': 'need 1..50 [lat,lon] pairs'}), 400
+                            'error': f'need 1..{MAX_WAYPOINTS} [lat,lon] '
+                                     f'pairs'}), 400
         path = os.path.expanduser(ctl['waypoints'])
         tmp = path + '.tmp'
         with open(tmp, 'w', encoding='utf-8') as f:
