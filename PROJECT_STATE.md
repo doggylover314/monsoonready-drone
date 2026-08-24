@@ -3045,3 +3045,43 @@ OPTIONS, in order of effect (all reversible, none is a code change):
 Recorded because the same fence will be flown again and the count will look
 alarming again. The number to check before launching is FLIGHT TIME, not
 waypoint count.
+
+### 2026-08-24 ~16:45 IST: raising WP_SPD buys ~48 s of a ~12.6 min route. The legs are ACCELERATION-bound, not speed-bound
+
+User asked how much speed helps, having ruled out drawing the fence tightly.
+Answer: almost nothing, and the reason is arithmetic, not policy.
+
+MODEL (verified inputs): WP_ACC 2.5 m/s2 and WP_SPD 2 from the board dumps in
+param_dumps/; photo_hold_s 1.0 from mission.py; 203 waypoints over 784 m from
+the generator, so 202 legs averaging 3.88 m. Each leg is a stop-to-stop move
+(the survey stops at every waypoint to take the photo, by the user's own spec
+of 2026-08-24).
+
+    WP_SPD    peak reached    total flight
+      2         2.00 m/s        12.6 min
+      3         3.00 m/s        11.8 min
+      4         3.11 m/s        11.8 min
+     10         3.11 m/s        11.8 min
+
+Above 3.11 m/s the number stops changing entirely: sqrt(WP_ACC * 3.88) = 3.11,
+i.e. the aircraft cannot finish accelerating before it has to brake for the
+next waypoint. The speed cap is not the binding constraint; the accel ramp is.
+Also note 203 s (3.4 min) of that total is photo holds, which no speed setting
+can touch.
+
+WP_ACC IS THE BIGGER KNOB AND IS UNTESTED. At WP_ACC 5 with WP_SPD 3 the mean
+leg drops 2.49 s -> 1.89 s, about 2 min off the route. It costs lean angle and
+therefore motion blur on the moving frames, and this airframe has never flown
+it. Do not push it before a bench/flight check.
+
+WP_SPD 2's STATED REASON IS NOW VOID, recorded so it is not re-derived: the
+2026-08-18 3 -> 2 trade existed solely so the ring could brake the aircraft
+inside its ~2 m range ("Ring-protected CRUISE needs WP_SPD <= 2"). AVOID_ENABLE
+went to 0 on 2026-08-23 (log 55, phantom obstacles fighting the pilot in
+LOITER), so the ring steers nothing and there is no braking ceiling to respect.
+The live constraint at 2 vs 3 is motion blur on the between-waypoint frames,
+which is what picked 3 in the first place. Going back to WP_SPD 3 is therefore
+justified, and honest about what it buys: ~48 s.
+
+CONCLUSION for the recording: speed is not the lever. Area, overlap and
+altitude are, in that order.
