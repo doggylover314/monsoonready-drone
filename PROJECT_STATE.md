@@ -3400,3 +3400,46 @@ the FNCE log records to be TRUE: the aircraft was 4.54 m outside the drawn
 fence. The fence in the current screenshot is drawn well away from the road
 where the drone is likely standing. Flagged twice now, not acted on, because
 the assistant runs nothing that terminates at the board.
+
+### 2026-08-24 ~17:30 IST: position still off. ONE CAUSE WOULD EXPLAIN BOTH IT AND THE FENCE BREACH: satellite imagery misregistration
+
+User: "The current position of the drone is still a considerable amount off."
+Same complaint as 2026-08-23. NOT DIAGNOSED YET, and the assistant cannot probe
+the board. What follows is hypothesis plus the test that separates them.
+
+HYPOTHESIS A, BAD GPS UNDER CANOPY. Proven cause on 2026-08-23 log 00000068:
+Status 1 no-fix for 128 samples, sats min 0, HDOP max 99.99, stationary scatter
+median 5.42 m and worst 28.26 m. Today's screenshot shows the same narrow
+clearing with heavy tree canopy both sides. Signature: the dot WANDERS while
+the aircraft is still, and sats/HDOP are bad.
+
+HYPOTHESIS B, THE IMAGERY IS OFFSET, NOT THE DRONE. Not previously considered
+and it explains BOTH symptoms with one cause. The fence was drawn by clicking
+on Esri World Imagery. A click becomes a lat/lon through the projection, so the
+stored fence corners equal the IMAGERY's claimed coordinates. If Esri's
+georeferencing at this site is off by several metres (common in rural India),
+then: (1) the fence's real-world position is shifted by that error, so an
+aircraft standing in the actual clearing is genuinely outside the actual fence,
+which is exactly what PreArm keeps saying; and (2) the drone reports TRUE
+coordinates, which project to a pixel that the offset image draws in the wrong
+place, so the dot looks displaced by the same vector. One error, both symptoms,
+same magnitude. Signature: the offset is CONSTANT and the dot tracks movement
+faithfully.
+
+THE TEST, 30 seconds, no equipment: carry the drone 10 m in a known direction
+and watch the dot. Moves 10 m the right way but stays offset => B. Jumps or
+wanders => A. Does not move at all => a stale fix, and LIVE_FIX_STALE_S /
+GHOST_FIX_S in index.html are the place to look.
+
+GAP FOUND WHILE CHECKING, not fixed, offered to the user: the dashboard draws
+the aircraft with NO indication of GPS quality. mavlink_io populates tel.sats
+and tel.hdop from GPS_RAW_INT (lines 288-290), and api_live_position already
+puts `sats` in the fix dict, but hdop is not included and neither is rendered
+anywhere. On 2026-08-23 the root cause was HDOP 99.99 and the operator could
+not have seen it from this page. Adding sats + HDOP beside the dot is small and
+would have answered this question directly.
+
+IF B IS RIGHT, the fix is NOT a code change: the fence must be built from
+GPS-measured corners (walk the aircraft to each corner, record its reported
+position) rather than by clicking the image. Drawing on imagery is only as
+accurate as the imagery.
