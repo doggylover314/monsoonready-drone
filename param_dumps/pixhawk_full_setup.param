@@ -1,8 +1,8 @@
 # =============================================================================
 #  pixhawk_full_setup.param  --  MonsoonReady: FULL Pixhawk parameter set
-#  Supersedes esp32_obstacle_avoidance/ardupilot_proximity.param (which covers
-#  only the proximity subset). Load in QGC: Vehicle Setup > Parameters > Tools
-#  > Load from file, then reboot the Pixhawk.
+#  The single maintained config for this aircraft. The old proximity-only file
+#  was deleted 2026-08-24; this covers every parameter it held. Load in QGC:
+#  Vehicle Setup > Parameters > Tools > Load from file, then reboot the Pixhawk.
 #
 #  Lines marked VERIFY: check the exact name/value for ArduCopter 4.6.3 in the
 #  onboard param list before writing; firmware variants rename some params.

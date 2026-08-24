@@ -2822,3 +2822,33 @@ intended release height and the disagreement abort.
   `dose_s_per_m2` 0.23 so the code matches the only figure with a measured
   input, and do it AFTER filming, not before. Until a full-hopper flow run
   exists, both remain provisional and the doc should keep saying so.
+
+### 2026-08-24 ~13:50 IST: ardupilot_proximity.param DELETED, NOT REGENERATED
+
+- User asked delete or regenerate. **Deleted**, and the comparison is the
+  reason rather than a preference.
+- Compared all 14 of its parameters against `param_dumps/pixhawk_full_setup.param`
+  (78 params): **every one is already there, none missing.** So deleting loses
+  no value. Five DISAGREE with the live aircraft, in the direction that breaks
+  things:
+    SERIAL2_BAUD  115 vs 57   RNGFND2_TYPE  10 vs 0   AVOID_ENABLE 7 vs 0
+    AVOID_MARGIN    2 vs 1    AVOID_DIST_MAX 5 vs 1.5
+- **THE WORST ONE IS NOT THE AVOIDANCE, IT IS THE BAUD.** The file assumed the
+  ring sat on TELEM2. It is on TELEM1. SERIAL2 is the SiK telemetry radio at
+  57600, so loading this file would have reconfigured the radio to 115200 and
+  dropped the ground link. A file whose only possible effect is damage, already
+  marked "do not load", has no function.
+- NOT REGENERATED, deliberately: a second parameter file has to be kept in sync
+  by hand, which is exactly how this one went stale (it was written against
+  Copter 4.5/4.6 while the aircraft flies 4.7.0). One home per area of
+  expertise; `tools/parameters.py` owns parameter work and the full dump is the
+  single config. Recoverable from git history if the AVOID_* explanatory
+  comments are ever wanted.
+- Updated the two `esp32_obstacle_avoidance/README.md` references and the full
+  dump's header, which named the deleted file. The historical PROJECT_STATE
+  entry at line 2475 was left alone (append-only log).
+- **FLAGGED, NOT CHANGED (out of scope, user did not ask):** the full dump's
+  header still says to load it in QGC via Tools > Load from file. That
+  contradicts the standing rule that QGC bulk load is never trusted because it
+  drops writes silently, and that `tools/parameters.py` does every write with a
+  per-write ack. Worth correcting, but it is a separate call.

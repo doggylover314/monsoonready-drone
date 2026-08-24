@@ -21,7 +21,6 @@ does on this aircraft, which is report distances and steer nothing.
 | `proximity_sensors.h/.cpp` | Sensor layer, TCA9548A and VL53L0X. No MAVLink. |
 | `mavlink_proximity.h/.cpp` | MAVLink layer, builds and sends the messages. No hardware. |
 | `platformio.ini` | PlatformIO build. Also opens as an Arduino sketch. |
-| `ardupilot_proximity.param` | Historic standalone parameter file. See the warning below. |
 
 ## Wiring
 
@@ -121,11 +120,16 @@ component
 
 ## Pixhawk parameters
 
-Do not load `ardupilot_proximity.param`. It is kept for history and it is
-stale: it assumes TELEM2, it sets `AVOID_ENABLE,7` and `RNGFND2_TYPE,10`, and
-this aircraft now runs the ring on TELEM1 with `AVOID_ENABLE,0`, `OA_TYPE,0`
-and `RNGFND2_TYPE,0` after channel 6 died on 2026-08-21. Its values were also
-checked against Copter 4.5 and 4.6, while the aircraft flies 4.7.0.
+There was a standalone `ardupilot_proximity.param` here. It was deleted on
+2026-08-24 because every one of its fourteen parameters already lived in the
+full dump, and five of them disagreed with the aircraft. It assumed the ring
+was on TELEM2 when it is on TELEM1, so its `SERIAL2_BAUD,115` would have
+reconfigured the SiK telemetry radio, which runs at 57600. It also set
+`AVOID_ENABLE,7` and `RNGFND2_TYPE,10`, against the current `AVOID_ENABLE,0`,
+`OA_TYPE,0` and `RNGFND2_TYPE,0` (channel 6 died on 2026-08-21). Its values
+were checked against Copter 4.5 and 4.6, while the aircraft flies 4.7.0. Recover
+it from git history if the reasoning is ever wanted: `git show
+HEAD~1:esp32_obstacle_avoidance/ardupilot_proximity.param`.
 
 `param_dumps/pixhawk_full_setup.param` is the single maintained config for this
 aircraft and it carries the current proximity block with the reasoning beside
