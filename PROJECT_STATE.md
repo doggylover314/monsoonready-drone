@@ -3914,3 +3914,117 @@ STILL OPEN (user has not ruled): sitl_test.py asserts the drop COUNT and never
 the drop POSITION, which is the whole reason this bug reached a real flight.
 An assertion that the gate opened within cross_radius_m of the puddle would
 have caught it on the bench.
+
+### 2026-08-25 ~19:30 IST: LOG 78. THE AIRCRAFT FELL OUT OF A STABLE HOVER. THE PACK IS THE CAUSE AND IT IS THE SAME PACK FINDING AS 08-23
+
+Analysed on the laptop from the SD card at /media/sleuther/0403-0201/APM/LOGS
+(user gave the path). Logs 75 (17:36), 76 (18:05), 78 (19:04) are today. 78 is
+the crash. WHICH CODE WAS FLYING: c9f3f88 (the cross fix) committed 18:47 and
+PUSHED 19:22, so log 78 at 19:04 CANNOT have had it. Log 78 flew the pre-fix
+code, and the 08-25 cross bug is still live in that flight.
+
+**THE FALL, second by second (times relative to log start; armed 290.7).**
+    488.0 - 495.8   stable hover, alt 4.35, DAlt 4.33, rng ~5.3, nothing wrong
+    496.2           altitude starts collapsing WHILE DAlt STAYS 4.33
+    497.25          "Potential Thrust Loss (2)" + EKF_PRIMARY lane change
+    ~498            ThO reaches 1.00 and STAYS there. Still sinking.
+    501.2           roll goes -80 -> -170 -> 178. Inverted.
+    503.75          CRASH_CHECK disarms: AngErr=173>30, Accel=0.4<3.0, at -5.1 m
+THE DEMANDED ALTITUDE HELD AT 4.33 WHILE THE REAL ONE COLLAPSED. That is the
+whole diagnosis in one line: this was not a commanded descent, the aircraft
+fell out from under a hold command and full throttle could not stop it. It
+fell 3.8 m in 2.8 s. It was 5.7 m above ground when it started, so NOT a
+ground or prop strike.
+
+**WHY THRUST RAN OUT: THE PACK, MEASURED THREE WAYS.**
+1. Progressive degradation across one 3.5 min flight. Hover ThO 0.38 -> 0.45
+   -> 0.51 -> 0.60 -> 1.00. Vmin under load 10.7 -> 10.3 -> 9.8 -> 9.6.
+   Motor-output spread 110 -> 200 -> 342 -> 799 us. Attitude error 2-10 deg ->
+   16-19 -> 186. Every one of those trends points the same way.
+2. Consumed 1847 mAh before collapsing. THE PACK IS NOMINALLY 8000. It
+   delivered about 23% of rating.
+3. THIS IS THE SECOND INDEPENDENT MEASUREMENT OF THE SAME NUMBER. 2026-08-23
+   recorded "CHARGER PUT BACK ONLY 1781 mAh. THE PACK WAS NEVER DEEPLY
+   DEPLETED, IT SAGS". Today: 1847 mAh. 1781 and 1847 from two different
+   methods on two different days. The pack's usable capacity is ~1800 mAh and
+   the 8000 on the label is not available at this current draw.
+NOT A MOTOR FAILURE, ruled out rather than assumed: per-motor medians are
+M1 1594 M2 1714 M3 1603 M4 1705 M5 1679 M6 1634 early, and M1 1632 M2 1750
+M3 1615 M4 1758 M5 1724 M6 1660 late. M2 and M4 sit ~120 us high from the
+FIRST SECOND of the flight and the spread grows only 120 -> 143 across the
+whole flight. A failing motor diverges progressively; this is standing
+asymmetry (CG or trim). M2 is simply the most-loaded motor, so it is the one
+that hits the rail first when total thrust runs out, which is why ArduPilot
+named it. The message is a symptom, not the cause.
+
+**WHY NO BATTERY FAILSAFE FIRED, and this is the dangerous part.** Board has
+BATT_LOW_VOLT 10.5, BATT_CRT_VOLT 10.0, BATT_LOW_TIMER 10, BATT_FS_LOW_ACT 2,
+BATT_FS_CRT_ACT 1. Instantaneous voltage was under 10.5 for most of the flight
+and under 10.0 repeatedly from t=425. No failsafe. The failsafe needs the
+FILTERED voltage low for 10 CONTINUOUS seconds, and the load here was cyclic
+(11 descend/climb cycles), so voltage recovered to 11.5 between cycles and the
+timer reset every time. THE FAILSAFE IS BUILT FOR A SLOWLY DRAINING PACK AND
+THIS PACK FAILS BY TRANSIENT SAG. It cannot protect this aircraft as
+configured.
+ALSO FOUND: MOT_BAT_VOLT_MIN = 0 and MOT_BAT_VOLT_MAX = 0, so thrust
+compensation for sagging voltage is DISABLED. With a pack whose voltage moves
+1.5-1.7 V between idle and load, that compensation is exactly the feature that
+is missing.
+MOT_THST_HOVER learned 0.457, against the standing rule that >~0.5 at full
+payload means trim the payload. It was 0.457 at the START and the aircraft was
+working at 0.6 by the end. The margin was thin before it took off.
+
+**QUESTION 1, THE REPEATED DESCENTS. Answered from the log, with one gap.**
+The aircraft flew ~11 full descend/climb cycles from ~4.3 m to the ground in
+213 s. NOT for photos: there is no descend-to-photograph behaviour anywhere in
+the code. detect_worker photographs continuously at ~2 fps at whatever
+altitude the aircraft happens to be, and the photo hold is a 1 s pause at
+survey altitude, never a descent. Every one of those descents was the puddle
+sequence.
+THE GATE OPENED EXACTLY ONCE, at 426.5s for 3.0 s (RCOU C9 500 -> 1600 ->
+500). 3.0 s is dose_s_max, i.e. the dose CLAMPED, which implies an estimated
+area >= 7.5 m2. That is a suspiciously large estimate and fits the recorded
+warning that a bounding box overestimates a non-rectangular puddle without
+bound. So: 11 descents, 1 drop, ~10 aborts.
+
+**AND HERE IS WHY THEY ABORTED: THE EKF ALTITUDE AND THE RANGEFINDER DISAGREE
+BY MORE THAN THE MISSION'S OWN MARGIN.** Measured at two sites in this flight:
+    drop site  (t=426):  rng 2.16 at rel_alt 1.27   offset ~0.85 m
+    site       (t=457):  rng 0.95 at rel_alt -0.42  offset ~1.37 m
+The rangefinder reads TRUE AGL. rel_alt is height above the TAKE-OFF POINT.
+The field is lower than where it launched, and by a DIFFERENT amount at
+different points, so the offset is terrain, not a constant to calibrate out.
+The mission's two altitude tests are drop at rng <= drop_alt_m (1.0) and abort
+at rel_alt < drop_alt_m - floor_margin_m (0.5). Those sit 0.5 m apart while
+the two sensors differ by 0.85-1.4 m. So on most descents the aircraft is
+already far below the EKF floor by the time the rangefinder reaches drop
+height, and the abort wins the race. On the one descent where the offset was
+smallest (0.85 m) the drop got through.
+OBSERVED AND NOT YET EXPLAINED: on the aborting descents the aircraft
+continued to -0.68 m rel_alt, which is 1.2 m past the 0.5 m floor, still
+sinking at the commanded 0.5 m/s. If _below_floor() had fired at 0.5 as
+written it should have reversed there. Either tel.rel_alt_m (from
+GLOBAL_POSITION_INT) differs from CTUN.Alt used here, or the state machine was
+not in DESCEND at that moment. THE .BIN CANNOT SETTLE THIS; the mission JSONL
+and run_mission.log can, and they are on the board. DO NOT GUESS AT IT.
+
+**THE TWO QUESTIONS ARE ONE STORY.** Eleven descend/climb cycles from 4.3 m in
+3.5 minutes is a high-current duty cycle, and each climb is a current spike.
+The descent loop is what drained a pack that only has ~1800 mAh in it, and the
+cyclic load is also what kept the voltage failsafe from ever latching. Fix the
+abort loop and the flight gets far cheaper; fix the pack and the aircraft stops
+falling. Both are needed.
+
+**OTHER FINDINGS FROM LOG 78, recorded so they are not rediscovered.**
+- Accelerometer clipping +37 on IMU0. Any clipping invalidates the passing
+  VibeZ median 7.0 and the EKF altitude with it.
+- MAG1 flying median 733, 95th 899, max 1003 against MAG0's 432 and a site
+  gate of 875. MAG1 is the outlier and the post-crash prearms say
+  "Compasses inconsistent" and "EKF compass variance" repeatedly.
+- GPS at arming: 9 sats, HDOP 1.29. The standing rule is 10 sats. It armed
+  one satellite short.
+- "PreArm: Vehicle breaching Polygon fence" after the crash, i.e. it came to
+  rest outside the fence. Consistent with the known imagery misregistration.
+- The ESP32 ring logged "prx ring 4/4 up:ERR" every ~15 s for the whole
+  flight. The upward sensor is erroring almost continuously. Not implicated
+  in the fall, but it is not healthy either.
