@@ -4154,3 +4154,40 @@ because the pin is dead until the aircraft arms. The constructor proves the
 MAVLink command was accepted and nothing more. A bench test of the gate has to
 happen with the aircraft ARMED (props off) or through tools/servo_jog.py, not
 by trusting the pre-arm close.
+
+### 2026-08-25 ~20:15 IST: THE 08-25 ANALYSIS COVERED 3 LOGS OUT OF AT LEAST 18. OPEN, AND THE CARD IS NOW UNPLUGGED
+
+User asked why so many logs were ignored. The answer is not a good one: I
+filtered the directory on FILE SIZE AND MTIME and assumed every ~100 KB log
+with a 1980 date was an empty power-up stub. I never opened one to check. That
+is the same mistake as the terrain claim earlier today, inference where a
+measurement was available and cheap.
+
+I also only ever ran `ls | tail -20`, so logs numbered BELOW 61 were never even
+listed. "At least 18" is a floor, not a count.
+
+WHAT WAS ACTUALLY ANALYSED: 75, 76, 78 (today's three MB-sized logs).
+WHAT WAS SKIPPED AND WHY IT MATTERS:
+  * LOG 77. 98 KB, 1980 date, and it sits BETWEEN today's two analysed
+    flights. Most likely a power cycle, but that is exactly the word to
+    distrust. If anything armed in it, today's picture is incomplete.
+  * LOGS 64 (3.3 MB), 68 (5.4 MB), 69 (684 KB), all 2026-08-23. Real flights
+    from the previous session. THESE ARE THE ONES THAT MATTER MOST: the
+    central claim of the crash diagnosis is that the pack is finished, and it
+    currently rests on TWO numbers (1781 mAh charger cross-check on 08-23,
+    1847 mAh consumed today). Every one of these logs carries consumed mAh,
+    minimum loaded voltage and peak current. A per-log sweep would turn a
+    two-point claim into a trend across the pack's whole life, and would
+    either harden the diagnosis or break it.
+  * ~10 logs at ~100 KB with 1980 dates. Assumed to be arm-less power-ups.
+    Unverified.
+  * Everything below number 61. Unseen.
+
+THE SWEEP TO RUN when the card is back, one pass over EVERY .BIN: did it arm,
+motor-running time, consumed mAh, minimum voltage under load, peak current,
+learned MOT_THST_HOVER, and any CRASH_CHECK or thrust-loss event. That is the
+pack's history in one table and it is the right evidence for the "do not fly
+this pack" call.
+
+BLOCKED: /media/sleuther/0403-0201 is no longer mounted (card pulled after the
+first analysis). Nothing further can be read until it is back in the laptop.
