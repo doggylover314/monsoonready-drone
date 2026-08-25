@@ -3763,3 +3763,48 @@ STILL ON THE OLD DRIVE AND SAFE TO LOSE ONCE THE NEW COPY IS TRUSTED: nothing
 but the originals, lost+found and .Trash-1000. The drive was inventoried
 before any of this ran; local-tools was the only item the user had not
 mentioned and it was carried across rather than left to be wiped.
+
+### 2026-08-25 ~17:40 IST: DRY RUN IS SAFE TO CLICK WHILE HAND-FLYING. Read from the code, and its three limits
+
+USER'S PLAN: hand-fly, hold a LOITER at 5 m directly over a puddle, then have
+DRY RUN clicked from the dashboard to see whether the model finds the water.
+That is safe, and this entry records WHY so it is not re-derived in the field.
+
+WHY IT CANNOT TAKE THE AIRCRAFT, verified in run_mission.py rather than from
+memory: `--dry-run` returns at line 184. The dropper is not constructed until
+186, MissionLog until 197, and `mission.run()` until 245. `mission.run()` is
+the ONLY caller of set_mode('GUIDED'), arm(), takeoff(), goto() and
+velocity_ned(), so none of them can fire on this path. The gate is excluded
+twice over: the dashboard sends no_drop:true alongside dry_run:true
+(index.html:2510) and the dry-run return happens before any dropper exists.
+All that reaches the Pixhawk is one SET_MESSAGE_INTERVAL per stream plus the
+1 Hz component-191 heartbeat. Being in LOITER rather than GUIDED changes
+nothing: the pilot-override test lives inside the run loop, which never runs.
+NO GCS-FAILSAFE RISK when the 30 s window ends and the heartbeats stop:
+FS_GCS_ENABLE is 0 on the board (dump 2026-08-23).
+
+THE THREE LIMITS, all of which shape what the result means:
+1. THE WINDOW IS 30 s, hard-coded (run_mission.py:168). Preflight waits for a
+   live worker BEFORE the window opens, so model load and camera open do not
+   eat into it and the full 30 s is usable. But it does not span a flight.
+2. ONE PUDDLE LOGS ONCE, not once per frame. FileDetector dedups any site
+   within skip_radius_m (8 m) of one already fired, and only the mission calls
+   unskip(), which is not running. So "1 detection" is the PASS, and expecting
+   a rising count is the wrong reading of the log.
+3. NO GPS FIX MEANS NO POLL AT ALL. poll() needs a position to attach the
+   detection to; the runner prints that explicitly when it happens.
+
+BETTER EVIDENCE THAN THE DRY-RUN COUNT: ~/logs/detect_worker.log carries a
+per-frame line with confidence and sharpness, and every frame is saved
+full-res under ~/monsoonready_data/photos regardless of whether a dry run is
+running. The worker is what actually sees; the dry run only resolves what it
+saw into lat/lon.
+
+FOOTPRINT AT 5 m, for aiming the hover: 3.00 m across track by 5.34 m along
+track (camera_geom, 56.2 deg measured HFOV, 90 deg mount). Directly overhead
+puts the puddle at nadir, which is the best case for the geometry.
+
+RANGEFINDER CAVEAT AT THIS EXACT SPOT: hovering over water is the specular
+case the whole descend-beside design exists for, so the Luna may return
+nothing. Harmless here. _height_agl falls back to EKF rel_alt, and at nadir
+the lat/lon offset is near zero anyway; only the area estimate degrades.
