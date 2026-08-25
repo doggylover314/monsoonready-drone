@@ -4109,3 +4109,48 @@ consumed against 1781 mAh measured on 08-23, per-motor spread growing only
 120 -> 143 us so no motor failed, and the failsafe unable to latch because
 BATT_LOW_TIMER needs 10 continuous seconds and the load was cyclic. THE PACK
 IS STILL THE CAUSE.
+
+### 2026-08-25 ~20:05 IST: THE GATE FIRED TWICE TODAY, AND BOTH DOSES HIT A CLAMP. THE ESTIMATOR HAS NEVER PRODUCED A DOSE INSIDE ITS OWN RANGE
+
+Traced RCOU C9 (the gate servo output) across all three of today's logs.
+SERVO9_FUNCTION=0, MIN=500, MAX=1800, TRIM=500, REVERSED=0 on all three, so
+the old "TRIM 560 parks the gate part-open at boot" worry is DEAD: TRIM is 500
+and the gate parks closed.
+
+    log 75 (17:36)  C9 = 0 us for the ENTIRE log, across TWO arm cycles.
+                    The channel was never driven. No dropper existed in that
+                    run: either --no-drop, or run_mission never started.
+    log 76 (18:05)  ARM 629.1  ->  C9 0->500
+                    OPEN  665.9  500 -> 1600
+                    CLOSE 666.2  1600 -> 500      dwell 0.30 s
+    log 78 (19:04)  ARM 290.6  ->  C9 0->500
+                    OPEN  426.4  500 -> 1600
+                    CLOSE 429.4  1600 -> 500      dwell 3.00 s
+
+**BOTH DWELLS ARE EXACTLY ON A CLAMP.** dose_for() clamps to [dose_s_min 0.3,
+dose_s_max 3.0]. Log 76 got 0.30, the FLOOR, which means the estimated area was
+<= 0.75 m2. Log 78 got 3.00, the CEILING, which means >= 7.5 m2. Two flights an
+hour apart, on puddles the user describes as small, and the estimator railed in
+BOTH directions with a 10x swing between them. It has never once produced a
+value inside its own range. That is not a dose calculation, it is a coin flip
+between the two limits, and the earlier 3.0 s finding is now the second data
+point rather than a one-off.
+
+**WHAT THE .BIN PROVES AND WHAT IT DOES NOT.** RCOU C9 is the pulse width the
+Pixhawk GENERATED ON THE PIN. It proves the whole software chain: the mission
+called dropper.trigger(), DO_SET_SERVO was accepted, SERVO9_FUNCTION=0 is
+correct so the command owns the channel, and the output went to 1600 us for the
+dwell and back to 500. It does NOT prove the MG90 physically moved, and it says
+nothing about whether granules left the hopper. That needs 5 V from the buck,
+an intact signal wire and unstripped gears, none of which the flight controller
+can see.
+
+**A GAP IN WHAT THE CODE BELIEVES IS ITS GROUND-SIDE PROOF.** C9 read 0 us
+until the exact instant of ARM in every flight, then jumped to 500. So the
+output pin is not driven at all while disarmed. PixhawkServoDropper.__init__
+sends its initial close BEFORE arming and its docstring calls that "the
+ground-side proof of the whole chain", but that command cannot move the servo,
+because the pin is dead until the aircraft arms. The constructor proves the
+MAVLink command was accepted and nothing more. A bench test of the gate has to
+happen with the aircraft ARMED (props off) or through tools/servo_jog.py, not
+by trusting the pre-arm close.
