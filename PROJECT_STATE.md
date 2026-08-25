@@ -3808,3 +3808,60 @@ RANGEFINDER CAVEAT AT THIS EXACT SPOT: hovering over water is the specular
 case the whole descend-beside design exists for, so the Luna may return
 nothing. Harmless here. _height_agl falls back to EKF rel_alt, and at nadir
 the lat/lon offset is near zero anyway; only the area estimate degrades.
+
+### 2026-08-25 ~18:10 IST: THE CROSS NEVER HAPPENS. `wp_radius_m` SWALLOWS THE WHOLE LATERAL OFFSET, AND SITL NEVER CAUGHT IT
+
+FIELD SYMPTOM (user, primary source, flight today): the aircraft descended
+1.5 m from the puddle, released there, and never crossed over the water. That
+is exactly what the code does with stock defaults, and it is a logical bug,
+not a tuning problem.
+
+THE MECHANISM. mission.py:525, the DESCEND -> CROSS/DROP branch, reads
+`if self._cross_m() <= cfg.wp_radius_m: -> DROP`. That guard exists to skip a
+pointless crossing when the offset is negligible. But:
+    lateral_offset_n_m = 1.5   (MissionConfig:102, and run_mission --offset-n)
+    wp_radius_m        = 1.5   (MissionConfig:64)
+`_cross_m()` is the distance from the descent point to the puddle, which IS the
+lateral offset. So the "negligible" threshold equals the designed offset and
+the guard fires on the very case it was meant to let through.
+
+MEASURED, NOT ASSUMED. Round-tripping offset_latlon then dist_m with the repo's
+own functions gives `_cross_m()` = 1.4999999999129061, at every latitude tried
+(12.97, 28.61, 19.08 - the value is latitude-independent because both helpers
+use the same 6371000.0 radius and the same equirectangular approximation).
+That is 8.7e-11 m UNDER the threshold, so `<= 1.5` is True and DROP wins. Note
+the test is `<=`, so an exact 1.5 would take the DROP branch anyway; the
+floating-point margin is not what decides it, the operator is.
+
+THE RETURN LEG IS DEAD FOR THE SAME REASON. mission.py:629 gates the crossing
+back with `if self._cross_m() > self.cfg.wp_radius_m`, and 1.4999... > 1.5 is
+False, so DROP goes straight to CLIMB. CROSS and RETURN are both unreachable
+on the default configuration. The entire descend-beside-then-cross design has
+never executed, anywhere, on any flight or any simulation.
+
+WHY SITL PASSED ANYWAY, and this is the part worth keeping. sitl_test.py:109
+constructs `MissionConfig(waypoints=wps)`, i.e. ALL DEFAULTS, so the drills run
+at offset 1.5 exactly like the aircraft, hit the same guard, and go
+DESCEND -> DROP. The nominal scenario asserts one drop, no abort, survey
+complete, RTL, disarm. It never asserts WHERE the drop happened, so a release
+1.5 m off target passes as a success. A test that checks the count and not the
+position cannot see this class of bug.
+
+THREE DOCS ARE WRONG ABOUT THIS and should be corrected whenever the fix lands:
+uno_q/README.md ("Setting the lateral offsets to zero ... is what the SITL
+drills use"), mission.py's module docstring ("Offsets of 0 reproduce the old
+vertical sequence"), and MissionConfig's own comment ("Zero offsets restore the
+old vertical descent, used for SITL drills"). The drills do NOT set the offsets
+to zero. They use 1.5 and are saved from crossing by the bug instead. The
+stated reason and the real reason differ, which is how this stayed invisible.
+
+NOT FIXED. Awaiting the user's call on which threshold the skip should use
+(SCOPE RULE 2). Options put to him: a dedicated small `cross_min_m`, or reuse
+the existing `cross_radius_m` 0.5, or raise the offset above 1.5.
+
+SEPARATE FLAG, RAISED ONCE: the user's message says the flight dropped Bti.
+The standing project decision is that demonstration flights drop mustard seed
+and never larvicide, because a real drop makes a student flight test a
+pesticide application under law this project holds no licence for
+(docs/README.md, "Where this sits legally"). Recorded because it contradicts a
+standing decision. The user's call, not mine.
