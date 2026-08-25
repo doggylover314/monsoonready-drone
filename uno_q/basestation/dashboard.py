@@ -112,6 +112,10 @@ MISSION_LIMITS = {
     'survey_alt': (1.0, 40.0),
     'photo_hold': (0.0, 30.0),
     'conf': (0.05, 0.95),
+    # Must sit UNDER the lateral offset or the crossing is skipped and the
+    # gate opens beside the water. The ceiling is deliberately below the
+    # 1.5 m default offset so this box cannot recreate the 2026-08-25 bug.
+    'cross_min': (0.0, 1.0),
 }
 
 
@@ -399,6 +403,7 @@ def make_app(data_dir, control=None):
             # not whatever was last typed into a since-closed tab.
             'survey_alt': ctl['survey_alt'], 'conf': ctl['conf'],
             'photo_hold': ctl['photo_hold'],
+            'cross_min': ctl['cross_min'],
             'log': tail(os.path.join(LOG_DIR, 'run_mission.log')),
         })
 
@@ -715,7 +720,8 @@ def make_app(data_dir, control=None):
                '--data-dir', ctl['data_dir'],
                '--survey-alt', str(opts['survey_alt']),
                '--conf', str(opts['conf']),
-               '--photo-hold', str(opts['photo_hold'])]
+               '--photo-hold', str(opts['photo_hold']),
+               '--cross-min', str(opts['cross_min'])]
         if ctl['no_drop'] or body.get('no_drop'):
             cmd.append('--no-drop')
         if body.get('dry_run'):
@@ -1090,6 +1096,7 @@ def main():
     ap.add_argument('--conf', type=float, default=0.25)
     # Photo hold (s): camera uses long exposure at night; hold keeps frame sharp
     ap.add_argument('--photo-hold', type=float, default=1.0)
+    ap.add_argument('--cross-min', type=float, default=0.3)
     ap.add_argument('--host', default='0.0.0.0')
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--enable-control', action='store_true',
@@ -1131,6 +1138,7 @@ def main():
             'data_dir': args.data_dir,
             'survey_alt': args.survey_alt, 'conf': args.conf,
             'photo_hold': args.photo_hold,
+            'cross_min': args.cross_min,
         }
         log(f'FLIGHT CONTROL ENABLED on port {args.port}: anyone who can '
             f'reach this host can start and stop the mission')

@@ -9,6 +9,7 @@ per line.
 import argparse
 import atexit
 import json
+import math
 import os
 import signal
 import subprocess
@@ -79,6 +80,12 @@ def main():
                     help='metres north of the puddle to descend over')
     ap.add_argument('--offset-e', type=float, default=0.0,
                     help='metres east of the puddle to descend over')
+    # Must stay well under the offset above. Its own flag rather than a
+    # reuse of the waypoint radius, because reusing that one silently
+    # disabled every crossing (PROJECT_STATE 2026-08-25).
+    ap.add_argument('--cross-min', type=float, default=0.3,
+                    help='shortest lateral offset still worth crossing; '
+                         'below this the gate opens where it descended')
     ap.add_argument('--conf', type=float, default=0.25)
     ap.add_argument('--photo-hold', type=float, default=1.0,
                     help='seconds to hold at each waypoint so the frame is '
@@ -216,11 +223,22 @@ def main():
         log("[run] NO GEOFENCE FILE: detections will NOT be fence-checked. "
             "Draw and save a fence on the dashboard to enable that check.")
 
+    # The failure this guards against is silent: the crossing is simply
+    # skipped and the gate opens beside the water, which reads as a normal
+    # drop everywhere except the map. Said out loud before the flight.
+    offset_m = math.hypot(args.offset_n, args.offset_e)
+    if offset_m <= args.cross_min:
+        log.warn(f"[run] --cross-min {args.cross_min:g} m is not below the "
+                 f"{offset_m:.2f} m lateral offset, so the crossing will be "
+                 f"SKIPPED and the gate will open beside the water, not over "
+                 f"it. Lower --cross-min or raise --offset-n/--offset-e.")
+
     cfg = MissionConfig(waypoints=wps, survey_alt_m=args.survey_alt,
                         drop_alt_m=args.drop_alt,
                         photo_hold_s=args.photo_hold,
                         lateral_offset_n_m=args.offset_n,
                         lateral_offset_e_m=args.offset_e,
+                        cross_min_m=args.cross_min,
                         fence=poly,
                         basestation_cmd=bs_cmd)
 

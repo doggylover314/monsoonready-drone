@@ -478,6 +478,7 @@
         <label title="Survey altitude AGL. Lower puts more pixels on the puddle: a 0.55 m target spans about 132 px of the model input at 5 m against 44 px at 15 m.">alt <input id="optAlt" type="number" min="1" max="40" step="0.5"> m</label>
         <label title="How long the aircraft pauses at each waypoint. It is still braking for about the first second, so 1 s photographs a moving, tilted aircraft; 3 s leaves roughly two thirds of the pause genuinely still.">photo hold <input id="optHold" type="number" min="0" max="30" step="0.5"> s</label>
         <label title="Detector confidence threshold. Lower finds more puddles and more false positives.">conf <input id="optConf" type="number" min="0.05" max="0.95" step="0.05"></label>
+        <label title="Shortest sideways trip still worth flying. The aircraft descends beside the puddle because the laser cannot range still water, then crosses over it to open the gate. An offset shorter than this releases where it descended instead. Keep it well under the 1.5 m offset: at 1.5 the crossing never happens.">cross min <input id="optCrossMin" type="number" min="0" max="1" step="0.1"> m</label>
         <span class="chip">used by START and DRY RUN alike</span>
       </div>
       <div class="ctlRow">
@@ -1156,7 +1157,7 @@ function goEnabled() {
 // overwritten the moment the operator types: otherwise the 1 Hz poll erases
 // a half-typed value under the cursor.
 const OPT_FIELDS = { survey_alt: 'optAlt', photo_hold: 'optHold',
-                     conf: 'optConf' };
+                     conf: 'optConf', cross_min: 'optCrossMin' };
 const optDirty = new Set();
 
 function optsInit() {

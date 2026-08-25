@@ -98,7 +98,8 @@ class MissionConfig:
     # beside it before climbing. No rangefinder abort while over water:
     # dropout there is expected, not a fault. Offsets default north;
     # override with the run_mission flags for one-sided ground. Zero
-    # offsets restore the old vertical descent, used for SITL drills.
+    # offsets restore the old vertical descent. The SITL drills do NOT set
+    # them to zero: they take these defaults.
     lateral_offset_n_m: float = 1.5
     lateral_offset_e_m: float = 0.0
     cross_timeout_s: float = 20.0  # per translate; abort out, climb back
@@ -124,6 +125,17 @@ class MissionConfig:
     # CROSS arrival tolerance, tighter than wp_radius_m: the gate must open
     # over the water, not near it.
     cross_radius_m: float = 0.5
+    # Shortest lateral offset still worth flying. Below this the aircraft
+    # releases where it descended instead of translating a trivial distance.
+    # THIS MUST STAY WELL UNDER lateral_offset_n/e_m, and it exists as its
+    # own number for exactly that reason (2026-08-25, found in flight). The
+    # skip test used to compare against wp_radius_m, the survey's waypoint
+    # arrival tolerance, which is also 1.5 and so equalled the offset: every
+    # crossing was skipped, the gate opened 1.5 m from the water, and CROSS
+    # and RETURN had never once executed. Two unrelated tunables must not
+    # decide this, so it gets its own, and run_mission warns when this
+    # value grows past the offset it is meant to sit under.
+    cross_min_m: float = 0.3
     # How long a blind detector (dead worker or camera) is tolerated during
     # the phases where the camera still matters, before the mission aborts.
     detector_blind_s: float = 15.0
@@ -522,7 +534,7 @@ class Mission:
             # Last trustworthy AGL; all over-water flight uses this reference.
             self._drop_rel_alt = tel.rel_alt_m
             note = f"rng={tel.rng_m:.2f}m"
-            if self._cross_m() <= cfg.wp_radius_m:
+            if self._cross_m() <= cfg.cross_min_m:
                 self._set('DROP', note + ", stopping before release")
             elif self._drop_rel_alt is None:
                 # No altitude reference: release beside the water rather
@@ -626,7 +638,7 @@ class Mission:
 
         if time.monotonic() - self._t_dropped >= self.cfg.drop_dwell_s:
             note = 'treated' if self._drop_ok else 'drop failed'
-            if self._cross_m() > self.cfg.wp_radius_m \
+            if self._cross_m() > self.cfg.cross_min_m \
                     and self._drop_rel_alt is not None:
                 self.io.goto(*self.target, self._drop_rel_alt)
                 self._set('RETURN', note + ', crossing back beside the water')

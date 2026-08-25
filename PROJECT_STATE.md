@@ -3865,3 +3865,52 @@ and never larvicide, because a real drop makes a student flight test a
 pesticide application under law this project holds no licence for
 (docs/README.md, "Where this sits legally"). Recorded because it contradicts a
 standing decision. The user's call, not mine.
+
+### 2026-08-25 ~18:40 IST: CROSS BUG FIXED with a dedicated `cross_min_m`, and the box is on the dashboard (user chose option 1)
+
+WHAT CHANGED. New `MissionConfig.cross_min_m = 0.3`, the shortest lateral
+offset still worth flying. Both guards now use it instead of `wp_radius_m`:
+mission.py DESCEND (`_cross_m() <= cfg.cross_min_m` -> DROP) and DROP
+(`_cross_m() > cfg.cross_min_m` -> RETURN). Its own number rather than a
+reuse, because the reuse is what broke it: two unrelated tunables must not
+decide this.
+
+VERIFIED, not assumed. With stock defaults `_cross_m()` = 1.500000 against
+cross_min_m 0.3: DESCEND skip-cross now False (was True) and DROP fly-RETURN
+now True (was False). Both branches flipped, so CROSS and RETURN are reachable
+for the first time. py_compile clean on mission.py, run_mission.py,
+dashboard.py.
+
+THE SAME FOOTGUN CANNOT COME BACK, three ways:
+  * run_mission warns at launch when cross_min >= hypot(offset_n, offset_e),
+    naming the consequence (gate opens beside the water, not over it). The
+    failure is otherwise silent, which is exactly why it survived a flight.
+  * the dashboard box is capped at 1.0 m, deliberately below the 1.5 m
+    default offset, so the operator cannot type the bug back in.
+  * the comment on the field carries the whole history.
+
+DASHBOARD. `cross_min` is a fourth mission setting beside alt / photo hold /
+conf: MISSION_LIMITS (0.0, 1.0), seeded into the control payload, on the
+run_mission command line, and a `--cross-min` CLI default of 0.3 on
+dashboard.py itself. Front end: `optCrossMin` box added to OPT_FIELDS, so it
+seeds, tracks dirty state and travels through missionOpts() with the rest,
+which means it applies to START and DRY RUN alike by construction. Validation
+round-tripped: default 0.3 passes, 0.5 accepted, 2.0 refused with a plain
+message.
+
+TWO DOCS CORRECTED, both of which claimed the SITL drills run at zero offset.
+They never did; they take MissionConfig() defaults and fly 1.5 like the
+aircraft, and were saved from crossing by the bug rather than by config. Fixed
+in uno_q/README.md and the MissionConfig comment.
+
+NOT DONE, AND IT MATTERS: sitl_test.py has not been re-run. Because the drills
+use the defaults, they will now execute CROSS and RETURN for the FIRST TIME
+EVER, so the nominal scenario exercises code that has never run anywhere.
+The drop count should be unchanged at 1, but nothing here proves the crossing
+completes rather than timing out on cross_timeout_s. RUN BOTH SCENARIOS BEFORE
+THE NEXT FLIGHT.
+
+STILL OPEN (user has not ruled): sitl_test.py asserts the drop COUNT and never
+the drop POSITION, which is the whole reason this bug reached a real flight.
+An assertion that the gate opened within cross_radius_m of the puddle would
+have caught it on the bench.

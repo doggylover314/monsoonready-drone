@@ -95,8 +95,9 @@ single corrupted altitude source.
 The aircraft descends beside the puddle rather than over it, holds the captured
 altitude while it translates across, releases, and translates back before
 climbing. No rangefinder abort applies while it is over water. Setting the
-lateral offsets to zero restores the old vertical descent, which is what the
-SITL drills use.
+lateral offsets to zero restores the old vertical descent. The SITL drills do
+not do that: they take `MissionConfig()` defaults and fly the same 1.5 m offset
+the aircraft flies.
 
 The pilot always wins. Every tick checks the heartbeat's mode, and anything
 other than GUIDED moves the machine to STANDDOWN, which commands nothing
