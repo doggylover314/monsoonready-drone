@@ -4028,3 +4028,84 @@ falling. Both are needed.
 - The ESP32 ring logged "prx ring 4/4 up:ERR" every ~15 s for the whole
   flight. The upward sensor is erroring almost continuously. Not implicated
   in the fall, but it is not healthy either.
+
+### 2026-08-25 ~19:55 IST: CORRECTION TO THE ENTRY ABOVE. THE TERRAIN EXPLANATION WAS WRONG, THE DESCENT COUNT WAS WRONG, AND THE REAL CAUSE IS BETTER
+
+User challenged three things from primary knowledge of the site and the
+dashboard. He was right on two, and the third is now measured properly instead
+of inferred. Appended rather than edited, per the append-only rule.
+
+**1. "THE FIELD IS FLAT, 20 cm MAXIMUM." He is right and my terrain story is
+DEAD.** I claimed the rng-vs-rel_alt gap was the field being lower than the
+launch point by a different amount at each site. Measured across the whole
+flight in 15 s windows, the offset is 0.90 1.14 1.11 1.47 1.36 1.11 1.00 1.13
+1.03 0.84 1.21 1.30 1.33 1.03. That is not terrain (it does not track
+position) and not drift (no monotonic trend). It is a roughly CONSTANT +1.1 m
+with about +/-0.3 m of noise.
+
+**THE REAL CAUSE, and it is visible before the aircraft ever left the ground.**
+Armed and sitting on its legs at t=290.7:
+    rangefinder = 0.12 m   <- CORRECT. RNGFND1_GNDCLR is 0.13; the sensor is
+                              honest and reads its own leg height.
+    EKF alt     = -0.68 m  <- WRONG. It is sitting on the ground and the
+                              altitude estimate already reads 0.68 m LOW.
+So the error is in the EKF/baro altitude, not the rangefinder and not the
+ground. It starts at -0.68 m BEFORE TAKEOFF and wanders to about -1.3 m in
+flight. EK3_SRC1_POSZ = 1, so height comes from the BAROMETER; the rangefinder
+is not the Z source and cannot correct it. Prime suspect is the +37
+accelerometer clip events check_log already flagged, which is the same
+mechanism as crash 3 on the S550: vibration corrupts the vertical estimate.
+RNGFND1_GNDCLR 0.13, MIN 0.2, MAX 6, OFFSET 0, SCALING 3, ORIENT 25, POS_Z 0,
+TERRAIN_ENABLE 1, all read from the log.
+
+**WHY THIS EXPLAINS 1 DROP IN 7 DESCENTS, more cleanly than terrain did.**
+rel_alt reads ~1.1 m LOW, so:
+    floor abort  (rel_alt < 0.5)  actually fires at ~1.6 m TRUE AGL
+    drop         (rng    <= 1.0)  needs 1.0 m TRUE AGL
+The abort threshold is crossed roughly 0.6 m BEFORE the drop threshold on
+every single descent. The abort wins the race by construction. The one drop at
+426 s got through only because that window had the flight's smallest offset
+(median 0.84, min 0.65) and a favourable noise sample landed rng <= 1.0 and
+rel_alt >= 0.5 on the same tick. THE DROP WAS LUCK, not a working sequence.
+
+**2. "THE DASHBOARD LOGGED 5 DESCENTS." My 11 WAS WRONG.** Recounted
+mechanically as crossings from above 3.0 m to below 1.0 m: 9 crossings at
+0, 306, 321, 341, 357, 423, 455, 470, 499 s. The 0 s one is the log opening
+with the aircraft on the ground, and 499 s is the fall, not a descent. SEVEN
+real descents: 306, 321, 341, 357, 423, 455, 470.
+SEVEN FROM THE AIRCRAFT vs FIVE FROM THE DASHBOARD IS ITSELF A FINDING and it
+is NOT yet explained. The dashboard reads DESCEND state events from the mission
+JSONL, so if the airframe dipped to the ground seven times and the state
+machine recorded five, the two disagree about what the aircraft was doing.
+Four of the seven (306-357) happen before the long clean hover at 4.3 m from
+365-415, which may mean the early ones are a different phase. NOT GUESSED AT:
+the JSONL settles it and it has been requested.
+
+**3. "THE PUDDLE WAS A 0.5 m CIRCLE, NOT 7.5 m2." He is right that the puddle
+was small, and that makes the dose arithmetic a REAL BUG, not a quibble.**
+The gate was open exactly 3.00 s (C9 500 -> 1600 at 426.5, back to 500 at
+429.5). dose_for() is area * dose_s_per_m2 (0.4) clamped to [0.3, 3.0]. A 3.00
+s dwell is the CEILING, which requires an estimated area of AT LEAST 7.5 m2.
+A 0.5 m circle is ~0.20 m2, and its bounding box ~0.25 m2, which would have
+dosed 0.1 s and clamped UP to the 0.3 s floor. So the estimate was out by a
+factor of roughly THIRTY.
+Height error cannot explain it: area scales with height squared, so 0.25 -> 7.5
+needs the height 5.5x too big, i.e. 24 m at a 4.3 m survey. Not possible.
+WHAT IS LEFT is that the detection box itself was enormous. At 4.3 m the frame
+covers roughly 4.6 x 2.6 m = ~12 m2, so a 7.5 m2 box is about 60% of the
+frame. That is not a 0.5 m puddle; that is the model boxing a large wet or
+dark region, which would ALSO explain why the aircraft kept finding targets
+and descending seven times.
+THE EXACT NUMBER IS RECORDED: missionlog.drop() writes area_m2 and dwell_s
+into the JSONL. One line settles this. NOTE detect_worker was spawned WITHOUT
+--save-dir, so there are no annotated frames from this flight; the raw photos
+under ~/monsoonready_data/photos are still there and would show what the model
+was looking at.
+
+**WHAT SURVIVES FROM THE ENTRY ABOVE, unchanged.** The fall diagnosis does not
+depend on any of the three corrections: stable hover to 495.8, altitude
+collapsing while DAlt held 4.33, full throttle unable to arrest it, 1847 mAh
+consumed against 1781 mAh measured on 08-23, per-motor spread growing only
+120 -> 143 us so no motor failed, and the failsafe unable to latch because
+BATT_LOW_TIMER needs 10 continuous seconds and the load was cyclic. THE PACK
+IS STILL THE CAUSE.
