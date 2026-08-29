@@ -4277,3 +4277,112 @@ and it replaces the only soft number in this entry.
   more than the UNO Q and its official supply is rated 5.1 V 5 A. The UBEC and
   the payload budget both need rechecking against a measured figure, not an
   assumed one.
+
+### 2026-08-29: EXPORT FORMAT BEATS MODEL SIZE. NCNN MEASURED, AND THE ALTITUDE THAT ACTUALLY FOLLOWS FROM OUR OWN GEOMETRY
+
+User was right to push on format; my previous entry sized everything in ONNX
+and that was the wrong axis to optimise first.
+
+**MEASURED, NOT ESTIMATED. Ultralytics' own Pi 5 benchmark, YOLO26n, 640,
+FP32, Raspberry Pi OS Bookworm, inference only (their note: "Inference time
+does not include pre/post-processing"):**
+    PyTorch 299.09   TorchScript 353.20   ONNX 125.99   OpenVINO 104.55
+    MNN 91.87        NCNN 67.03           ExecuTorch 144.83   LiteRT 123.30
+NCNN WINS BY A WIDE MARGIN: 1.88x faster than ONNX, 4.5x faster than PyTorch.
+Source: https://docs.ultralytics.com/guides/raspberry-pi
+
+**THIS ANCHORS THE CHIP SPEEDUP I PREVIOUSLY GUESSED AT.** Our UNO Q measured
+yolo26n ONNX at 489-511 ms; the Pi 5 does the same format at 125.99 ms. That
+is 3.9-4.1x, i.e. the middle of the 3-5x range I estimated, now with a real
+number on one end. CAVEAT THAT MUST TRAVEL WITH IT: Ultralytics excludes
+pre/post-processing and our 511 ms figure includes capture and letterboxing,
+so the two are not strictly like-for-like and the true ratio could differ.
+UNO Q ONNX to Pi 5 NCNN is 489 -> 67 ms, about 7.3x end to end.
+
+**SIZE ESTIMATES ON PI 5 NCNN, extrapolated from OUR OWN UNO Q ratios.**
+    n   67 ms      MEASURED
+    s   ~200-265 ms   (UNO Q s/n is 2.97 using 1518/511, or 3.93 using
+                       1921/489; the repo's two s figures disagree)
+    m   ~575-600 ms   (UNO Q m/n is 8.57-8.95)
+    l   UNKNOWN. Never benchmarked by us or, as far as this page shows, by
+        Ultralytics.
+CAVEAT: these are ratios measured on an A53 applied to an A76. Cache, SIMD
+width and memory bandwidth all differ, so ratios do not transfer perfectly.
+Treat as order-of-magnitude until bench_models or `yolo benchmark` says
+otherwise ON THE PI.
+ULTRALYTICS CONTRADICTS THE m ESTIMATE: the page says it benchmarks only n and
+s "because other model sizes are too big to run on the Raspberry Pis" and that
+larger models "do not offer decent performance". That may be about RAM on
+2 GB Pi 4s rather than an 8 GB Pi 5, which is UNVERIFIED either way. Our
+extrapolation says m NCNN lands near 600 ms and would fit the budget below.
+Only a measurement settles it.
+
+**RECOMMENDATION UNCHANGED IN ITS ANSWER, STRENGTHENED IN ITS MARGIN: TRAIN s.**
+It lands ~200-265 ms on NCNN, which is under 5% of the per-photo budget
+computed below. m is no longer obviously out and is worth benchmarking, but
+the evidence that capacity is not our bottleneck (run 1 to run 2 gained from
+DATA, docs say run 2 "wins everything with fewer parameters") still argues
+against spending the training time on it before the in-domain photos are
+labelled.
+
+**A REAL ERROR IN docs/README.md, found doing the altitude maths.** The docs
+say "a 0.55 m target is ~132 px of the model's 640 input at 5 m against ~44 px
+at 15 m". 132 px is the FULL-FRAME 1280-wide figure (0.55 x f_px 1198.6 / 5 =
+131.8). The model does not see that frame. detector.py letterboxes 1280x720
+into a 640 square at scale min(640/720, 640/1280) = 0.5, so what the network
+actually receives is HALF: about 66 px at 5 m, 22 px at 15 m. Every altitude
+decision made from the 132 figure is out by a factor of two. NOT YET FIXED in
+the docs; flagged to the user.
+
+**ALTITUDE, COMPUTED FROM OUR OWN camera_geom AND make_waypoints.**
+f_px 1198.6 at 1280 wide (HFOV 56.2 measured), mount yaw 90 so the 1280 axis
+is along track. Effective f_px in MODEL pixels = 599.3.
+  alt  across  along | row_sp  wp_sp | 0.55m px  1.13m px | wp per 100x100 m
+    5    3.00   5.34 |   2.00   4.34 |      66       135  |      1150
+    8    4.81   8.54 |   3.81   7.54 |      41        85  |       348
+   10    6.01  10.68 |   5.01   9.68 |      33        68  |       206
+   12    7.21  12.81 |   6.21  11.81 |      27        56  |       136
+   15    9.01  16.02 |   8.01  15.02 |      22        45  |        83
+(1.13 m is the diameter of a 1 m2 circular puddle, the user's stated target.)
+
+**THE ANCHOR, and it is a clean one. 10 m.** The only detection rate this
+project has ever MEASURED is the 5 m case: a 0.55 m puddle, 66 model px, found
+in roughly half of frames at conf 0.25. A 1 m2 puddle presents 68 MODEL PX AT
+10 m, which is the same pixel size as the case we measured. So 10 m is where
+the user's larger target looks to the network exactly like the old target did
+at the altitude that worked. It is an equal-pixels argument, NOT a promise:
+the measurement was made with yolo26n on dataset v2, and a retrained s on
+in-domain frames should do better by an unmeasured amount.
+
+**COMPUTE IS NOT THE CONSTRAINT AT ANY SENSIBLE ALTITUDE.** At 10 m with 1 m
+overlap the waypoint spacing is 9.68 m, which at WP_SPD 2 is 4.8 s between
+photos, plus the hold. yolo26s on NCNN at ~200 ms uses about 4% of that. Even
+m at ~600 ms uses 12%. The binding constraint is detection quality, full stop,
+and any argument for a smaller model on speed grounds is now dead.
+THE REAL PRIZE IS THE PHOTO COUNT: 206 waypoints per 100x100 m at 10 m against
+1150 at 5 m, 5.6x fewer stops for the same ground. That is a direct battery
+saving on a pack that has already proved it only holds ~1800 mAh.
+
+**LOOKS PER PUDDLE IS THE KNOB THAT IS BEING MISSED.** spacing_for_overlap's
+overlap_m sets how much consecutive frames share, so it, not altitude, decides
+how many chances the model gets at one puddle. At 10 m: overlap 1.0 gives 1.1
+looks and 206 wp; overlap 3.0 gives 1.4 looks and 433 wp; overlap 5.34 gives
+2.0 looks but 1873 wp because row spacing hits the 1.0 m floor in
+spacing_for_overlap and the cost lands on BOTH axes. If a single 50% look is
+too thin, buy the second look with overlap at 10 m (433 wp) rather than by
+dropping back to 5 m (1150 wp). Same redundancy, a third of the stops.
+
+**WHAT 10 m CHANGES ELSEWHERE, flagged not fixed.** The TF-Luna is good to
+about 8 m, so a descent starting at 10 m begins ABOVE its range and the
+"never acquired" branch governs again; at 5 m the descent started already
+below rng_expect_m 6.0, which is why rng_grace_s exists. That logic needs
+re-reading before flying 10 m. Tilt error also scales with height: docs put
+2 degrees at roughly 0.5 m of nadir shift at 15 m, so about 0.35 m at 10 m.
+And the 08-25 baro finding (EKF altitude reading ~1.1 m low) is unchanged in
+absolute terms but a 10 m descent gives it longer to matter.
+
+**USER CONSTRAINTS RECORDED (primary source, 2026-08-29):** continuous video
+is out because of vibration, the aircraft stops every few seconds for a still,
+target puddle size is 1 m2, same B525 camera, altitude is open to change, and
+NO NEW HARDWARE is to be bought (so no Hailo, no Coral; that question is
+closed).
