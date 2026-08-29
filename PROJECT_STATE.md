@@ -4191,3 +4191,89 @@ this pack" call.
 
 BLOCKED: /media/sleuther/0403-0201 is no longer mounted (card pulled after the
 first analysis). Nothing further can be read until it is back in the laptop.
+
+### 2026-08-29: COMPETITION OVER, VIDEO SUBMITTED. NEW PHASE: RASPBERRY PI 5 8GB, AND WHICH YOLO26 SIZE TO TRAIN
+
+User (primary source): the video is submitted, the Arduino challenge is
+finished, and the project continues. He wants to replace the UNO Q with a
+Raspberry Pi 5 8GB and train a larger yolo26 (s, m or l).
+
+**RECOMMENDATION: s. The reasoning, and the number that would change it.**
+The bar is unchanged from docs/README: the mission takes stills while hovering,
+so ONE SECOND PER FRAME is the requirement, not video frame rate.
+MEASURED ON THE UNO Q at 640 (this project's own benchmarks, board-side):
+    n   489-511 ms      (see the discrepancy note below)
+    s   1518 or 1921 ms (THE REPO DISAGREES WITH ITSELF, see below)
+    m   4378 ms
+    l   NEVER MEASURED. Not in any benchmark this project ran.
+Taking the internally consistent set, s is ~3.0x n and m is ~8.6x n.
+PI 5 SPEEDUP IS UNVERIFIED AND MUST NOT BE STATED AS FACT. Cortex-A76
+out-of-order at 2.4 GHz against the UNO Q's A53 is a large generational jump
+and 3-5x on CPU inference is a REASONABLE ESTIMATE, nothing more. No benchmark
+of these two chips on this model exists here. Working it through both ends of
+that range:
+    at 3x   n ~170ms   s ~505-640ms   m ~1460ms (OVER)   l ~2900ms (OUT)
+    at 5x   n ~100ms   s ~300-385ms   m ~875ms (marginal) l ~1750ms (OUT)
+s CLEARS THE BAR AT BOTH ENDS. m depends entirely on which end is true. l is
+out either way. That asymmetry is the whole argument: s is the largest step up
+that does not put the timing requirement on a guess.
+THERMAL THROTTLING HARDENS THIS. Sustained four-core inference on a Pi 5 in an
+airframe enclosure in Indian summer will throttle without active cooling, and
+throttling silently halves the frame rate. A model chosen at the edge of the
+bar becomes a model that misses it once hot. Headroom is not optional here.
+
+**A BENCHMARK DISCREPANCY IN OUR OWN FILES, found while answering this.**
+n@640 is recorded as 489 ms (docs/README, from onnx_benchmark.txt) and 511 ms
+(detect_worker.py, run_mission.py, and the TODO menu). s@640 is recorded as
+1518 ms (detect_worker.py, run_mission.py, TODO menu) and 1921 ms
+(docs/README). The n gap is plausibly pure-inference vs inference-plus-capture,
+but the s gap is 27% and NOBODY HAS RECONCILED THEM. Whichever is right, both
+say the same thing about sizing, so this does not change the recommendation.
+Recorded so the next person does not quote one and get contradicted by the
+other.
+
+**THE SIZE IS PROBABLY NOT THE LIMITING FACTOR, and our own evidence says so.**
+Run 1 (yolov8n, 11.7k images) to Run 2 (yolo26n, 21.7k images) moved P .744 to
+.795 and R .687 to .708, and docs/README states plainly that "Run 2 wins
+everything with fewer parameters". THE GAIN CAME FROM DATA, not capacity. The
+weak number is recall at 0.708, which is the one that matters because a missed
+puddle is an untreated site, and the docs already concede the public datasets
+are "mostly not shot from 5 m looking down", i.e. a proxy for the task rather
+than a measurement of it.
+THE IN-DOMAIN DATA ALREADY EXISTS AND IS AT RISK. detect_worker saves EVERY
+captured frame full-res to ~/monsoonready_data/photos, so the 08-25 flights
+left real 5 m nadir frames from the actual camera at the actual altitude, which
+is exactly what no public dataset provides. THE FOLDER IS CAPPED AT 10 GB AND
+DELETES OLDEST-FIRST, so those frames are consumable. GET THEM OFF THE BOARD.
+Labelling that set is worth more than any n-to-l jump.
+ONE ARGUMENT THAT DOES FAVOUR GOING BIGGER: the 08-25 dose bug, where the area
+estimate railed to BOTH clamps on two flights an hour apart, points at poor box
+regression, and box quality is something a larger model genuinely does improve.
+That supports s over staying at n. It does not support m or l.
+
+**WHAT WOULD CHANGE THE ANSWER, in one line each.** A Hailo accelerator on the
+Pi 5 AI Kit would move the ceiling enough to put l in range, but WHETHER THE
+HAILO TOOLCHAIN COMPILES YOLO26 IS UNVERIFIED HERE and must be checked before
+anyone buys one. Dropping the one-second bar in favour of continuous video
+would change the calculation completely. Raising input resolution instead of
+model size competes for the same latency budget, which the 08-10 menu already
+showed (n@1088 1529 ms is the same cost as s@640).
+
+**THE MEASUREMENT THAT SETTLES IT, and the tools already exist.**
+training/export_variants.py exports PRETRAINED yolo26 checkpoints to ONNX
+purely for timing (their detections are meaningless for puddles; what transfers
+is architecture, input shape and operator mix), and uno_q/bench_models.py times
+ONNX models on the target board. Export s, m and l, run bench_models.py ON THE
+PI 5, and the answer stops being an estimate. That is roughly twenty minutes
+and it replaces the only soft number in this entry.
+
+**PORTING NOTES THAT BEAR ON THIS CHOICE, not a migration plan.**
+- The Bridge-based ServoDropper in dropper.py is already unused; the flight
+  configuration is PixhawkServoDropper over the Pixhawk AUX output, so losing
+  the UNO Q's STM32 costs nothing.
+- The entire USB-C sink-only saga (ETZIN splitter, PD attach, camera
+  enumeration) disappears: the Pi 5 has real USB-A host ports.
+- POWER IS A REAL CHANGE AND IS NOT VERIFIED HERE. A Pi 5 draws meaningfully
+  more than the UNO Q and its official supply is rated 5.1 V 5 A. The UBEC and
+  the payload budget both need rechecking against a measured figure, not an
+  assumed one.
